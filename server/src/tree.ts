@@ -22,7 +22,9 @@ export interface RepoTree {
   error?: string;
 }
 
-const SKIP_DIRS = new Set(["node_modules", ".git", "__pycache__", ".venv", "venv", "blob-report", "playwright-report", "test-results", ".pytest_cache", "dist", "build"]);
+const SKIP_DIRS = new Set(["node_modules", ".git", ".claude", "__pycache__", ".venv", "venv", "blob-report", "playwright-report", "test-results", ".pytest_cache", "dist", "build"]);
+
+export { SKIP_DIRS, walk };
 
 function* walk(dir: string, root: string): Generator<string> {
   let entries: fs.Dirent[];

@@ -241,6 +241,29 @@ body {
 .web-label.endpoint { fill: var(--warn); font-family: var(--mono); font-size: 10px; }
 .web-endpoint { fill: var(--surface); stroke: var(--warn); stroke-width: 1; opacity: 0.95; }
 .web-bridge { fill: none; stroke: var(--warn); stroke-width: 1; opacity: 0.5; }
+/* connections view */
+.web-legend {
+  position: absolute; top: 10px; left: 14px; z-index: 2;
+  display: flex; align-items: center; gap: 16px; font-size: 11.5px; color: var(--ink-soft);
+}
+.web-legend .swatch { display: inline-block; width: 14px; height: 3px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+.web-legend .swatch.endpoint { background: var(--warn); }
+.web-legend .swatch.topic { background: var(--accent); }
+.web-legend select {
+  margin-left: 6px; background: var(--surface-2); color: var(--ink); border: 1px solid var(--line);
+  border-radius: 5px; font-size: 11.5px; padding: 1px 4px;
+}
+.web-legend .faint-text { color: var(--ink-faint); font-family: var(--mono); font-size: 10.5px; }
+.conn-edge { fill: none; opacity: 0.45; transition: opacity 0.15s; }
+.conn-edge.topic { stroke: var(--accent); }
+.conn-edge.endpoint { stroke: var(--warn); stroke-width: 1.6; opacity: 0.75; }
+.conn-edge:hover { opacity: 1; }
+.conn-edge.dim { opacity: 0.06; }
+.conn-node { fill: var(--surface-2); stroke: var(--ink-soft); stroke-width: 1.2; cursor: pointer; }
+.conn-node:hover { stroke: var(--ink); }
+.conn-node.selected { stroke: var(--accent); fill: var(--accent-soft); }
+g.dim { opacity: 0.18; }
+
 .web-hint {
   position: absolute; bottom: 8px; left: 0; right: 0; pointer-events: none;
   text-align: center; color: var(--ink-faint); font-family: var(--mono); font-size: 10px; margin: 0;

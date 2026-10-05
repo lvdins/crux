@@ -5,6 +5,7 @@ import Term, { disposeTerm } from "./components/Term";
 import Preview from "./components/Preview";
 import TestTree from "./components/TestTree";
 import SpiderWeb from "./components/SpiderWeb";
+import Connections from "./components/Connections";
 import { WebIcon, ClaudeLogo, CodexLogo } from "./components/icons";
 
 const CHIP_COLORS: Record<string, string> = {
@@ -226,12 +227,7 @@ export default function App() {
         </nav>
         {view === "connections" ? (
           <section className="full-pane">
-            <SpiderWeb
-              repos={Object.entries(config.repos)
-                .filter(([, r]) => r.kind !== "mkdocs")
-                .map(([k]) => k)}
-              global
-            />
+            <Connections />
           </section>
         ) : (
           <div

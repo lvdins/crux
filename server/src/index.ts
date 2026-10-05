@@ -66,6 +66,16 @@ app.get("/api/debug/opens", (_req, res) => {
   res.json(openLog);
 });
 
+let connectionsCache: { at: number; data: unknown } | null = null;
+app.get("/api/connections", async (_req, res) => {
+  // Reading every test file is a few hundred ms — cache for a minute.
+  if (!connectionsCache || Date.now() - connectionsCache.at > 60_000) {
+    const { buildConnections } = await import("./links.js");
+    connectionsCache = { at: Date.now(), data: buildConnections() };
+  }
+  res.json(connectionsCache.data);
+});
+
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: "/ws" });
 
