@@ -139,6 +139,123 @@ function buildGraph(data: FeatureMapData) {
   return { nodes: [...nodes.values()], links };
 }
 
+/** Shorter, readable label text (full text stays in search, tooltip, info box). */
+function displayLabel(n: GNode): string {
+  let t = n.label;
+  if (n.kind === "endpoint") t = t.replace(/^\/gapi\/(dashboard|admin|processing)/, "…").replace(/\{\}/g, "{id}");
+  return t.length > 44 ? t.slice(0, 42) + "…" : t;
+}
+
+interface LabelCtx {
+  focus: string | null;
+  sel: string | null;
+  near: Set<string> | null;
+  matches: Set<string>;
+  visible: (n: GNode) => boolean;
+  k: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  dpr: number;
+}
+
+const FONT_FEATURE = "600 12.5px -apple-system, BlinkMacSystemFont, system-ui, sans-serif";
+const FONT_OTHER = "500 11.5px -apple-system, BlinkMacSystemFont, system-ui, sans-serif";
+const widthCache = new Map<string, number>();
+
+/**
+ * Greedy collision-free labelling in screen space: candidates are ranked
+ * (focus, its features, its other neighbours, search hits, features by
+ * size, then — when zoomed in — everything on screen), each tries eight
+ * spots around its star and is dropped if every spot overlaps a placed box.
+ */
+function makeLabelDrawer(nodes: GNode[]) {
+  return (ctx: CanvasRenderingContext2D, c: LabelCtx) => {
+    const { focus, sel, near, matches, visible, k, x, y, w, h, dpr } = c;
+    const toScreen = (n: GNode) => ({ sx: n.x! * k + w / 2 + x, sy: n.y! * k + h / 2 + y });
+    const onScreen = (sx: number, sy: number) => sx > -40 && sx < w + 40 && sy > -20 && sy < h + 20;
+
+    const rank = (n: GNode): number => {
+      if (n.id === focus) return 0;
+      if (near?.has(n.id)) return n.kind === "feature" ? 1 : 2;
+      if (focus) return -1; // nothing else is labelled while focused
+      if (matches.size) return matches.has(n.id) ? 3 : -1;
+      if (n.kind === "feature") return 4;
+      if (k > 1.5 && (n.kind === "page" || n.kind === "view" || n.kind === "endpoint")) return 5;
+      if (k > 2.4) return 6;
+      return -1;
+    };
+    const candidates = nodes
+      .filter((n) => n.x !== undefined && visible(n))
+      .map((n) => ({ n, r: rank(n) }))
+      .filter((c) => c.r >= 0)
+      .sort((a, b) => a.r - b.r || b.n.degree - a.n.degree)
+      .slice(0, 260);
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.textBaseline = "middle";
+    ctx.lineJoin = "round";
+    const placed: { x0: number; y0: number; x1: number; y1: number }[] = [];
+    const hits = (b: { x0: number; y0: number; x1: number; y1: number }) =>
+      placed.some((p) => b.x0 < p.x1 && b.x1 > p.x0 && b.y0 < p.y1 && b.y1 > p.y0);
+
+    // Reserve the stars of the focus neighbourhood so labels don't cover them.
+    for (const { n } of candidates) {
+      const { sx, sy } = toScreen(n);
+      const rr = n.r * k + 2;
+      placed.push({ x0: sx - rr, y0: sy - rr, x1: sx + rr, y1: sy + rr });
+    }
+
+    for (const { n, r } of candidates) {
+      const { sx, sy } = toScreen(n);
+      if (!onScreen(sx, sy)) continue;
+      const text = displayLabel(n);
+      const font = n.kind === "feature" || n.id === focus ? FONT_FEATURE : FONT_OTHER;
+      const key = font + text;
+      ctx.font = font;
+      const tw = widthCache.get(key) ?? widthCache.set(key, ctx.measureText(text).width).get(key)!;
+      const th = n.kind === "feature" ? 15 : 14;
+      const gap = n.r * k + 5;
+      const spots: [number, number][] = [
+        [sx + gap, sy - th / 2],
+        [sx - gap - tw, sy - th / 2],
+        [sx - tw / 2, sy - gap - th],
+        [sx - tw / 2, sy + gap],
+        [sx + gap * 0.7, sy - gap * 0.7 - th],
+        [sx + gap * 0.7, sy + gap * 0.7],
+        [sx - gap * 0.7 - tw, sy + gap * 0.7],
+        [sx - gap * 0.7 - tw, sy - gap * 0.7 - th],
+      ];
+      // The focused label always shows; others only where there's room.
+      const spot = spots.find(([lx, ly]) => !hits({ x0: lx - 3, y0: ly - 1, x1: lx + tw + 3, y1: ly + th + 1 })) ?? (r === 0 ? spots[0] : null);
+      if (!spot) continue;
+      const [lx, ly] = spot;
+      placed.push({ x0: lx - 3, y0: ly - 1, x1: lx + tw + 3, y1: ly + th + 1 });
+
+      const color = n.id === sel ? "#ffd0d0" : n.kind === "feature" ? "#ffffff" : KIND_META[n.kind].color;
+      if (n.id === focus) {
+        ctx.fillStyle = n.id === sel ? "rgba(120,20,20,0.85)" : "rgba(20,20,20,0.9)";
+        ctx.strokeStyle = n.id === sel ? "rgba(255,90,90,0.8)" : "rgba(255,255,255,0.25)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(lx - 6, ly - 2, tw + 12, th + 4, 5);
+        ctx.fill();
+        ctx.stroke();
+      } else {
+        // Dark halo keeps text legible over links and stars.
+        ctx.strokeStyle = "rgba(5,5,5,0.92)";
+        ctx.lineWidth = 4;
+        ctx.strokeText(text, lx, ly + th / 2);
+      }
+      ctx.globalAlpha = r <= 2 || r === 3 ? 1 : n.kind === "feature" ? 0.95 : 0.8;
+      ctx.fillStyle = color;
+      ctx.fillText(text, lx, ly + th / 2);
+      ctx.globalAlpha = 1;
+    }
+  };
+}
+
 const otherEnd = (l: GLink, id: string) => {
   const s = typeof l.source === "string" ? l.source : l.source.id;
   const t = typeof l.target === "string" ? l.target : l.target.id;
@@ -242,6 +359,7 @@ export default function FeatureGraph({ data, onOpenFeature }: { data: FeatureMap
 
     let raf = 0;
     let pulse = 0;
+    const drawLabels = makeLabelDrawer(graph.nodes);
     const draw = () => {
       raf = requestAnimationFrame(draw);
       const { selected: sel, hover: hov, hidden: hid, matches: mt } = ui.current;
@@ -284,15 +402,17 @@ export default function FeatureGraph({ data, onOpenFeature }: { data: FeatureMap
         const isFocus = n.id === focus;
         const isNear = near?.has(n.id);
         const isMatch = mt.has(n.id);
-        let alpha = focus ? (isFocus || isNear ? 1 : 0.18) : mt.size ? (isMatch ? 1 : 0.25) : n.kind === "feature" ? 1 : 0.8;
+        let alpha = focus ? (isFocus || isNear ? 1 : 0.1) : mt.size ? (isMatch ? 1 : 0.25) : n.kind === "feature" ? 1 : 0.8;
         ctx.globalAlpha = alpha;
         ctx.fillStyle = n.id === sel ? SELECT : KIND_META[n.kind].color;
         if (n.kind === "feature" && !focus) {
           ctx.shadowColor = "rgba(255,255,255,0.7)";
           ctx.shadowBlur = 10;
         }
+        // Background stars shrink while something is focused.
+        const faded = focus && !isFocus && !isNear;
         ctx.beginPath();
-        ctx.arc(n.x, n.y!, n.r, 0, Math.PI * 2);
+        ctx.arc(n.x, n.y!, faded ? Math.min(n.r, 2.2 / k) : n.r, 0, Math.PI * 2);
         ctx.fill();
         ctx.shadowBlur = 0;
         if (isMatch && !focus) {
@@ -319,21 +439,7 @@ export default function FeatureGraph({ data, onOpenFeature }: { data: FeatureMap
         }
       }
 
-      // labels: features always (when zoomed in enough), focus neighbourhood
-      ctx.font = `${11 / k}px -apple-system, system-ui, sans-serif`;
-      ctx.textBaseline = "middle";
-      for (const n of graph.nodes) {
-        if (!visible(n) || n.x === undefined) continue;
-        const show =
-          n.id === focus ||
-          (near?.has(n.id) && (n.kind === "feature" || near.size < 40)) ||
-          (!focus && n.kind === "feature" && k > 0.42) ||
-          (!focus && mt.has(n.id) && mt.size < 30);
-        if (!show) continue;
-        ctx.globalAlpha = focus && n.id !== focus && !near?.has(n.id) ? 0.3 : n.kind === "feature" ? 0.92 : 0.75;
-        ctx.fillStyle = n.id === sel ? "#ffb3b3" : n.kind === "feature" ? "#ffffff" : KIND_META[n.kind].color;
-        ctx.fillText(n.label.length > 48 ? n.label.slice(0, 46) + "…" : n.label, n.x + n.r + 4 / k, n.y!);
-      }
+      drawLabels(ctx, { focus, sel, near, matches: mt, visible, k, x, y, w, h, dpr });
       ctx.globalAlpha = 1;
     };
     raf = requestAnimationFrame(draw);
@@ -446,17 +552,43 @@ export default function FeatureGraph({ data, onOpenFeature }: { data: FeatureMap
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const focusNode = (id: string) => {
-    const n = byId.get(id);
-    setSelected(id);
-    if (n?.x !== undefined) {
-      const v = view.current;
-      v.k = Math.max(v.k, 0.9);
-      v.x = -n.x * v.k;
-      v.y = -n.y! * v.k;
-      ui.current.dirty = true;
+  // Glide the camera to frame the selected star and its neighbours.
+  useEffect(() => {
+    if (!selected) return;
+    const n = byId.get(selected);
+    if (n?.x === undefined) return;
+    const group = [n, ...[...(neighbours.get(selected) ?? [])].map((id) => byId.get(id)!).filter((m) => m?.x !== undefined && !hidden.has(m.kind))];
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const m of group) {
+      x0 = Math.min(x0, m.x!); y0 = Math.min(y0, m.y!);
+      x1 = Math.max(x1, m.x!); y1 = Math.max(y1, m.y!);
     }
-  };
+    const v = view.current;
+    // Leave room for the search panel (left) and info box (bottom).
+    const availW = Math.max(200, v.w - 360);
+    const availH = Math.max(200, v.h - 240);
+    const tk = Math.min(2.2, Math.max(0.35, Math.min(availW / Math.max(80, x1 - x0 + 220), availH / Math.max(80, y1 - y0 + 120))));
+    const cx = (x0 + x1) / 2;
+    const cy = (y0 + y1) / 2;
+    const target = { x: -cx * tk + 150, y: -cy * tk - 50, k: tk };
+    const from = { x: v.x, y: v.y, k: v.k };
+    const t0 = performance.now();
+    let raf = 0;
+    const step = (t: number) => {
+      const p = Math.min(1, (t - t0) / 650);
+      const e = 1 - Math.pow(1 - p, 3);
+      v.x = from.x + (target.x - from.x) * e;
+      v.y = from.y + (target.y - from.y) * e;
+      v.k = from.k + (target.k - from.k) * e;
+      ui.current.dirty = true;
+      if (p < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected]);
+
+  const focusNode = (id: string) => setSelected(id);
 
   const sel = selected ? byId.get(selected) : null;
   const selNear = sel ? [...(neighbours.get(sel.id) ?? [])].map((id) => byId.get(id)!).filter(Boolean) : [];
