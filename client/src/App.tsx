@@ -188,7 +188,7 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <span className="brand">
-          <span className="brand-dot" /> SuperQA
+          <span className="brand-dot" />
         </span>
         <span className="workspace-label">{repo ? repo.label : "Connections"}</span>
         <span className={`conn ${connected ? "on" : "off"}`}>{connected ? "connected" : "offline"}</span>
