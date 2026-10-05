@@ -242,6 +242,34 @@ body {
 .web-label.endpoint { fill: var(--warn); font-family: var(--mono); font-size: 10px; }
 .web-endpoint { fill: var(--surface); stroke: var(--warn); stroke-width: 1; opacity: 0.95; }
 .web-bridge { fill: none; stroke: var(--warn); stroke-width: 1; opacity: 0.5; }
+/* connections graph (obsidian-style) */
+.graph-wrap { flex: 1; min-height: 0; position: relative; background: var(--bg); }
+.graph-canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+.graph-panel {
+  position: absolute; top: 14px; right: 14px; width: 210px; z-index: 2;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  padding: 12px 14px; font-size: 12px; color: var(--ink-soft);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+}
+.graph-panel h4 { margin: 0 0 8px; font-size: 13px; color: var(--ink); }
+.graph-section { border-top: 1px solid var(--line); padding: 8px 0; }
+.graph-section-title { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-faint); margin-bottom: 6px; }
+.graph-row { display: flex; align-items: center; gap: 7px; padding: 2.5px 0; cursor: pointer; }
+.graph-row.static { cursor: default; color: var(--ink-faint); }
+.graph-row input[type="checkbox"] { accent-color: var(--accent); margin: 0; }
+.graph-row select {
+  margin-left: auto; background: var(--surface-2); color: var(--ink); border: 1px solid var(--line);
+  border-radius: 5px; font-size: 11.5px; padding: 1px 4px;
+}
+.graph-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.graph-swatch { width: 14px; height: 3px; border-radius: 2px; display: inline-block; flex-shrink: 0; }
+.graph-reset {
+  margin-top: 6px; width: 100%; background: var(--surface-2); color: var(--ink-soft);
+  border: 1px solid var(--line); border-radius: 6px; padding: 4px 0; cursor: pointer; font-size: 11.5px;
+}
+.graph-reset:hover { color: var(--ink); }
+.graph-counts { border-top: 1px solid var(--line); padding-top: 8px; font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); }
+
 /* connections view */
 .web-legend {
   position: absolute; top: 10px; left: 14px; z-index: 2;

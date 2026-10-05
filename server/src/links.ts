@@ -15,6 +15,7 @@ export interface HubNode {
   label: string;
   files: number;
   tests?: number;
+  items?: string[]; // member file/page paths (relative to repo root)
 }
 
 export interface TopicLink {
@@ -180,10 +181,16 @@ export function buildConnections(): Connections {
 
   const nodes: Record<string, HubNode[]> = { [docsKey]: [] };
   for (const [section, info] of docs) {
-    nodes[docsKey].push({ dir: section, label: section, files: info.pages.length });
+    nodes[docsKey].push({ dir: section, label: section, files: info.pages.length, items: info.pages.slice(0, 80) });
   }
   for (const [key, dirs] of testDirs) {
-    nodes[key] = [...dirs.entries()].map(([dir, d]) => ({ dir, label: dir, files: d.files.length, tests: d.tests }));
+    nodes[key] = [...dirs.entries()].map(([dir, d]) => ({
+      dir,
+      label: dir,
+      files: d.files.length,
+      tests: d.tests,
+      items: d.files.slice(0, 80),
+    }));
   }
 
   // endpoint links: same normalized path hit by both suites
