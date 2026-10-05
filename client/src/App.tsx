@@ -4,7 +4,7 @@ import { api, WS_URL } from "./net";
 import Term, { disposeTerm } from "./components/Term";
 import Preview from "./components/Preview";
 import TestTree from "./components/TestTree";
-import SpiderWeb from "./components/SpiderWeb";
+import SuiteCoverage from "./components/SuiteCoverage";
 import FeatureMap from "./components/FeatureMap";
 import AddWorkspace from "./components/AddWorkspace";
 import ContextMenu, { MenuIcons } from "./components/ContextMenu";
@@ -34,7 +34,7 @@ const newTabId = (repo: string) => `${repo}:${tabSeq++}:${Date.now() % 100000}`;
 export default function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [view, setView] = useState<View>("");
-  const [testTab, setTestTab] = useState<"tree" | "web">("tree");
+  const [testTab, setTestTab] = useState<"tree" | "coverage">("tree");
   const [connected, setConnected] = useState(false);
   const [split, setSplit] = useState<number>(() => {
     const saved = Number(localStorage.getItem("qualitylab.split"));
@@ -686,12 +686,16 @@ export default function App() {
                       <button className={testTab === "tree" ? "active" : ""} onClick={() => setTestTab("tree")}>
                         Tests
                       </button>
-                      <button className={testTab === "web" ? "active" : ""} onClick={() => setTestTab("web")}>
-                        Web
+                      <button className={testTab === "coverage" ? "active" : ""} onClick={() => setTestTab("coverage")}>
+                        Coverage
                       </button>
                       <button className="pane-collapse" title="Hide panel" onClick={() => hideRight(true)}>»</button>
                     </nav>
-                    {testTab === "tree" ? <TestTree repo={view} /> : <SpiderWeb repos={[view]} />}
+                    {testTab === "tree" ? (
+                      <TestTree repo={view} />
+                    ) : (
+                      <SuiteCoverage key={view} suite={repo?.kind === "pytest" ? "api" : "e2e"} repoKey={view} />
+                    )}
                   </>
                 )}
               </section>
