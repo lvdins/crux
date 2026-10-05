@@ -1,0 +1,116 @@
+{
+  "features": [
+    {
+      "key": "users-and-authentication",
+      "label": "Users and authentication",
+      "description": "Sign in with email code, Google or password, and manage user accounts and permissions.",
+      "e2e": ["tests/users"],
+      "api": ["tests/dashboard", "tests/auth_contracts", "tests/rbac_contracts"]
+    },
+    {
+      "key": "projects",
+      "label": "Projects",
+      "description": "Create, find, share, download and manage property projects and their processing status.",
+      "e2e": ["tests/projects"],
+      "api": ["tests/dashboard", "tests/public"]
+    },
+    {
+      "key": "floor-plans",
+      "label": "Floor plans",
+      "description": "Edit 2D and 3D floor plans showing the property layout and measurements.",
+      "e2e": ["tests/floorplan"],
+      "api": ["tests/dashboard"]
+    },
+    {
+      "key": "virtual-tours",
+      "label": "Virtual tours",
+      "description": "Panoramas and virtual tours that let viewers look around the property.",
+      "e2e": ["tests/virtualtour", "tests/panorama"],
+      "api": ["tests/dashboard"]
+    },
+    {
+      "key": "still-photos",
+      "label": "Still photos",
+      "description": "HDR photos of rooms and exteriors, with AI Studio staging and lighting edits.",
+      "e2e": ["tests/still"],
+      "api": ["tests/dashboard"]
+    },
+    {
+      "key": "video",
+      "label": "Video",
+      "description": "Tour, cinematic and drone videos presenting a moving view of the property.",
+      "e2e": ["tests/video"],
+      "api": ["tests/dashboard"]
+    },
+    {
+      "key": "property-website",
+      "label": "Property website",
+      "description": "Publish property details and content together on a shareable property website.",
+      "e2e": ["tests/propertyWebsite"],
+      "api": ["tests/dashboard"]
+    },
+    {
+      "key": "billing",
+      "label": "Billing",
+      "description": "Review invoices, subscriptions, project usage, AI credits and one-time fees.",
+      "e2e": ["tests/billing"],
+      "api": ["tests/dashboard"]
+    },
+    {
+      "key": "analytics-and-leads",
+      "label": "Analytics and leads",
+      "description": "Review content view analytics and follow up tour enquiries and incoming leads.",
+      "e2e": ["tests/analytics", "tests/leads"],
+      "api": ["tests/dashboard"]
+    },
+    {
+      "key": "marketing",
+      "label": "Marketing",
+      "description": "Listing Spotlight content, social campaigns and marketing material for property listings.",
+      "e2e": ["tests/listingSpotlight"],
+      "api": ["tests/sparks"]
+    },
+    {
+      "key": "integrations",
+      "label": "Integrations",
+      "description": "Connect CRM integrations such as Apex27, Apimo and Propstack to send assets to listings.",
+      "e2e": ["tests/integrations"],
+      "api": ["tests/dashboard", "tests/public"]
+    },
+    {
+      "key": "workspace-management",
+      "label": "Workspace management",
+      "description": "Manage workspaces, user invites, cameras and workspace-wide presets for future projects.",
+      "e2e": ["tests/invites", "tests/cameras", "tests/presets"],
+      "api": ["tests/dashboard"]
+    },
+    {
+      "key": "camera-returns",
+      "label": "Camera returns",
+      "description": "Return a camera using the link sent by Giraffe360, by shipping or drop-off.",
+      "e2e": ["tests/cameraReturns"],
+      "api": ["tests/portal"]
+    },
+    {
+      "key": "getting-started",
+      "label": "Getting started",
+      "description": "Demo accounts, new user onboarding and ordering a camera through the Dashboard checkout.",
+      "e2e": ["tests/demo", "tests/onboarding", "tests/ecommerce"],
+      "api": ["tests/dashboard"]
+    },
+    {
+      "key": "referrals",
+      "label": "Referrals",
+      "description": "Refer a colleague, track referral status and claim referral rewards.",
+      "e2e": ["tests/referrals"],
+      "api": ["tests/dashboard"]
+    },
+    {
+      "key": "console-admin",
+      "label": "Console admin",
+      "description": "Internal console for administering companies, billing, fees, devices and virtual tours.",
+      "e2e": [],
+      "api": ["tests/console"]
+    }
+  ]
+}

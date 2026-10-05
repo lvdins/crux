@@ -114,19 +114,16 @@ body {
 }
 .term-tab-add:hover { color: var(--ink); background: var(--surface-2); }
 
-/* agent strip — like Superset's launcher row */
-.agent-strip {
-  display: flex; align-items: center; gap: 2px; padding: 4px 8px;
-  border-bottom: 1px solid var(--line); background: var(--bg); flex-shrink: 0;
+/* agent launcher pills (top bar) */
+.agent-buttons { display: flex; gap: 7px; }
+.agent-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: var(--surface-2); color: var(--ink); border: 1px solid var(--line);
+  border-radius: 99px; padding: 4px 14px; font: inherit; font-size: 12.5px; cursor: pointer;
 }
-.agent-strip button {
-  display: inline-flex; align-items: center; gap: 6px;
-  background: none; border: none; border-radius: 6px; color: var(--ink-soft);
-  font: inherit; font-size: 12.5px; padding: 4px 10px; cursor: pointer;
-}
-.agent-strip button:hover:not(:disabled) { background: var(--surface-2); color: var(--ink); }
-.agent-strip button:disabled { opacity: 0.35; cursor: default; }
-.agent-strip svg { width: 13px; height: 13px; }
+.agent-btn:hover:not(:disabled) { border-color: var(--ink-soft); }
+.agent-btn:disabled { opacity: 0.4; cursor: default; }
+.agent-btn svg { width: 13px; height: 13px; }
 
 .term { flex: 1; min-height: 0; padding: 8px 4px 8px 10px; }
 .term .xterm { height: 100%; }

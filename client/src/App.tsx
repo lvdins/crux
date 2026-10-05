@@ -192,6 +192,14 @@ export default function App() {
           <img src="/giraffe.png" alt="QualityLab" className="brand-logo" />
         </span>
         <span className="workspace-label">{repo ? repo.label : "Connections"}</span>
+        <div className="agent-buttons">
+          <button className="agent-btn" disabled={!repo} title={repo ? `Run claude in ${repo.label}` : "Pick a workspace first"} onClick={() => launchAgent("claude")}>
+            <ClaudeLogo /> Claude
+          </button>
+          <button className="agent-btn" disabled={!repo} title={repo ? `Run codex in ${repo.label}` : "Pick a workspace first"} onClick={() => launchAgent("codex")}>
+            <CodexLogo /> Codex
+          </button>
+        </div>
         <span className={`conn ${connected ? "on" : "off"}`}>{connected ? "connected" : "offline"}</span>
       </header>
       <div className="body">
@@ -262,14 +270,6 @@ export default function App() {
                 ))}
                 <button className="term-tab-add" title="New terminal" onClick={() => addTab(view)}>
                   +
-                </button>
-              </div>
-              <div className="agent-strip">
-                <button title={`Run claude in ${repo?.label}`} onClick={() => launchAgent("claude")}>
-                  <ClaudeLogo /> Claude
-                </button>
-                <button title={`Run codex in ${repo?.label}`} onClick={() => launchAgent("codex")}>
-                  <CodexLogo /> Codex
                 </button>
               </div>
               {(tabs[view] ?? [])

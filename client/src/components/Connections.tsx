@@ -35,10 +35,18 @@ interface EndpointLink {
   e2e: string[];
   api: string[];
 }
+interface FeatureLink {
+  key: string;
+  label: string;
+  description: string;
+  e2e: string[];
+  api: string[];
+}
 interface Data {
   nodes: Record<string, HubNode[]>;
   topicLinks: TopicLink[];
   endpointLinks: EndpointLink[];
+  featureLinks: FeatureLink[];
 }
 
 interface GNode {
@@ -57,17 +65,16 @@ interface GNode {
 interface GEdge {
   source: string | GNode;
   target: string | GNode;
-  kind: "member" | "topic" | "endpoint";
+  kind: "member" | "topic" | "endpoint" | "feature";
   title?: string;
 }
 
 const REPO_COLORS: Record<string, string> = {
-  docs: "#c9c9c9",
   e2e: "#7ec98f",
   api: "#6fa8dc",
 };
 const HUB_COLOR = "#a88bfa";
-const REPO_LABELS: Record<string, string> = { docs: "Product Docs", e2e: "Playwright E2E", api: "API Quality" };
+const REPO_LABELS: Record<string, string> = { e2e: "Playwright E2E", api: "API Quality" };
 
 function shortName(p: string): string {
   const base = p.split("/").pop() ?? p;
@@ -77,7 +84,7 @@ function shortName(p: string): string {
 export default function Connections() {
   const [data, setData] = useState<Data | null>(null);
   const [minWeight, setMinWeight] = useState(2);
-  const [showRepo, setShowRepo] = useState<Record<string, boolean>>({ docs: true, e2e: true, api: true });
+  const [showRepo, setShowRepo] = useState<Record<string, boolean>>({ e2e: true, api: true });
   const [showLabels, setShowLabels] = useState(true);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const simRef = useRef<Simulation<GNode, GEdge> | null>(null);
@@ -139,6 +146,18 @@ export default function Connections() {
         }
       }
     }
+    // feature links: derived from the product docs (qualitylab.features.json)
+    for (const f of data.featureLinks ?? []) {
+      for (const dirA of f.e2e) {
+        for (const dirB of f.api) {
+          const a = hubId("e2e", dirA);
+          const b = hubId("api", dirB);
+          if (have.has(a) && have.has(b)) {
+            edges.push({ source: a, target: b, kind: "feature", title: `${f.label} — ${f.description}` });
+          }
+        }
+      }
+    }
     return { nodes, edges };
   }, [data, minWeight, showRepo]);
 
@@ -154,8 +173,8 @@ export default function Connections() {
         "link",
         forceLink<GNode, GEdge>(state.edges)
           .id((d) => d.id)
-          .distance((e) => (e.kind === "member" ? 26 : e.kind === "endpoint" ? 150 : 120))
-          .strength((e) => (e.kind === "member" ? 0.7 : 0.25)),
+          .distance((e) => (e.kind === "member" ? 26 : e.kind === "feature" ? 130 : e.kind === "endpoint" ? 150 : 120))
+          .strength((e) => (e.kind === "member" ? 0.7 : e.kind === "feature" ? 0.3 : 0.25)),
       )
       .force("charge", forceManyBody<GNode>().strength((d) => (d.kind === "hub" ? -160 : -14)).theta(0.9))
       .force("collide", forceCollide<GNode>((d) => d.r + 2))
@@ -174,8 +193,13 @@ export default function Connections() {
     }
 
     const css = getComputedStyle(document.documentElement);
-    const edgeColor = { member: "#2c2c2c", topic: "#2f5c43", endpoint: "#7a5a33" };
-    const edgeHi = { member: "#555555", topic: css.getPropertyValue("--accent").trim() || "#3ecf8e", endpoint: "#d9a05b" };
+    const edgeColor = { member: "#2c2c2c", topic: "#2f5c43", endpoint: "#7a5a33", feature: "#5d4e96" };
+    const edgeHi = {
+      member: "#555555",
+      topic: css.getPropertyValue("--accent").trim() || "#3ecf8e",
+      endpoint: "#d9a05b",
+      feature: "#a88bfa",
+    };
 
     let raf = 0;
     const render = () => {
@@ -364,6 +388,7 @@ export default function Connections() {
         </div>
         <div className="graph-section">
           <span className="graph-section-title">Links</span>
+          <div className="graph-row static"><i className="graph-swatch" style={{ background: "#a88bfa" }} /> feature (from docs)</div>
           <div className="graph-row static"><i className="graph-swatch" style={{ background: "#d9a05b" }} /> shared endpoint</div>
           <div className="graph-row static"><i className="graph-swatch" style={{ background: "#3ecf8e" }} /> shared topic</div>
           <label className="graph-row">
