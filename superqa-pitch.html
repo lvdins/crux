@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SuperQA — one workbench for QA docs & tests</title>
+<style>
+  :root {
+    --bg: #fafbf9;
+    --surface: #ffffff;
+    --surface-2: #f1f4f0;
+    --ink: #1c2420;
+    --ink-soft: #55615a;
+    --ink-faint: #8a958e;
+    --line: #dde3dd;
+    --accent: #0e9f6e;
+    --accent-ink: #0a7a55;
+    --accent-soft: #e2f4ec;
+    --warn: #b45309;
+    --warn-soft: #fdf1e0;
+    --fail: #c0392b;
+    --chip-bg: #eef2ee;
+    --code-bg: #10251c;
+    --code-ink: #c8e6d6;
+    --shadow: 0 1px 2px rgba(28,36,32,.06), 0 8px 24px rgba(28,36,32,.07);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101511;
+      --surface: #171d18;
+      --surface-2: #1d241e;
+      --ink: #e4eae5;
+      --ink-soft: #a4b0a8;
+      --ink-faint: #6d7a71;
+      --line: #2a332c;
+      --accent: #2fc98f;
+      --accent-ink: #4fd8a3;
+      --accent-soft: #15362a;
+      --warn: #e0a04a;
+      --warn-soft: #33270f;
+      --fail: #e06c5c;
+      --chip-bg: #212a23;
+      --code-bg: #0c1b14;
+      --code-ink: #b9dcc9;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #101511; --surface: #171d18; --surface-2: #1d241e;
+    --ink: #e4eae5; --ink-soft: #a4b0a8; --ink-faint: #6d7a71;
+    --line: #2a332c; --accent: #2fc98f; --accent-ink: #4fd8a3;
+    --accent-soft: #15362a; --warn: #e0a04a; --warn-soft: #33270f;
+    --fail: #e06c5c; --chip-bg: #212a23;
+    --code-bg: #0c1b14; --code-ink: #b9dcc9;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+  }
+  :root[data-theme="light"] {
+    --bg: #fafbf9; --surface: #ffffff; --surface-2: #f1f4f0;
+    --ink: #1c2420; --ink-soft: #55615a; --ink-faint: #8a958e;
+    --line: #dde3dd; --accent: #0e9f6e; --accent-ink: #0a7a55;
+    --accent-soft: #e2f4ec; --warn: #b45309; --warn-soft: #fdf1e0;
+    --fail: #c0392b; --chip-bg: #eef2ee;
+    --code-bg: #10251c; --code-ink: #c8e6d6;
+    --shadow: 0 1px 2px rgba(28,36,32,.06), 0 8px 24px rgba(28,36,32,.07);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+
+  .wrap { max-width: 920px; margin: 0 auto; padding: 0 24px; }
+
+  /* ---------- hero ---------- */
+  header { padding: 72px 0 48px; }
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent-ink); margin: 0 0 16px;
+  }
+  .eyebrow::before { content: "● "; color: var(--accent); }
+  h1 {
+    font-size: clamp(30px, 5vw, 46px);
+    line-height: 1.12; letter-spacing: -.02em; font-weight: 750;
+    margin: 0 0 18px; text-wrap: balance;
+  }
+  h1 em { font-style: normal; color: var(--accent-ink); }
+  .lede {
+    font-size: 19px; line-height: 1.6; color: var(--ink-soft);
+    max-width: 44em; margin: 0;
+  }
+
+  /* ---------- mockup ---------- */
+  .mockup {
+    margin: 48px 0 0;
+    border: 1px solid var(--line); border-radius: 10px;
+    background: var(--surface); box-shadow: var(--shadow);
+    overflow: hidden; font-size: 12.5px;
+  }
+  .mock-titlebar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 14px; border-bottom: 1px solid var(--line);
+    background: var(--surface-2);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px;
+    color: var(--ink-faint);
+  }
+  .dots { display: flex; gap: 5px; }
+  .dots i { width: 9px; height: 9px; border-radius: 50%; background: var(--line); display: block; }
+  .mock-tabs { margin-left: 12px; display: flex; gap: 2px; }
+  .mock-tab { padding: 3px 10px; border-radius: 5px; }
+  .mock-tab.active { background: var(--surface); color: var(--ink); border: 1px solid var(--line); }
+  .mock-body { display: grid; grid-template-columns: minmax(230px, 5fr) minmax(300px, 7fr); min-height: 350px; }
+  @media (max-width: 680px) { .mock-body { grid-template-columns: 1fr; } .mock-right { border-left: none !important; border-top: 1px solid var(--line); } }
+
+  .mock-left { padding: 16px; display: flex; flex-direction: column; gap: 12px; border-right: 1px solid var(--line); }
+  .msg { max-width: 92%; padding: 9px 12px; border-radius: 10px; line-height: 1.5; }
+  .msg.user { align-self: flex-end; background: var(--accent-soft); color: var(--ink); border-bottom-right-radius: 3px; }
+  .msg.agent { align-self: flex-start; background: var(--surface-2); border: 1px solid var(--line); border-bottom-left-radius: 3px; }
+  .msg .who {
+    display: block; font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--ink-faint); margin-bottom: 3px;
+  }
+  .mock-input {
+    margin-top: auto; border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 12px; color: var(--ink-faint);
+    display: flex; justify-content: space-between; gap: 8px; align-items: center;
+  }
+  .model-pill {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 10px;
+    background: var(--chip-bg); border-radius: 99px; padding: 2px 8px; color: var(--ink-soft);
+    white-space: nowrap;
+  }
+
+  .mock-right { padding: 16px; background: var(--surface); }
+  .pane-label {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 10px;
+    letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint);
+    margin: 0 0 10px;
+  }
+  .tree { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; line-height: 1.9; color: var(--ink-soft); }
+  .tree .pass::before { content: "✓ "; color: var(--accent); font-weight: 700; }
+  .tree .fail::before { content: "✕ "; color: var(--fail); font-weight: 700; }
+  .tree .draft::before { content: "◌ "; color: var(--warn); }
+  .tree .indent1 { padding-left: 18px; }
+  .tree .indent2 { padding-left: 36px; }
+  .tree .link { color: var(--ink-faint); font-size: 11px; }
+  .preview-doc {
+    margin-top: 14px; border: 1px solid var(--line); border-radius: 8px;
+    padding: 12px 14px; background: var(--surface-2);
+  }
+  .preview-doc h4 { margin: 0 0 6px; font-size: 13px; }
+  .preview-doc p { margin: 0; font-size: 12px; color: var(--ink-soft); }
+  .preview-doc .img-ph {
+    margin-top: 10px; height: 54px; border-radius: 6px;
+    background: repeating-linear-gradient(135deg, var(--chip-bg), var(--chip-bg) 8px, var(--surface) 8px, var(--surface) 16px);
+    border: 1px dashed var(--line);
+    display: flex; align-items: center; justify-content: center;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 10px; color: var(--ink-faint);
+  }
+  .caption { font-size: 13px; color: var(--ink-faint); margin: 12px 0 0; text-align: center; }
+
+  /* ---------- sections ---------- */
+  section { padding: 44px 0 8px; }
+  h2 {
+    font-size: 24px; letter-spacing: -.015em; font-weight: 700;
+    margin: 0 0 8px; text-wrap: balance;
+  }
+  .kicker {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--ink-faint); margin: 0 0 8px;
+  }
+  section > p { max-width: 46em; color: var(--ink-soft); margin: 10px 0; }
+  section > p strong { color: var(--ink); }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; margin: 22px 0 10px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    padding: 18px 18px 16px;
+  }
+  .card h3 { margin: 0 0 6px; font-size: 15.5px; font-weight: 650; }
+  .card p { margin: 0; font-size: 14px; color: var(--ink-soft); line-height: 1.55; }
+  .card .tag {
+    display: inline-block; font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 10.5px; background: var(--chip-bg); color: var(--ink-soft);
+    border-radius: 5px; padding: 2px 7px; margin-bottom: 10px;
+  }
+  .card.pain { border-left: 3px solid var(--warn); }
+  .card.win { border-left: 3px solid var(--accent); }
+
+  table { border-collapse: collapse; width: 100%; margin: 20px 0 8px; font-size: 14px; }
+  .table-scroll { overflow-x: auto; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px;
+    letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); font-weight: 600;
+  }
+  td:first-child { white-space: nowrap; font-weight: 600; }
+  td { color: var(--ink-soft); }
+  td .mono { font-size: 12.5px; }
+
+  .flow {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch;
+    margin: 22px 0 10px;
+  }
+  .flow .node {
+    flex: 1 1 150px; background: var(--surface); border: 1px solid var(--line);
+    border-radius: 9px; padding: 13px 14px; position: relative;
+  }
+  .flow .node h4 { margin: 0 0 4px; font-size: 13.5px; }
+  .flow .node p { margin: 0; font-size: 12.5px; color: var(--ink-soft); line-height: 1.5; }
+  .flow .node .n {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 10px;
+    color: var(--accent-ink); letter-spacing: .1em; text-transform: uppercase;
+    display: block; margin-bottom: 6px;
+  }
+
+  .phases { display: grid; gap: 12px; margin: 22px 0 10px; }
+  .phase {
+    display: grid; grid-template-columns: 120px 1fr; gap: 16px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px 18px;
+  }
+  @media (max-width: 560px) { .phase { grid-template-columns: 1fr; gap: 6px; } }
+  .phase .when {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px;
+    color: var(--accent-ink); font-weight: 600; padding-top: 2px;
+  }
+  .phase h3 { margin: 0 0 4px; font-size: 15px; }
+  .phase p { margin: 0; font-size: 14px; color: var(--ink-soft); }
+
+  .ask {
+    margin: 48px 0 0; background: var(--code-bg); color: var(--code-ink);
+    border-radius: 12px; padding: 30px 32px;
+  }
+  .ask h2 { color: #fff; margin-top: 0; }
+  :root[data-theme="light"] .ask h2 { color: #fff; }
+  .ask p { color: var(--code-ink); max-width: 46em; }
+  .ask .mono-line {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px;
+    opacity: .75; margin-top: 18px;
+  }
+
+  footer { padding: 40px 0 56px; color: var(--ink-faint); font-size: 13px; }
+</style>
+</head>
+<body class="auto">
+
+<div class="wrap">
+<header>
+  <p class="eyebrow">Internal pitch · QA Tooling · Oct 2026</p>
+  <h1>SuperQA: write docs and tests in chat, <em>see them live</em> next to it.</h1>
+  <p class="lede">One browser workbench where QA talks to Claude or Codex on the left and watches the result render on the right — a product doc taking shape, a Playwright run in an embedded browser, or the test tree showing what covers what. The agents already do the work; today we just can't see it.</p>
+
+  <div class="mockup" role="img" aria-label="Mockup of the SuperQA split view: chat with an agent on the left, test tree and doc preview on the right">
+    <div class="mock-titlebar">
+      <span class="dots"><i></i><i></i><i></i></span>
+      <span>superqa.giraffe360.dev</span>
+      <span class="mock-tabs">
+        <span class="mock-tab active">Checkout flow</span>
+        <span class="mock-tab">Upload API</span>
+      </span>
+    </div>
+    <div class="mock-body">
+      <div class="mock-left">
+        <div class="msg user"><span class="who">dins</span>Add an E2E test for subscription cancel and document the flow.</div>
+        <div class="msg agent"><span class="who">claude · agent</span>Wrote <span class="mono">cancel-subscription.spec.ts</span> reusing the <span class="mono">billing</span> fixture, and drafted the doc section. Run is green — preview on the right. Screenshot embedded in the doc.</div>
+        <div class="msg user"><span class="who">dins</span>Link it to the refund API test so the tree shows the dependency.</div>
+        <div class="mock-input"><span>Message the agent…</span><span class="model-pill">claude · switch to codex</span></div>
+      </div>
+      <div class="mock-right">
+        <p class="pane-label">Test tree · checkout</p>
+        <div class="tree">
+          <div class="pass">checkout/</div>
+          <div class="indent1 pass">purchase.spec.ts <span class="link">→ POST /orders</span></div>
+          <div class="indent1 pass">cancel-subscription.spec.ts <span class="link">→ DELETE /subscriptions/:id</span></div>
+          <div class="indent2 draft">refund linkage <span class="link">→ api/test_refunds.py</span></div>
+          <div class="indent1 fail">promo-code.spec.ts <span class="link">flaky · 2 retries</span></div>
+        </div>
+        <div class="preview-doc">
+          <h4>Cancelling a subscription</h4>
+          <p>Users can cancel from Billing → Plan. Cancellation takes effect at period end…</p>
+          <div class="img-ph">screenshot: billing page (auto-captured from test run)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="caption">The split view: conversation drives the work, the right pane proves it — live test tree, doc preview, embedded browser.</p>
+</header>
+
+<section>
+  <p class="kicker">The problem</p>
+  <h2>QA's work lives in four repos and zero shared views</h2>
+  <p>Everything QA produces today is built through terminal agent sessions across four codebases — and reviewed blind:</p>
+  <div class="cards">
+    <div class="card pain">
+      <span class="tag">product-docs</span>
+      <h3>Docs written without the visual</h3>
+      <p>MkDocs content is edited as raw Markdown; you only see the rendered page (and whether the screenshot fits) after a separate build step.</p>
+    </div>
+    <div class="card pain">
+      <span class="tag">playwright</span>
+      <h3>E2E tests with no map</h3>
+      <p>Dozens of specs, fixtures, and page objects — but no view of what covers which flow, what's flaky, or what a new test should reuse.</p>
+    </div>
+    <div class="card pain">
+      <span class="tag">web-service-quality</span>
+      <h3>API tests disconnected from E2E</h3>
+      <p>The pytest suite exercises the same endpoints the Playwright specs hit, but nothing records that relationship. Coverage overlaps and gaps are invisible.</p>
+    </div>
+    <div class="card pain">
+      <span class="tag">platform-lab (core)</span>
+      <h3>Expertise locked in the terminal</h3>
+      <p>All of this runs through CLI agent sessions. Anyone not fluent in that workflow — new QA hires, PMs checking a flow — is locked out.</p>
+    </div>
+  </div>
+  <p>The cost is concrete: every doc update means a write-build-check loop, every new test risks duplicating coverage nobody can see, and onboarding a QA engineer means teaching four repos plus a terminal workflow before they ship anything.</p>
+</section>
+
+<section>
+  <p class="kicker">The idea</p>
+  <h2>A web workbench over the repos we already have</h2>
+  <p>SuperQA is a browser app — think Superset's workspace model, aimed at QA. It doesn't replace the four repos; it mounts them. Each chat session is an agent (Claude or Codex, switchable per task) working in a real checkout, and the right pane renders what the agent just changed.</p>
+  <div class="cards">
+    <div class="card win">
+      <span class="tag">surface 1</span>
+      <h3>Doc studio</h3>
+      <p>Chat on the left, live MkDocs render on the right. The agent edits Markdown, captures screenshots from real test runs, and you approve what readers will actually see. Output: a normal PR to <span class="mono">product-docs</span>.</p>
+    </div>
+    <div class="card win">
+      <span class="tag">surface 2</span>
+      <h3>Test studio</h3>
+      <p>Describe a flow; the agent writes the Playwright spec or pytest case, reusing existing fixtures and page objects it can see. Runs execute live in an embedded browser pane with trace and retry info inline.</p>
+    </div>
+    <div class="card win">
+      <span class="tag">surface 3</span>
+      <h3>The test tree</h3>
+      <p>An interactive graph of what connects to what: feature → E2E spec → API test → endpoint (from the OpenAPI schema) → doc page. Click a node to see its tests, its last run, and what breaks if it changes.</p>
+    </div>
+  </div>
+  <p><strong>The test tree is the moat.</strong> Chat-plus-preview is table stakes; the graph is what no off-the-shelf tool gives us, because it's built from our own repos: Playwright annotations, pytest markers, and the Giraffe360 OpenAPI schemas we already serve over MCP. It turns "do we cover refunds?" from an archaeology task into a click.</p>
+</section>
+
+<section>
+  <p class="kicker">How it works</p>
+  <h2>Thin product, heavy reuse</h2>
+  <div class="flow">
+    <div class="node"><span class="n">frontend</span><h4>Web app</h4><p>Chat UI, split preview pane, graph view (React + a graph lib). Platform-lab's Tauri shell is a candidate base.</p></div>
+    <div class="node"><span class="n">agent layer</span><h4>Claude Agent SDK / Codex</h4><p>Each session drives a headless agent in a repo worktree. Model choice is a dropdown, not a commitment.</p></div>
+    <div class="node"><span class="n">runners</span><h4>Existing suites, unchanged</h4><p>Playwright and pytest run as they do today; SuperQA consumes their JSON reports and traces.</p></div>
+    <div class="node"><span class="n">index</span><h4>Coverage graph</h4><p>Static parse of specs + markers, joined with the OpenAPI schema index. Rebuilt on merge; rendered as the tree.</p></div>
+  </div>
+  <p>Everything merges back through normal PRs — SuperQA is a front end on the existing workflow, not a parallel source of truth. If the product dies, the repos are untouched.</p>
+</section>
+
+<section>
+  <p class="kicker">Why now</p>
+  <h2>The hard parts already exist</h2>
+  <p>A year ago this was a platform project. Today the agent loop is a product feature of the Claude Agent SDK and Codex; the embedded-browser pattern is proven by Superset and Claude Code's web UI; and our OpenAPI schemas are already queryable over MCP. What's left to build is the thing that's actually ours: the QA-shaped workspace and the coverage graph.</p>
+</section>
+
+<section>
+  <p class="kicker">Plan</p>
+  <h2>Three phases, value at each step</h2>
+  <div class="phases">
+    <div class="phase">
+      <span class="when">Weeks 1–3</span>
+      <div><h3>Prototype: Doc studio</h3><p>Chat + live MkDocs preview over <span class="mono">product-docs</span>, Claude only, single user. Success test: one real doc update shipped end-to-end without touching a terminal.</p></div>
+    </div>
+    <div class="phase">
+      <span class="when">Weeks 4–8</span>
+      <div><h3>Test studio + first tree</h3><p>Playwright sessions with embedded browser runs; static coverage index over the E2E and API suites rendered as a clickable tree. Codex added as second model.</p></div>
+    </div>
+    <div class="phase">
+      <span class="when">Quarter 2</span>
+      <div><h3>Team rollout</h3><p>Multi-user sessions, run history, flake tracking on the tree, PM-readable coverage view. Decide then: internal tool forever, or something bigger.</p></div>
+    </div>
+  </div>
+</section>
+
+<div class="ask">
+  <h2>The ask</h2>
+  <p>One engineer-quarter and QA's own dogfooding time. Phase 1 is deliberately small — three weeks to a working doc studio on a real repo. If writing one doc through SuperQA isn't obviously better than the terminal loop, we stop there and have lost three weeks, not a roadmap.</p>
+  <p class="mono-line">superqa · pitch v1 · dins.kalnins@giraffe360.com</p>
+</div>
+
+<footer>Grounded in the current QA stack: product-docs (MkDocs), playwright (E2E), web-service-quality (pytest API), platform-lab (core). Mockup data illustrative.</footer>
+</div>
+</body>
+</html>
