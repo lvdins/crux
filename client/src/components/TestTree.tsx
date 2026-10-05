@@ -54,7 +54,7 @@ function RepoSection({ tree, filter }: { tree: RepoTree; filter: string }) {
   );
 }
 
-export default function TestTree() {
+export default function TestTree({ repo }: { repo?: string }) {
   const [data, setData] = useState<TreeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -69,7 +69,11 @@ export default function TestTree() {
   };
   useEffect(load, []);
 
-  const shared = useMemo(() => data?.shared ?? [], [data]);
+  const shared = useMemo(() => (repo ? [] : data?.shared ?? []), [data, repo]);
+  const trees = useMemo(
+    () => (data ? data.trees.filter((t) => !repo || t.key === repo) : []),
+    [data, repo],
+  );
 
   if (error) return <div className="tree"><p className="error-line">{error}</p></div>;
   if (!data) return <div className="tree"><p className="meta-line">Scanning test suites…</p></div>;
@@ -102,7 +106,7 @@ export default function TestTree() {
             ))}
         </div>
       )}
-      {data.trees.map((t) => (
+      {trees.map((t) => (
         <RepoSection key={t.key} tree={t} filter={filter} />
       ))}
     </div>

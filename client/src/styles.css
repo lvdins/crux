@@ -47,8 +47,47 @@ body {
 .conn.on { color: var(--accent-ink); }
 .conn.off { color: var(--fail); }
 
+.workspace-label { color: var(--ink-soft); font-size: 13px; }
+
 /* layout */
-.panes { display: grid; grid-template-columns: minmax(360px, 5fr) minmax(420px, 7fr); flex: 1; min-height: 0; }
+.body { display: flex; flex: 1; min-height: 0; }
+.panes { display: grid; grid-template-columns: minmax(360px, 5fr) minmax(420px, 7fr); flex: 1; min-height: 0; min-width: 0; }
+.full-pane { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+/* sidebar */
+.sidebar {
+  width: 176px; flex-shrink: 0; display: flex; flex-direction: column; gap: 2px;
+  padding: 10px 8px; border-right: 1px solid var(--line); background: var(--surface);
+}
+.side-item {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  background: none; border: none; color: var(--ink-soft); font: inherit; font-size: 13px;
+  padding: 9px 10px; border-radius: 8px; cursor: pointer; text-align: left;
+}
+.side-item:hover { background: var(--surface-2); color: var(--ink); }
+.side-item.active { background: var(--accent-soft); color: var(--accent-ink); }
+.side-icon { font-size: 15px; width: 20px; text-align: center; }
+.side-sep { height: 1px; background: var(--line); margin: 8px 6px; }
+
+/* spider web */
+.web-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.web-svg { flex: 1; width: 100%; min-height: 0; }
+.web-ring { fill: none; stroke: var(--line); stroke-width: 0.7; opacity: 0.5; }
+.web-edge { stroke: var(--line); stroke-width: 1; }
+.web-edge.faint { opacity: 0.55; }
+.web-dir { fill: var(--surface-2); stroke: var(--accent); stroke-width: 1.4; cursor: pointer; }
+.web-dir:hover { fill: var(--accent-soft); }
+.web-dir.open { fill: var(--accent-soft); }
+.web-file { fill: var(--accent); opacity: 0.85; }
+.web-center { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.6; }
+.web-center-label { fill: var(--ink); font-size: 13px; font-weight: 650; }
+.web-label { fill: var(--ink-soft); font-size: 10.5px; }
+.web-label.file { font-size: 9px; fill: var(--ink-faint); }
+.web-label.faint, .faint { fill: var(--ink-faint); opacity: 0.9; }
+.web-label.endpoint { fill: var(--warn); font-family: var(--mono); font-size: 10px; }
+.web-endpoint { fill: var(--surface); stroke: var(--warn); stroke-width: 1; opacity: 0.95; }
+.web-bridge { fill: none; stroke: var(--warn); stroke-width: 1; opacity: 0.5; }
+.web-hint { text-align: center; color: var(--ink-faint); font-family: var(--mono); font-size: 10.5px; margin: 4px 0 10px; }
 
 /* chat */
 .chat { display: flex; flex-direction: column; border-right: 1px solid var(--line); min-width: 0; }
