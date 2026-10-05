@@ -189,7 +189,7 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <span className="brand">
-          <span className="brand-dot" />
+          <img src="/giraffe.png" alt="QualityLab" className="brand-logo" />
         </span>
         <span className="workspace-label">{repo ? repo.label : "Connections"}</span>
         <span className={`conn ${connected ? "on" : "off"}`}>{connected ? "connected" : "offline"}</span>
