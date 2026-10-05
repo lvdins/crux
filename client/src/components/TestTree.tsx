@@ -12,9 +12,9 @@ function FileNode({ file, filter }: { file: TestFile; filter: string }) {
 
   return (
     <div className="tree-file">
-      <button className="tree-row" onClick={() => setOpen(!open)}>
+      <button className="tree-row" onClick={() => setOpen(!open)} title={file.path}>
         <span className="twisty">{open ? "▾" : "▸"}</span>
-        <span className="file-path">{file.path}</span>
+        <span className="file-path">{file.path.split("/").pop()}</span>
         <span className="count">{file.tests.length}</span>
       </button>
       {(open || !!filter) && (
@@ -38,8 +38,48 @@ function FileNode({ file, filter }: { file: TestFile; filter: string }) {
   );
 }
 
+function dirOf(path: string): string {
+  const segments = path.split("/");
+  return segments.slice(0, -1).join("/") || "(root)";
+}
+
+function DirSection({ dir, files, filter }: { dir: string; files: TestFile[]; filter: string }) {
+  const [open, setOpen] = useState(false);
+  const matches = (s: string) => s.toLowerCase().includes(filter);
+  const visible = filter
+    ? files.filter((f) => matches(f.path) || f.tests.some((t) => matches(t.title)))
+    : files;
+  if (filter && visible.length === 0) return null;
+  const tests = files.reduce((n, f) => n + f.tests.length, 0);
+  const expanded = open || !!filter;
+  return (
+    <div className="tree-dir">
+      <button className="tree-row dir" onClick={() => setOpen(!open)}>
+        <span className="twisty">{expanded ? "▾" : "▸"}</span>
+        <span className="dir-name">{dir}/</span>
+        <span className="count">{files.length} files · {tests} tests</span>
+      </button>
+      {expanded && (
+        <div className="dir-children">
+          {visible.map((f) => (
+            <FileNode key={f.path} file={f} filter={filter} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RepoSection({ tree, filter }: { tree: RepoTree; filter: string }) {
   const totalTests = tree.files.reduce((n, f) => n + f.tests.length, 0);
+  const groups = useMemo(() => {
+    const map = new Map<string, TestFile[]>();
+    for (const f of tree.files) {
+      const dir = dirOf(f.path);
+      (map.get(dir) ?? map.set(dir, []).get(dir)!).push(f);
+    }
+    return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }, [tree]);
   return (
     <div className="tree-repo">
       <h4>
@@ -47,8 +87,8 @@ function RepoSection({ tree, filter }: { tree: RepoTree; filter: string }) {
         <span className="count">{tree.files.length} files · {totalTests} tests</span>
       </h4>
       {tree.error && <p className="error-line">{tree.error}</p>}
-      {tree.files.map((f) => (
-        <FileNode key={f.path} file={f} filter={filter} />
+      {groups.map(([dir, files]) => (
+        <DirSection key={dir} dir={dir} files={files} filter={filter} />
       ))}
     </div>
   );

@@ -183,6 +183,11 @@ body {
 .tree-repo h4 { margin: 0 0 8px; display: flex; align-items: baseline; gap: 10px; }
 .kind-tag { font-family: var(--mono); font-size: 10.5px; background: var(--accent-soft); color: var(--accent-ink); border-radius: 5px; padding: 1px 7px; }
 .count { font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); margin-left: auto; }
+.tree-dir { margin-bottom: 2px; }
+.tree-row.dir { color: var(--ink); font-weight: 550; padding: 6px; border-radius: 7px; }
+.tree-row.dir:hover { background: var(--surface-2); }
+.dir-name { font-family: var(--mono); font-size: 12.5px; color: var(--accent-ink); }
+.dir-children { margin-left: 14px; border-left: 1px solid var(--line); padding-left: 6px; }
 .tree-file { border-left: 1px solid var(--line); margin-left: 4px; }
 .tree-row {
   display: flex; align-items: center; gap: 7px; width: 100%; text-align: left;
