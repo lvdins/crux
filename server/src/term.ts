@@ -28,12 +28,18 @@ export function attachTerm(repo: string, ws: WebSocket, cols: number, rows: numb
   let entry = terms.get(repo);
   if (!entry) {
     const shell = process.env.SHELL || "/bin/zsh";
+    // Strip Claude-session markers: if the SuperQA server itself was started
+    // from a Claude Code session, child shells would otherwise be treated as
+    // nested sessions (transcript saving off, etc.).
+    const env = Object.fromEntries(
+      Object.entries(process.env).filter(([key]) => !/^CLAUDE/i.test(key)),
+    ) as Record<string, string>;
     const proc = pty.spawn(shell, ["-l"], {
       name: "xterm-256color",
       cols: cols || 100,
       rows: rows || 30,
       cwd: repoCfg.path,
-      env: { ...process.env, TERM: "xterm-256color" } as Record<string, string>,
+      env: { ...env, TERM: "xterm-256color" },
     });
     const e: Entry = { pty: proc, buffer: "", subs: new Set() };
     proc.onData((data) => {
