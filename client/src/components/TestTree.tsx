@@ -43,8 +43,31 @@ function dirOf(path: string): string {
   return segments.slice(0, -1).join("/") || "(root)";
 }
 
-function DirSection({ dir, files, filter }: { dir: string; files: TestFile[]; filter: string }) {
+/** Longest-prefix lookup: "tests/rbac/admin" matches a "tests/rbac" entry. */
+function describeDir(dir: string, descriptions?: Record<string, string>): string | undefined {
+  if (!descriptions) return undefined;
+  let probe = dir;
+  for (;;) {
+    if (descriptions[probe]) return descriptions[probe];
+    const cut = probe.lastIndexOf("/");
+    if (cut === -1) return undefined;
+    probe = probe.slice(0, cut);
+  }
+}
+
+function DirSection({
+  dir,
+  files,
+  filter,
+  description,
+}: {
+  dir: string;
+  files: TestFile[];
+  filter: string;
+  description?: string;
+}) {
   const [open, setOpen] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
   const matches = (s: string) => s.toLowerCase().includes(filter);
   const visible = filter
     ? files.filter((f) => matches(f.path) || f.tests.some((t) => matches(t.title)))
@@ -54,11 +77,24 @@ function DirSection({ dir, files, filter }: { dir: string; files: TestFile[]; fi
   const expanded = open || !!filter;
   return (
     <div className="tree-dir">
-      <button className="tree-row dir" onClick={() => setOpen(!open)}>
+      <div className="tree-row dir" onClick={() => setOpen(!open)} role="button" tabIndex={0}>
         <span className="twisty">{expanded ? "▾" : "▸"}</span>
         <span className="dir-name">{dir}/</span>
+        {description && (
+          <button
+            className={`info-btn ${showInfo ? "on" : ""}`}
+            title={showInfo ? "Hide description" : "What does this folder test?"}
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowInfo(!showInfo);
+            }}
+          >
+            i
+          </button>
+        )}
         <span className="count">{files.length} files · {tests} tests</span>
-      </button>
+      </div>
+      {showInfo && description && <p className="dir-desc">{description}</p>}
       {expanded && (
         <div className="dir-children">
           {visible.map((f) => (
@@ -70,7 +106,15 @@ function DirSection({ dir, files, filter }: { dir: string; files: TestFile[]; fi
   );
 }
 
-function RepoSection({ tree, filter }: { tree: RepoTree; filter: string }) {
+function RepoSection({
+  tree,
+  filter,
+  descriptions,
+}: {
+  tree: RepoTree;
+  filter: string;
+  descriptions?: Record<string, string>;
+}) {
   const totalTests = tree.files.reduce((n, f) => n + f.tests.length, 0);
   const groups = useMemo(() => {
     const map = new Map<string, TestFile[]>();
@@ -88,7 +132,13 @@ function RepoSection({ tree, filter }: { tree: RepoTree; filter: string }) {
       </h4>
       {tree.error && <p className="error-line">{tree.error}</p>}
       {groups.map(([dir, files]) => (
-        <DirSection key={dir} dir={dir} files={files} filter={filter} />
+        <DirSection
+          key={dir}
+          dir={dir}
+          files={files}
+          filter={filter}
+          description={describeDir(dir, descriptions)}
+        />
       ))}
     </div>
   );
@@ -148,7 +198,7 @@ export default function TestTree({ repo }: { repo?: string }) {
         </div>
       )}
       {trees.map((t) => (
-        <RepoSection key={t.key} tree={t} filter={filter} />
+        <RepoSection key={t.key} tree={t} filter={filter} descriptions={data.descriptions?.[t.key]} />
       ))}
       </div>
     </div>

@@ -227,6 +227,17 @@ body {
 .tree-row.dir { color: var(--ink); font-weight: 550; padding: 6px; border-radius: 7px; }
 .tree-row.dir:hover { background: var(--surface-2); }
 .dir-name { font-family: var(--mono); font-size: 12.5px; color: var(--accent-ink); }
+.info-btn {
+  width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--line);
+  background: none; color: var(--ink-faint); font-size: 10px; font-style: italic; font-family: Georgia, serif;
+  line-height: 1; cursor: pointer; flex-shrink: 0; padding: 0;
+}
+.info-btn:hover, .info-btn.on { border-color: var(--accent); color: var(--accent-ink); }
+.dir-desc {
+  margin: 2px 0 6px 32px; font-size: 12px; color: var(--ink-soft);
+  border-left: 2px solid var(--accent); padding: 3px 10px; background: var(--surface);
+  border-radius: 0 6px 6px 0; max-width: 52em;
+}
 .dir-children { margin-left: 14px; border-left: 1px solid var(--line); padding-left: 6px; }
 .tree-file { border-left: 1px solid var(--line); margin-left: 4px; }
 .tree-row {

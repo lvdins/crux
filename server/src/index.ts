@@ -36,9 +36,18 @@ app.get("/api/config", (_req, res) => {
   });
 });
 
-app.get("/api/tree", (_req, res) => {
+const descriptionsPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../superqa.descriptions.json");
+
+app.get("/api/tree", async (_req, res) => {
   const trees = buildTree();
-  res.json({ trees, shared: sharedEndpoints(trees) });
+  let descriptions: Record<string, Record<string, string>> = {};
+  try {
+    const fs = await import("node:fs");
+    descriptions = JSON.parse(fs.readFileSync(descriptionsPath, "utf8"));
+  } catch {
+    // No descriptions file yet — the UI falls back gracefully.
+  }
+  res.json({ trees, shared: sharedEndpoints(trees), descriptions });
 });
 
 app.post("/api/preview/start", (_req, res) => {

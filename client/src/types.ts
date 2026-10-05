@@ -32,4 +32,5 @@ export interface RepoTree {
 export interface TreeResponse {
   trees: RepoTree[];
   shared: { endpoint: string; repos: Record<string, string[]> }[];
+  descriptions?: Record<string, Record<string, string>>;
 }
