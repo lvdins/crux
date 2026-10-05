@@ -38,7 +38,11 @@ export default function App() {
   const [dragging, setDragging] = useState(false);
   const [tabs, setTabs] = useState<Record<string, TermTab[]>>({});
   const [activeTab, setActiveTab] = useState<Record<string, string>>({});
+  const [splitTab, setSplitTab] = useState<Record<string, string | null>>({});
+  const [rightHidden, setRightHidden] = useState(() => localStorage.getItem("qualitylab.rightHidden") === "1");
+  const [agentDrag, setAgentDrag] = useState<null | { cmd: "claude" | "codex"; x: number; y: number; zone: "tab" | "split" | null }>(null);
   const panesRef = useRef<HTMLDivElement>(null);
+  const termPaneRef = useRef<HTMLElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const termHandlers = useRef(new Map<string, (data: string) => void>());
 
@@ -122,17 +126,26 @@ export default function App() {
     };
   }, []);
 
-  const addTab = useCallback((repo: string, title = "shell", agent?: string, bootCmd?: string) => {
+  const createTab = useCallback((repo: string, title = "shell", agent?: string, bootCmd?: string) => {
     const id = newTabId(repo);
     setTabs((prev) => ({ ...prev, [repo]: [...(prev[repo] ?? []), { id, title, agent, bootCmd }] }));
-    setActiveTab((prev) => ({ ...prev, [repo]: id }));
     return id;
   }, []);
+
+  const addTab = useCallback(
+    (repo: string, title = "shell", agent?: string, bootCmd?: string) => {
+      const id = createTab(repo, title, agent, bootCmd);
+      setActiveTab((prev) => ({ ...prev, [repo]: id }));
+      return id;
+    },
+    [createTab],
+  );
 
   const closeTab = useCallback(
     (repo: string, id: string) => {
       send({ type: "term:kill", id });
       disposeTerm(id);
+      setSplitTab((prev) => (prev[repo] === id ? { ...prev, [repo]: null } : prev));
       setTabs((prev) => {
         const remaining = (prev[repo] ?? []).filter((t) => t.id !== id);
         const next = { ...prev, [repo]: remaining };
@@ -180,10 +193,57 @@ export default function App() {
     [view, tabs, activeTab, send, addTab],
   );
 
+  const zoneAt = useCallback((clientX: number, clientY: number): "tab" | "split" | null => {
+    const rect = termPaneRef.current?.getBoundingClientRect();
+    if (!rect) return null;
+    if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return null;
+    return clientX > rect.right - rect.width * 0.32 ? "split" : "tab";
+  }, []);
+
+  const startAgentDrag = useCallback(
+    (cmd: "claude" | "codex") => (e: React.PointerEvent) => {
+      if (view === "connections") return;
+      e.preventDefault();
+      const startX = e.clientX;
+      const startY = e.clientY;
+      let started = false;
+      const move = (ev: PointerEvent) => {
+        if (!started && Math.hypot(ev.clientX - startX, ev.clientY - startY) > 6) started = true;
+        if (started) setAgentDrag({ cmd, x: ev.clientX, y: ev.clientY, zone: zoneAt(ev.clientX, ev.clientY) });
+      };
+      const up = (ev: PointerEvent) => {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        setAgentDrag(null);
+        if (!started) {
+          launchAgent(cmd); // plain click
+          return;
+        }
+        const zone = zoneAt(ev.clientX, ev.clientY);
+        if (zone === "tab") {
+          addTab(view, cmd, cmd, cmd);
+        } else if (zone === "split") {
+          const id = createTab(view, cmd, cmd, cmd);
+          setSplitTab((prev) => ({ ...prev, [view]: id }));
+        }
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+    },
+    [view, zoneAt, launchAgent, addTab, createTab],
+  );
+
+  const hideRight = (hidden: boolean) => {
+    setRightHidden(hidden);
+    localStorage.setItem("qualitylab.rightHidden", hidden ? "1" : "0");
+  };
+
   if (!config) return <div className="loading">Loading QualityLab…</div>;
 
   const repo = view !== "connections" ? config.repos[view] : undefined;
   const isTestRepo = repo && repo.kind !== "mkdocs";
+  const termSplitId = view !== "connections" ? splitTab[view] : null;
+  const termSplitTab = termSplitId ? (tabs[view] ?? []).find((t) => t.id === termSplitId) : undefined;
 
   return (
     <div className="app">
@@ -193,10 +253,20 @@ export default function App() {
         </span>
         <span className="workspace-label">{repo ? repo.label : "Connections"}</span>
         <div className="agent-buttons">
-          <button className="agent-btn" disabled={!repo} title={repo ? `Run claude in ${repo.label}` : "Pick a workspace first"} onClick={() => launchAgent("claude")}>
+          <button
+            className="agent-btn"
+            disabled={!repo}
+            title={repo ? `Click to run claude · drag into the terminal for a tab or split` : "Pick a workspace first"}
+            onPointerDown={repo ? startAgentDrag("claude") : undefined}
+          >
             <ClaudeLogo /> Claude
           </button>
-          <button className="agent-btn" disabled={!repo} title={repo ? `Run codex in ${repo.label}` : "Pick a workspace first"} onClick={() => launchAgent("codex")}>
+          <button
+            className="agent-btn"
+            disabled={!repo}
+            title={repo ? `Click to run codex · drag into the terminal for a tab or split` : "Pick a workspace first"}
+            onPointerDown={repo ? startAgentDrag("codex") : undefined}
+          >
             <CodexLogo /> Codex
           </button>
         </div>
@@ -241,71 +311,127 @@ export default function App() {
           <div
             className={`panes ${dragging ? "dragging" : ""}`}
             ref={panesRef}
-            style={{ gridTemplateColumns: `minmax(280px, ${split}%) 6px minmax(340px, 1fr)` }}
+            style={{ gridTemplateColumns: rightHidden ? "1fr" : `minmax(280px, ${split}%) 6px minmax(340px, 1fr)` }}
           >
-            <section className="term-pane">
+            <section className="term-pane" ref={termPaneRef}>
               <div className="term-tabs">
-                {(tabs[view] ?? []).map((t, i) => (
-                  <span
-                    key={t.id}
-                    className={`term-tab ${activeTab[view] === t.id ? "active" : ""}`}
-                    onClick={() => setActiveTab((prev) => ({ ...prev, [view]: t.id }))}
-                  >
-                    {t.agent === "claude" && <ClaudeLogo />}
-                    {t.agent === "codex" && <CodexLogo />}
-                    {t.title}
-                    {(tabs[view] ?? []).length > 1 && (
-                      <button
-                        className="term-tab-close"
-                        title="Close terminal"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          closeTab(view, t.id);
-                        }}
-                      >
-                        ×
-                      </button>
-                    )}
-                  </span>
-                ))}
+                {(tabs[view] ?? [])
+                  .filter((t) => t.id !== termSplitId)
+                  .map((t) => (
+                    <span
+                      key={t.id}
+                      className={`term-tab ${activeTab[view] === t.id ? "active" : ""}`}
+                      onClick={() => setActiveTab((prev) => ({ ...prev, [view]: t.id }))}
+                    >
+                      {t.agent === "claude" && <ClaudeLogo />}
+                      {t.agent === "codex" && <CodexLogo />}
+                      {t.title}
+                      {(tabs[view] ?? []).length > 1 && (
+                        <button
+                          className="term-tab-close"
+                          title="Close terminal"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            closeTab(view, t.id);
+                          }}
+                        >
+                          ×
+                        </button>
+                      )}
+                    </span>
+                  ))}
                 <button className="term-tab-add" title="New terminal" onClick={() => addTab(view)}>
                   +
                 </button>
               </div>
-              {(tabs[view] ?? [])
-                .filter((t) => t.id === activeTab[view])
-                .map((t) => (
-                  <Term
-                    key={t.id}
-                    id={t.id}
-                    repo={view}
-                    bootCmd={t.bootCmd}
-                    connected={connected}
-                    send={send}
-                    subscribe={subscribe}
-                  />
-                ))}
-            </section>
-            <div className="splitter" onPointerDown={onSplitDown} title="Drag to resize" />
-            <section className="right">
-              {repo?.kind === "mkdocs" && <Preview port={config.preview.port} />}
-              {isTestRepo && (
-                <>
-                  <nav className="tabs">
-                    <button className={testTab === "tree" ? "active" : ""} onClick={() => setTestTab("tree")}>
-                      Tests
-                    </button>
-                    <button className={testTab === "web" ? "active" : ""} onClick={() => setTestTab("web")}>
-                      Web
-                    </button>
-                  </nav>
-                  {testTab === "tree" ? <TestTree repo={view} /> : <SpiderWeb repos={[view]} />}
-                </>
+              <div className="term-slots">
+                {(tabs[view] ?? [])
+                  .filter((t) => t.id === activeTab[view] && t.id !== termSplitId)
+                  .map((t) => (
+                    <div className="term-slot" key={t.id}>
+                      <Term id={t.id} repo={view} bootCmd={t.bootCmd} connected={connected} send={send} subscribe={subscribe} />
+                    </div>
+                  ))}
+                {termSplitId && termSplitTab && (
+                  <>
+                    <div className="term-split-divider" />
+                    <div className="term-slot split">
+                      <div className="term-slot-head">
+                        {termSplitTab.agent === "claude" && <ClaudeLogo />}
+                        {termSplitTab.agent === "codex" && <CodexLogo />}
+                        {termSplitTab.title}
+                        <button
+                          className="term-tab-close"
+                          title="Close split (keeps the tab)"
+                          onClick={() => setSplitTab((prev) => ({ ...prev, [view]: null }))}
+                        >
+                          ×
+                        </button>
+                      </div>
+                      <Term
+                        id={termSplitId}
+                        repo={view}
+                        bootCmd={termSplitTab.bootCmd}
+                        connected={connected}
+                        send={send}
+                        subscribe={subscribe}
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+              {agentDrag && (
+                <div className="drop-zones">
+                  <div className={`drop-zone tab ${agentDrag.zone === "tab" ? "over" : ""}`}>
+                    <span>Open as new tab</span>
+                  </div>
+                  <div className={`drop-zone split ${agentDrag.zone === "split" ? "over" : ""}`}>
+                    <span>Split right</span>
+                  </div>
+                </div>
               )}
             </section>
+            {!rightHidden && <div className="splitter" onPointerDown={onSplitDown} title="Drag to resize" />}
+            {!rightHidden && (
+              <section className="right">
+                {repo?.kind === "mkdocs" && (
+                  <>
+                    <nav className="tabs">
+                      <button className="active">Doc preview</button>
+                      <button className="pane-collapse" title="Hide panel" onClick={() => hideRight(true)}>»</button>
+                    </nav>
+                    <Preview port={config.preview.port} />
+                  </>
+                )}
+                {isTestRepo && (
+                  <>
+                    <nav className="tabs">
+                      <button className={testTab === "tree" ? "active" : ""} onClick={() => setTestTab("tree")}>
+                        Tests
+                      </button>
+                      <button className={testTab === "web" ? "active" : ""} onClick={() => setTestTab("web")}>
+                        Web
+                      </button>
+                      <button className="pane-collapse" title="Hide panel" onClick={() => hideRight(true)}>»</button>
+                    </nav>
+                    {testTab === "tree" ? <TestTree repo={view} /> : <SpiderWeb repos={[view]} />}
+                  </>
+                )}
+              </section>
+            )}
+            {rightHidden && (
+              <button className="pane-reopen" title="Show panel" onClick={() => hideRight(false)}>
+                «
+              </button>
+            )}
           </div>
         )}
       </div>
+      {agentDrag && (
+        <div className="drag-ghost" style={{ left: agentDrag.x, top: agentDrag.y }}>
+          {agentDrag.cmd === "claude" ? <ClaudeLogo /> : <CodexLogo />} {agentDrag.cmd}
+        </div>
+      )}
     </div>
   );
 }
