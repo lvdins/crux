@@ -16,6 +16,14 @@ interface CachedTerm {
 // tab/workspace switches — the DOM node is just re-parented on mount.
 const cache = new Map<string, CachedTerm>();
 
+const FONT = '"QL Nerd", "MesloLGS NF", ui-monospace, "SF Mono", Menlo, monospace';
+// Web fonts load lazily; start both weights now so the first terminal
+// measures cells with the real glyph metrics.
+const fontReady = Promise.all([
+  document.fonts?.load('400 12.5px "QL Nerd"'),
+  document.fonts?.load('700 12.5px "QL Nerd"'),
+]).catch(() => undefined);
+
 export function disposeTerm(id: string): void {
   const cached = cache.get(id);
   if (cached) {
@@ -54,14 +62,34 @@ export default function Term({
       el.style.height = "100%";
       const term = new Terminal({
         fontSize: 12.5,
-        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+        fontFamily: FONT,
         cursorBlink: true,
         scrollback: 8000,
+        // Glyphs (powerline arrows, icons) drawn edge to edge, no seams.
+        customGlyphs: true,
+        rescaleOverlappingGlyphs: true,
         theme: {
           background: "#0e0e0e",
-          foreground: "#ececec",
+          foreground: "#e6e6e6",
           cursor: "#3ecf8e",
-          selectionBackground: "#2a2a2a",
+          cursorAccent: "#0e0e0e",
+          selectionBackground: "#2f3b35",
+          black: "#1a1a1a",
+          red: "#e06c75",
+          green: "#3ecf8e",
+          yellow: "#e5c07b",
+          blue: "#61afef",
+          magenta: "#c678dd",
+          cyan: "#56b6c2",
+          white: "#d4d4d4",
+          brightBlack: "#5c6370",
+          brightRed: "#ef7f88",
+          brightGreen: "#5fe0a6",
+          brightYellow: "#f0d08e",
+          brightBlue: "#7cc0f5",
+          brightMagenta: "#d595e8",
+          brightCyan: "#6fcad5",
+          brightWhite: "#f5f5f5",
         },
       });
       const fit = new FitAddon();
@@ -96,10 +124,13 @@ export default function Term({
     // draw at the wrong width. Wait for fonts + two frames before opening.
     const boot = async () => {
       try {
+        await fontReady;
         await document.fonts?.ready;
       } catch {
         /* older webviews */
       }
+      // Re-assign so xterm re-measures cells with the now-loaded font.
+      if (fresh) term.options.fontFamily = FONT;
       await new Promise(requestAnimationFrame);
       await new Promise(requestAnimationFrame);
       if (disposed) return;

@@ -1,3 +1,18 @@
+/* Bundled Nerd Font so p10k / starship prompts render their glyphs for
+   everyone, whether or not they installed one themselves. */
+@font-face {
+  font-family: "QL Nerd";
+  src: url("/fonts/QLNerd-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-display: block;
+}
+@font-face {
+  font-family: "QL Nerd";
+  src: url("/fonts/QLNerd-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-display: block;
+}
+
 :root {
   --bg: #0e0e0e;
   --surface: #141414;
