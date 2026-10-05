@@ -78,8 +78,9 @@ body {
 .side-sep { height: 1px; background: var(--line); margin: 8px 6px; }
 
 /* spider web */
-.web-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; position: relative; }
-.web-svg { flex: 1; width: 100%; min-height: 0; cursor: grab; touch-action: none; }
+/* absolute fill so the SVG always has real height, whatever the flex chain does */
+.web-wrap { flex: 1; min-height: 0; position: relative; }
+.web-svg { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; touch-action: none; }
 .web-svg.panning { cursor: grabbing; }
 .web-controls {
   position: absolute; top: 12px; right: 14px; display: flex; gap: 5px; z-index: 2;
@@ -104,7 +105,10 @@ body {
 .web-label.endpoint { fill: var(--warn); font-family: var(--mono); font-size: 10px; }
 .web-endpoint { fill: var(--surface); stroke: var(--warn); stroke-width: 1; opacity: 0.95; }
 .web-bridge { fill: none; stroke: var(--warn); stroke-width: 1; opacity: 0.5; }
-.web-hint { text-align: center; color: var(--ink-faint); font-family: var(--mono); font-size: 10.5px; margin: 4px 0 10px; }
+.web-hint {
+  position: absolute; bottom: 8px; left: 0; right: 0; pointer-events: none;
+  text-align: center; color: var(--ink-faint); font-family: var(--mono); font-size: 10.5px; margin: 0;
+}
 
 /* chat */
 .chat { display: flex; flex-direction: column; border-right: 1px solid var(--line); min-width: 0; }
@@ -138,7 +142,7 @@ body {
 .composer button:disabled { opacity: 0.4; cursor: default; }
 
 /* right pane */
-.right { display: flex; flex-direction: column; min-width: 0; }
+.right { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
 .tabs { display: flex; gap: 4px; padding: 8px 12px 0; border-bottom: 1px solid var(--line); background: var(--surface); }
 .tabs button {
   background: none; border: none; color: var(--ink-soft); font: inherit; font-size: 13px;
@@ -167,9 +171,10 @@ body {
   max-height: 300px; overflow: auto; white-space: pre-wrap;
 }
 
-/* tree */
-.tree { flex: 1; overflow-y: auto; padding: 14px 18px; }
-.tree-bar { display: flex; gap: 8px; margin-bottom: 14px; }
+/* tree — filter bar pinned, only the list below it scrolls */
+.tree { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding: 14px 18px 0; }
+.tree-scroll { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 14px; }
+.tree-bar { display: flex; gap: 8px; margin-bottom: 14px; flex-shrink: 0; }
 .tree-bar input {
   flex: 1; background: var(--surface-2); color: var(--ink); border: 1px solid var(--line);
   border-radius: 8px; padding: 7px 11px; font: inherit; font-size: 13px;

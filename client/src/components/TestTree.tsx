@@ -88,6 +88,7 @@ export default function TestTree({ repo }: { repo?: string }) {
         />
         <button onClick={load}>Rescan</button>
       </div>
+      <div className="tree-scroll">
       {shared.length > 0 && (
         <div className="shared-box">
           <h4>Endpoints covered by both suites</h4>
@@ -109,6 +110,7 @@ export default function TestTree({ repo }: { repo?: string }) {
       {trees.map((t) => (
         <RepoSection key={t.key} tree={t} filter={filter} />
       ))}
+      </div>
     </div>
   );
 }
