@@ -115,7 +115,10 @@ export default function Term({
       // One more pass shortly after, in case a scrollbar or font swap shifted
       // the layout between the first fit and the PTY spawn.
       setTimeout(doFit, 300);
-      term.focus();
+      // Don't steal focus from an input the user moved to while we booted
+      // (e.g. the sidebar rename field).
+      const active = document.activeElement;
+      if (!active || active === document.body || el.contains(active)) term.focus();
     };
     void boot();
 

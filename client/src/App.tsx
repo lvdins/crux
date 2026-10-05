@@ -50,6 +50,7 @@ export default function App() {
     });
   const [adding, setAdding] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
   const [agentDrag, setAgentDrag] = useState<null | { cmd: "claude" | "codex"; x: number; y: number; zone: "tab" | "split" | null }>(null);
   const panesRef = useRef<HTMLDivElement>(null);
   const termPaneRef = useRef<HTMLElement>(null);
@@ -273,6 +274,19 @@ export default function App() {
     setConfig((c) => (c ? { ...c, repos } : c));
   };
 
+  const renameWs = async (key: string, label: string) => {
+    setRenaming(null);
+    const trimmed = label.trim();
+    if (!trimmed || trimmed === config?.repos[key]?.label) return;
+    // Optimistic: the sidebar updates at once, the server persists it.
+    setConfig((c) => (c ? { ...c, repos: { ...c.repos, [key]: { ...c.repos[key], label: trimmed } } } : c));
+    await api(`/api/workspaces/${key}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label: trimmed }),
+    });
+  };
+
   const hideRight = (hidden: boolean) => {
     setRightHidden(hidden);
     localStorage.setItem("qualitylab.rightHidden", hidden ? "1" : "0");
@@ -343,8 +357,34 @@ export default function App() {
                 <button className="danger" onClick={() => removeWs(key)}>Remove</button>
                 <button onClick={() => setConfirmRemove(null)}>Keep</button>
               </div>
+            ) : renaming === key ? (
+              <div key={key} className="side-item active renaming">
+                <span className="avatar" style={{ color: CHIP_COLORS[r.kind] ?? "var(--ink-soft)" }}>
+                  {r.label[0]?.toUpperCase()}
+                </span>
+                <input
+                  className="side-rename"
+                  defaultValue={r.label}
+                  autoFocus
+                  onFocus={(e) => e.currentTarget.select()}
+                  onKeyDown={(e) => {
+                    // Enter commits via blur; Escape restores the old name first.
+                    if (e.key === "Enter") e.currentTarget.blur();
+                    if (e.key === "Escape") {
+                      e.currentTarget.value = r.label;
+                      e.currentTarget.blur();
+                    }
+                  }}
+                  onBlur={(e) => renameWs(key, e.currentTarget.value)}
+                />
+              </div>
             ) : (
-              <div key={key} className={`side-item ${view === key ? "active" : ""}`} title={r.path}>
+              <div
+                key={key}
+                className={`side-item ${view === key ? "active" : ""}`}
+                title={`${r.path}\nDouble-click to rename`}
+                onDoubleClick={() => setRenaming(key)}
+              >
                 <button
                   className="side-item-main"
                   onClick={() => {
@@ -356,6 +396,11 @@ export default function App() {
                     {r.label[0]?.toUpperCase()}
                   </span>
                   <span className="side-label">{r.label}</span>
+                </button>
+                <button className="side-remove side-rename-btn" title="Rename" onClick={() => setRenaming(key)}>
+                  <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path d="M11 2.5l2.5 2.5L5.5 13H3v-2.5z" />
+                  </svg>
                 </button>
                 <button className="side-remove" title="Remove workspace (files stay on disk)" onClick={() => setConfirmRemove(key)}>
                   ×
