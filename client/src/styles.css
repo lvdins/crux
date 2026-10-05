@@ -506,3 +506,50 @@ button.primary:hover:not(:disabled) { background: var(--accent-ink); }
   border-radius: 5px; padding: 2px 6px; font: inherit; font-size: 13px;
 }
 .side-rename:focus { outline: none; border-color: var(--accent); }
+
+/* ---------- workspace context menu ---------- */
+.ctx-menu {
+  position: fixed; z-index: 60; min-width: 236px; padding: 5px;
+  background: #1f1f1f; border: 1px solid #333; border-radius: 10px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+  animation: ctx-in 0.14s cubic-bezier(0.32, 0.72, 0, 1); transform-origin: top left;
+}
+@keyframes ctx-in { from { opacity: 0; transform: scale(0.96); } }
+.ctx-group + .ctx-group { border-top: 1px solid #2e2e2e; margin-top: 5px; padding-top: 5px; }
+.ctx-item {
+  display: flex; align-items: center; gap: 11px; width: 100%;
+  background: none; border: none; border-radius: 6px; padding: 6px 9px;
+  color: var(--ink); font: inherit; font-size: 13px; text-align: left; cursor: pointer;
+}
+.ctx-item:hover, .ctx-item:focus-visible { background: #2c2c2c; outline: none; }
+.ctx-icon { width: 16px; display: inline-flex; color: var(--ink-soft); }
+.ctx-label { flex: 1; }
+.ctx-shortcut { color: var(--ink-faint); font-size: 11.5px; letter-spacing: 0.08em; }
+.ctx-item.danger, .ctx-item.danger .ctx-icon { color: #f0607a; }
+.ctx-item.danger:hover { background: rgba(240, 96, 122, 0.12); }
+
+.side-pin { display: inline-flex; color: var(--ink-faint); margin-left: auto; }
+.side-pin svg { width: 11px; height: 11px; }
+.unread-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex-shrink: 0;
+  margin-left: auto; box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.side-pin + .unread-dot { margin-left: 6px; }
+
+.confirm-modal { width: min(440px, 100%); }
+.confirm-body { padding: 12px 14px 0; color: var(--ink-soft); font-size: 13px; }
+.confirm-body p { margin: 0 0 10px; }
+.confirm-body code {
+  display: block; font-family: var(--mono); font-size: 11.5px; color: var(--ink);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 9px; word-break: break-all;
+}
+.modal button.danger-solid { background: #c94160; border-color: #c94160; color: #fff; font-weight: 600; }
+.modal button.danger-solid:hover { background: #d9516f; }
+
+.toast {
+  position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); z-index: 70;
+  background: var(--raise); border: 1px solid #333; color: var(--ink); font-size: 12.5px;
+  padding: 7px 14px; border-radius: 8px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  animation: toast-in 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+}
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, 6px); } }

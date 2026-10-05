@@ -7,6 +7,7 @@ import TestTree from "./components/TestTree";
 import SpiderWeb from "./components/SpiderWeb";
 import Connections from "./components/Connections";
 import AddWorkspace from "./components/AddWorkspace";
+import ContextMenu, { MenuIcons } from "./components/ContextMenu";
 import { WebIcon, ClaudeLogo, CodexLogo } from "./components/icons";
 
 const CHIP_COLORS: Record<string, string> = {
@@ -51,6 +52,18 @@ export default function App() {
   const [adding, setAdding] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [menu, setMenu] = useState<null | { key: string; x: number; y: number }>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState("");
+  const [toast, setToast] = useState("");
+  const [unread, setUnread] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem("qualitylab.unread") ?? "[]"));
+    } catch {
+      return new Set();
+    }
+  });
+  const viewRef = useRef(view);
   const [agentDrag, setAgentDrag] = useState<null | { cmd: "claude" | "codex"; x: number; y: number; zone: "tab" | "split" | null }>(null);
   const panesRef = useRef<HTMLDivElement>(null);
   const termPaneRef = useRef<HTMLElement>(null);
@@ -114,6 +127,10 @@ export default function App() {
         const msg = JSON.parse(event.data);
         if (msg.type === "term:data") {
           termHandlers.current.get(msg.id)?.(msg.data);
+          // Output in a workspace you're not looking at (an agent finishing,
+          // a test run) flags it unread in the sidebar.
+          const wsKey = String(msg.id).split(":")[0];
+          if (wsKey !== viewRef.current) setUnread((u) => (u.has(wsKey) ? u : new Set(u).add(wsKey)));
         } else if (msg.type === "term:exit") {
           termHandlers.current.get(msg.id)?.(`\r\n[shell exited: ${msg.code}]\r\n`);
         }
@@ -128,8 +145,39 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    viewRef.current = view;
     if (view) localStorage.setItem("qualitylab.view", view);
+    setUnread((u) => {
+      if (!u.has(view)) return u;
+      const next = new Set(u);
+      next.delete(view);
+      return next;
+    });
   }, [view]);
+
+  useEffect(() => {
+    localStorage.setItem("qualitylab.unread", JSON.stringify([...unread]));
+  }, [unread]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(""), 1600);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  // ⌘⇧⌫ — delete the active workspace (asks first).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey && e.shiftKey && e.key === "Backspace" && config?.repos[viewRef.current]) {
+        e.preventDefault();
+        e.stopPropagation();
+        setDeleteError("");
+        setConfirmDelete(viewRef.current);
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [config]);
 
   const send = useCallback((payload: Record<string, unknown>) => {
     const ws = wsRef.current;
@@ -261,9 +309,9 @@ export default function App() {
     setAdding(false);
   };
 
-  const removeWs = async (key: string) => {
+  const removeWs = async (key: string, alreadyRemoved = false) => {
     setConfirmRemove(null);
-    await api(`/api/workspaces/${key}`, { method: "DELETE" });
+    if (!alreadyRemoved) await api(`/api/workspaces/${key}`, { method: "DELETE" });
     for (const t of tabs[key] ?? []) {
       send({ type: "term:kill", id: t.id });
       disposeTerm(t.id);
@@ -279,12 +327,84 @@ export default function App() {
     const trimmed = label.trim();
     if (!trimmed || trimmed === config?.repos[key]?.label) return;
     // Optimistic: the sidebar updates at once, the server persists it.
-    setConfig((c) => (c ? { ...c, repos: { ...c.repos, [key]: { ...c.repos[key], label: trimmed } } } : c));
-    await api(`/api/workspaces/${key}`, {
+    await patchWs(key, { label: trimmed });
+  };
+
+  const copyText = async (text: string, what: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
+    setToast(`Copied ${what}`);
+  };
+
+  const patchWs = (key: string, patch: Partial<RepoInfo>) => {
+    setConfig((c) => (c ? { ...c, repos: { ...c.repos, [key]: { ...c.repos[key], ...patch } } } : c));
+    return api(`/api/workspaces/${key}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ label: trimmed }),
+      body: JSON.stringify(patch),
     });
+  };
+
+  const trashWs = async (key: string) => {
+    setDeleteError("");
+    const r = await api(`/api/workspaces/${key}/trash`, { method: "POST" });
+    if (!r.ok) {
+      setDeleteError((await r.json()).error ?? "Delete failed");
+      return;
+    }
+    setConfirmDelete(null);
+    await removeWs(key, true);
+    setToast("Moved to Trash");
+  };
+
+  const menuGroups = (key: string) => {
+    const r = config!.repos[key];
+    return [
+      [
+        { label: r.pinned ? "Unpin" : "Pin", icon: r.pinned ? MenuIcons.unpin : MenuIcons.pin, onSelect: () => patchWs(key, { pinned: !r.pinned }) },
+        { label: "Rename", icon: MenuIcons.rename, onSelect: () => setRenaming(key) },
+      ],
+      [
+        { label: "Open in Finder", icon: MenuIcons.folder, onSelect: () => api(`/api/workspaces/${key}/reveal`, { method: "POST" }) },
+        { label: "Copy Path", icon: MenuIcons.copy, onSelect: () => copyText(r.path, "path") },
+        {
+          label: "Copy Branch Name",
+          icon: MenuIcons.branch,
+          onSelect: async () => {
+            const res = await api(`/api/workspaces/${key}/branch`);
+            const body = await res.json();
+            if (res.ok) copyText(body.branch, `branch ${body.branch}`);
+            else setToast(body.error ?? "No branch");
+          },
+        },
+      ],
+      [
+        unread.has(key)
+          ? { label: "Mark as Read", icon: MenuIcons.read, onSelect: () => setUnread((u) => { const n = new Set(u); n.delete(key); return n; }) }
+          : { label: "Mark as Unread", icon: MenuIcons.unread, onSelect: () => setUnread((u) => new Set(u).add(key)) },
+      ],
+      [
+        { label: "Remove from Sidebar", icon: MenuIcons.remove, onSelect: () => setConfirmRemove(key) },
+        {
+          label: "Delete",
+          icon: MenuIcons.trash,
+          danger: true,
+          shortcut: "⌘⇧⌫",
+          onSelect: () => {
+            setDeleteError("");
+            setConfirmDelete(key);
+          },
+        },
+      ],
+    ];
   };
 
   const hideRight = (hidden: boolean) => {
@@ -350,7 +470,9 @@ export default function App() {
               +
             </button>
           </div>
-          {Object.entries(config.repos).map(([key, r]) =>
+          {Object.entries(config.repos)
+            .sort(([, a], [, b]) => Number(!!b.pinned) - Number(!!a.pinned))
+            .map(([key, r]) =>
             confirmRemove === key ? (
               <div key={key} className="side-confirm">
                 <span>Remove {r.label}?</span>
@@ -384,18 +506,30 @@ export default function App() {
                 className={`side-item ${view === key ? "active" : ""}`}
                 title={`${r.path}\nDouble-click to rename`}
                 onDoubleClick={() => setRenaming(key)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setMenu({ key, x: e.clientX, y: e.clientY });
+                }}
               >
                 <button
                   className="side-item-main"
                   onClick={() => {
                     setView(key);
                     setTestTab("tree");
+                    setUnread((u) => {
+                      if (!u.has(key)) return u;
+                      const n = new Set(u);
+                      n.delete(key);
+                      return n;
+                    });
                   }}
                 >
                   <span className="avatar" style={{ color: CHIP_COLORS[r.kind] ?? "var(--ink-soft)" }}>
                     {r.label[0]?.toUpperCase()}
                   </span>
                   <span className="side-label">{r.label}</span>
+                  {r.pinned && <span className="side-pin" title="Pinned">{MenuIcons.pin}</span>}
+                  {unread.has(key) && <span className="unread-dot" title="New activity" />}
                 </button>
                 <button className="side-remove side-rename-btn" title="Rename" onClick={() => setRenaming(key)}>
                   <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -568,6 +702,29 @@ export default function App() {
           </div>
         )}
       </div>
+      {menu && config.repos[menu.key] && (
+        <ContextMenu x={menu.x} y={menu.y} groups={menuGroups(menu.key)} onClose={() => setMenu(null)} />
+      )}
+      {confirmDelete && config.repos[confirmDelete] && (
+        <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && setConfirmDelete(null)}>
+          <div className="modal confirm-modal" role="alertdialog">
+            <div className="modal-head">
+              <span>Delete {config.repos[confirmDelete].label}?</span>
+            </div>
+            <div className="confirm-body">
+              <p>This moves the folder to the Trash and removes it from QualityLab. You can restore it from the Trash.</p>
+              <code>{config.repos[confirmDelete].path}</code>
+              {deleteError && <div className="modal-error">{deleteError}</div>}
+            </div>
+            <div className="modal-foot">
+              <span className="modal-path" />
+              <button onClick={() => setConfirmDelete(null)} autoFocus>Cancel</button>
+              <button className="danger-solid" onClick={() => trashWs(confirmDelete)}>Move to Trash</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {toast && <div className="toast">{toast}</div>}
       {adding && <AddWorkspace onClose={() => setAdding(false)} onAdded={onWorkspaceAdded} />}
       {agentDrag && (
         <div className="drag-ghost" style={{ left: agentDrag.x, top: agentDrag.y }}>

@@ -2,6 +2,7 @@ export interface RepoInfo {
   label: string;
   kind: string;
   path: string;
+  pinned?: boolean;
 }
 
 export interface AppConfig {

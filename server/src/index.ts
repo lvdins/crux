@@ -1,5 +1,6 @@
 import express from "express";
 import http from "node:http";
+import { execFile } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -33,7 +34,7 @@ app.use(express.static(clientDist));
 app.get("/api/config", (_req, res) => {
   res.json({
     repos: Object.fromEntries(
-      Object.entries(config.repos).map(([k, r]) => [k, { label: r.label, kind: r.kind, path: r.path }]),
+      Object.entries(config.repos).map(([k, r]) => [k, { label: r.label, kind: r.kind, path: r.path, pinned: !!r.pinned }]),
     ),
     user: os.userInfo().username,
   });
@@ -89,6 +90,44 @@ app.patch("/api/workspaces/:key", (req, res) => {
   }
 });
 app.delete("/api/workspaces/:key", (req, res) => {
+  stopPreview(req.params.key);
+  removeWorkspace(req.params.key);
+  invalidate();
+  res.json({ ok: true });
+});
+
+app.post("/api/workspaces/:key/reveal", (req, res) => {
+  const repo = config.repos[req.params.key];
+  if (!repo) return void res.status(404).json({ error: "Unknown workspace" });
+  const opener = process.platform === "darwin" ? "open" : process.platform === "win32" ? "explorer" : "xdg-open";
+  execFile(opener, [repo.path], () => {});
+  res.json({ ok: true });
+});
+
+app.get("/api/workspaces/:key/branch", (req, res) => {
+  const repo = config.repos[req.params.key];
+  if (!repo) return void res.status(404).json({ error: "Unknown workspace" });
+  execFile("git", ["-C", repo.path, "rev-parse", "--abbrev-ref", "HEAD"], (err, stdout) => {
+    if (err) return void res.status(400).json({ error: "Not a git repository" });
+    res.json({ branch: stdout.trim() });
+  });
+});
+
+// "Delete" moves the folder to the Trash (recoverable), never rm -rf.
+app.post("/api/workspaces/:key/trash", (req, res) => {
+  const repo = config.repos[req.params.key];
+  if (!repo) return void res.status(404).json({ error: "Unknown workspace" });
+  const trashDir =
+    process.platform === "darwin" ? path.join(os.homedir(), ".Trash") : path.join(os.homedir(), ".local/share/Trash/files");
+  try {
+    fs.mkdirSync(trashDir, { recursive: true });
+    const base = path.basename(repo.path);
+    let target = path.join(trashDir, base);
+    for (let n = 2; fs.existsSync(target); n++) target = path.join(trashDir, `${base} ${n}`);
+    fs.renameSync(repo.path, target);
+  } catch (err) {
+    return void res.status(400).json({ error: `Could not move to Trash: ${(err as Error).message}` });
+  }
   stopPreview(req.params.key);
   removeWorkspace(req.params.key);
   invalidate();
