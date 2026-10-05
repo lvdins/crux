@@ -17,6 +17,9 @@ interface Entry {
 const terms = new Map<string, Entry>();
 const MAX_BUFFER = 400_000;
 
+/** Debug ring buffer of recent attach calls (served at /api/debug/opens). */
+export const openLog: { at: string; id: string; repo: string; fresh: boolean; bootCmd?: string; existed: boolean }[] = [];
+
 function send(ws: WebSocket, payload: unknown) {
   if (ws.readyState === 1) ws.send(JSON.stringify(payload));
 }
@@ -32,6 +35,8 @@ export function attachTerm(
 ): void {
   const repoCfg = config.repos[repo];
   if (!id || !repoCfg) return;
+  openLog.push({ at: new Date().toISOString(), id, repo, fresh, bootCmd, existed: terms.has(id) });
+  if (openLog.length > 50) openLog.shift();
   let entry = terms.get(id);
   if (!entry) {
     const shell = process.env.SHELL || "/bin/zsh";

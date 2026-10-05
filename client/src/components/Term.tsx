@@ -104,9 +104,11 @@ export default function Term({
       fit.fit();
       lastCols = term.cols;
       lastRows = term.rows;
-      // The server types bootCmd once the shell settles (fancy prompts eat
-      // input during their async init, so client-side timing is unreliable).
-      send({ type: "term:open", id, repo, cols: term.cols, rows: term.rows, fresh, bootCmd: fresh ? bootCmd : undefined });
+      // bootCmd is sent on every open; the server applies it only when it
+      // actually creates the PTY. (StrictMode double-mounts made a
+      // fresh-gated bootCmd disappear: the second effect run sees the cached
+      // terminal, reports fresh=false, and the server may not have spawned yet.)
+      send({ type: "term:open", id, repo, cols: term.cols, rows: term.rows, fresh, bootCmd });
       unsubscribe = subscribe(id, (data) => term.write(data));
       // One more pass shortly after, in case a scrollbar or font swap shifted
       // the layout between the first fit and the PTY spawn.

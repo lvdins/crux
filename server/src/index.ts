@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, WebSocket } from "ws";
 import { config } from "./config.js";
-import { attachTerm, termInput, termResize, killTerm, detachAll, killAllTerms } from "./term.js";
+import { attachTerm, termInput, termResize, killTerm, detachAll, killAllTerms, openLog } from "./term.js";
 import { startPreview, stopPreview, previewStatus } from "./preview.js";
 import { buildTree, sharedEndpoints } from "./tree.js";
 
@@ -60,6 +60,10 @@ app.post("/api/preview/stop", (_req, res) => {
 });
 app.get("/api/preview/status", (_req, res) => {
   res.json(previewStatus());
+});
+
+app.get("/api/debug/opens", (_req, res) => {
+  res.json(openLog);
 });
 
 const server = http.createServer(app);
