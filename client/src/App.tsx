@@ -5,7 +5,7 @@ import Term, { disposeTerm } from "./components/Term";
 import Preview from "./components/Preview";
 import TestTree from "./components/TestTree";
 import SpiderWeb from "./components/SpiderWeb";
-import Connections from "./components/Connections";
+import FeatureMap from "./components/FeatureMap";
 import AddWorkspace from "./components/AddWorkspace";
 import ContextMenu, { MenuIcons } from "./components/ContextMenu";
 import { WebIcon, ClaudeLogo, CodexLogo } from "./components/icons";
@@ -14,6 +14,8 @@ const CHIP_COLORS: Record<string, string> = {
   mkdocs: "#d9a05b",
   playwright: "#7ec98f",
   pytest: "#6fa8dc",
+  frontend: "#e8a0bf",
+  backend: "#9fc5b0",
   generic: "#b4a7d6",
 };
 
@@ -574,7 +576,7 @@ export default function App() {
           </section>
         ) : view === "connections" ? (
           <section className="full-pane">
-            <Connections />
+            <FeatureMap onAddWorkspace={() => setAdding(true)} />
           </section>
         ) : (
           <div

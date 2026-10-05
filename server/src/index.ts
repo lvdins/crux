@@ -13,6 +13,7 @@ import { buildTree, sharedEndpoints } from "./tree.js";
 
 const PORT = 8787;
 let connectionsCache: { at: number; data: unknown } | null = null;
+let featuresCache: { at: number; data: unknown } | null = null;
 const app = express();
 app.use(express.json());
 
@@ -69,6 +70,7 @@ app.get("/api/preview/:key/status", (req, res) => {
 
 const invalidate = () => {
   connectionsCache = null;
+  featuresCache = null;
 };
 
 app.post("/api/workspaces", (req, res) => {
@@ -161,6 +163,15 @@ app.get("/api/fs/list", (req, res) => {
 
 app.get("/api/debug/opens", (_req, res) => {
   res.json(openLog);
+});
+
+app.get("/api/features", async (req, res) => {
+  // Scanning the dashboard + backend + both suites takes a second or two.
+  if (!featuresCache || req.query.refresh || Date.now() - featuresCache.at > 5 * 60_000) {
+    const { buildFeatureMap } = await import("./features.js");
+    featuresCache = { at: Date.now(), data: buildFeatureMap() };
+  }
+  res.json(featuresCache.data);
 });
 
 app.get("/api/connections", async (_req, res) => {

@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export type RepoKind = "mkdocs" | "playwright" | "pytest" | "generic";
+export type RepoKind = "mkdocs" | "playwright" | "pytest" | "frontend" | "backend" | "generic";
 
 export interface RepoConfig {
   label: string;
@@ -68,7 +68,9 @@ export function expandHome(p: string): string {
 export function detectKind(dir: string): RepoKind {
   const has = (name: string) => fs.existsSync(path.join(dir, name));
   if (has("mkdocs.yml") || has("mkdocs.yaml")) return "mkdocs";
+  if (has("manage.py")) return "backend";
   if (["playwright.config.ts", "playwright.config.js", "playwright.config.mjs"].some(has)) return "playwright";
+  if (["next.config.js", "next.config.mjs", "next.config.ts"].some(has) || (has("nx.json") && has("apps"))) return "frontend";
   if (has("pytest.ini") || has("conftest.py")) return "pytest";
   for (const file of ["pyproject.toml", "setup.cfg", "tox.ini"]) {
     try {

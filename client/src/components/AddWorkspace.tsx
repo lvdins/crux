@@ -6,6 +6,8 @@ export const KIND_LABELS: Record<string, string> = {
   mkdocs: "Docs (MkDocs)",
   playwright: "E2E tests (Playwright)",
   pytest: "API tests (pytest)",
+  frontend: "Frontend app (Next.js)",
+  backend: "Backend (Django)",
   generic: "Other (terminal only)",
 };
 
@@ -13,6 +15,8 @@ const KIND_HINTS: Record<string, string> = {
   mkdocs: "Live docs preview next to the terminal",
   playwright: "Test tree and web graph next to the terminal",
   pytest: "Test tree and web graph next to the terminal",
+  frontend: "Terminals here; Connections reads its features, pages and API calls",
+  backend: "Terminals here; Connections maps endpoints to its views",
   generic: "Just terminals — claude and codex still work",
 };
 
