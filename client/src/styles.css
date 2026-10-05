@@ -58,7 +58,12 @@ body {
 
 /* layout */
 .body { display: flex; flex: 1; min-height: 0; }
-.panes { display: grid; grid-template-columns: minmax(360px, 5fr) minmax(420px, 7fr); flex: 1; min-height: 0; min-width: 0; }
+.panes { display: grid; grid-template-columns: minmax(360px, 5fr) 6px minmax(420px, 7fr); flex: 1; min-height: 0; min-width: 0; }
+.splitter { cursor: col-resize; background: var(--line); opacity: 0.6; transition: opacity 0.15s, background 0.15s; }
+.splitter:hover, .panes.dragging .splitter { opacity: 1; background: var(--accent); }
+/* while dragging, the iframe must not swallow pointer events */
+.panes.dragging { user-select: none; }
+.panes.dragging iframe { pointer-events: none; }
 .full-pane { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 
 /* sidebar */

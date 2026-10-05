@@ -14,8 +14,36 @@ export default function App() {
   const [view, setView] = useState<View>("");
   const [testTab, setTestTab] = useState<"tree" | "web">("tree");
   const [connected, setConnected] = useState(false);
+  const [split, setSplit] = useState<number>(() => {
+    const saved = Number(localStorage.getItem("superqa.split"));
+    return saved >= 20 && saved <= 75 ? saved : 42;
+  });
+  const [dragging, setDragging] = useState(false);
+  const panesRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const termHandlers = useRef(new Map<string, (data: string) => void>());
+
+  const onSplitDown = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    setDragging(true);
+    const move = (ev: PointerEvent) => {
+      const rect = panesRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const pct = Math.min(75, Math.max(20, ((ev.clientX - rect.left) / rect.width) * 100));
+      setSplit(pct);
+    };
+    const up = () => {
+      setDragging(false);
+      setSplit((v) => {
+        localStorage.setItem("superqa.split", String(Math.round(v * 10) / 10));
+        return v;
+      });
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }, []);
 
   useEffect(() => {
     api("/api/config")
@@ -116,10 +144,15 @@ export default function App() {
             />
           </section>
         ) : (
-          <div className="panes">
+          <div
+            className={`panes ${dragging ? "dragging" : ""}`}
+            ref={panesRef}
+            style={{ gridTemplateColumns: `minmax(280px, ${split}%) 6px minmax(340px, 1fr)` }}
+          >
             <section className="term-pane">
               <Term repo={view} connected={connected} send={send} subscribe={subscribe} />
             </section>
+            <div className="splitter" onPointerDown={onSplitDown} title="Drag to resize" />
             <section className="right">
               {repo?.kind === "mkdocs" && <Preview port={config.preview.port} />}
               {isTestRepo && (
