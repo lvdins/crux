@@ -105,10 +105,17 @@ export default function Term({
       lastCols = term.cols;
       lastRows = term.rows;
       send({ type: "term:open", id, repo, cols: term.cols, rows: term.rows, fresh });
-      unsubscribe = subscribe(id, (data) => term.write(data));
-      if (fresh && bootCmd) {
-        send({ type: "term:input", id, data: `${bootCmd}\n` });
-      }
+      // A boot command typed while zsh is still initializing gets eaten by
+      // its line editor — wait for the shell's first output (the prompt),
+      // then give it a beat before typing.
+      let bootPending = fresh && !!bootCmd;
+      unsubscribe = subscribe(id, (data) => {
+        term.write(data);
+        if (bootPending) {
+          bootPending = false;
+          setTimeout(() => send({ type: "term:input", id, data: `${bootCmd}\n` }), 350);
+        }
+      });
       // One more pass shortly after, in case a scrollbar or font swap shifted
       // the layout between the first fit and the PTY spawn.
       setTimeout(doFit, 300);
