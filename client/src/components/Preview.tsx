@@ -7,13 +7,13 @@ interface Status {
   log: string[];
 }
 
-export default function Preview({ port }: { port: number }) {
+export default function Preview({ wsKey }: { wsKey: string }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   const refresh = useCallback(() => {
-    api("/api/preview/status").then((r) => r.json()).then(setStatus);
-  }, []);
+    api(`/api/preview/${wsKey}/status`).then((r) => r.json()).then(setStatus);
+  }, [wsKey]);
 
   useEffect(() => {
     refresh();
@@ -21,10 +21,11 @@ export default function Preview({ port }: { port: number }) {
     return () => clearInterval(id);
   }, [refresh]);
 
-  const start = () => api("/api/preview/start", { method: "POST" }).then((r) => r.json()).then(setStatus);
-  const stop = () => api("/api/preview/stop", { method: "POST" }).then((r) => r.json()).then(setStatus);
+  const start = () => api(`/api/preview/${wsKey}/start`, { method: "POST" }).then((r) => r.json()).then(setStatus);
+  const stop = () => api(`/api/preview/${wsKey}/stop`, { method: "POST" }).then((r) => r.json()).then(setStatus);
 
   const running = status?.state === "running";
+  const port = status?.port;
 
   return (
     <div className="preview">
@@ -50,7 +51,7 @@ export default function Preview({ port }: { port: number }) {
       ) : (
         <div className="preview-placeholder">
           <p>
-            Live render of the <strong>product-docs</strong> site. Start it, then ask the agent to edit a page —
+            Live render of this docs site. Start it, then ask the agent to edit a page —
             mkdocs hot-reloads as files change.
           </p>
           {status?.log?.length ? <pre className="preview-log">{status.log.join("\n")}</pre> : null}

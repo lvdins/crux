@@ -6,7 +6,7 @@ export interface RepoInfo {
 
 export interface AppConfig {
   repos: Record<string, RepoInfo>;
-  preview: { port: number };
+  user?: string;
 }
 
 export interface TestCase {

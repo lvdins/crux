@@ -1,14 +1,17 @@
 import express from "express";
 import http from "node:http";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, WebSocket } from "ws";
-import { config } from "./config.js";
+import { config, addWorkspace, updateWorkspace, removeWorkspace, detectKind, expandHome } from "./config.js";
 import { attachTerm, termInput, termResize, killTerm, detachAll, killAllTerms, openLog } from "./term.js";
-import { startPreview, stopPreview, previewStatus } from "./preview.js";
+import { startPreview, stopPreview, stopAllPreviews, previewStatus } from "./preview.js";
 import { buildTree, sharedEndpoints } from "./tree.js";
 
 const PORT = 8787;
+let connectionsCache: { at: number; data: unknown } | null = null;
 const app = express();
 app.use(express.json());
 
@@ -16,7 +19,7 @@ app.use(express.json());
 // both are foreign origins to this server, so allow them. Local tool only.
 app.use((_req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   next();
 });
@@ -32,7 +35,7 @@ app.get("/api/config", (_req, res) => {
     repos: Object.fromEntries(
       Object.entries(config.repos).map(([k, r]) => [k, { label: r.label, kind: r.kind, path: r.path }]),
     ),
-    preview: config.preview,
+    user: os.userInfo().username,
   });
 });
 
@@ -42,7 +45,6 @@ app.get("/api/tree", async (_req, res) => {
   const trees = buildTree();
   let descriptions: Record<string, Record<string, string>> = {};
   try {
-    const fs = await import("node:fs");
     descriptions = JSON.parse(fs.readFileSync(descriptionsPath, "utf8"));
   } catch {
     // No descriptions file yet — the UI falls back gracefully.
@@ -50,23 +52,78 @@ app.get("/api/tree", async (_req, res) => {
   res.json({ trees, shared: sharedEndpoints(trees), descriptions });
 });
 
-app.post("/api/preview/start", (_req, res) => {
-  startPreview();
-  res.json(previewStatus());
+app.post("/api/preview/:key/start", (req, res) => {
+  startPreview(req.params.key);
+  res.json(previewStatus(req.params.key));
 });
-app.post("/api/preview/stop", (_req, res) => {
-  stopPreview();
-  res.json(previewStatus());
+app.post("/api/preview/:key/stop", (req, res) => {
+  stopPreview(req.params.key);
+  res.json(previewStatus(req.params.key));
 });
-app.get("/api/preview/status", (_req, res) => {
-  res.json(previewStatus());
+app.get("/api/preview/:key/status", (req, res) => {
+  res.json(previewStatus(req.params.key));
+});
+
+/* ---------- workspaces ---------- */
+
+const invalidate = () => {
+  connectionsCache = null;
+};
+
+app.post("/api/workspaces", (req, res) => {
+  try {
+    const [key, repo] = addWorkspace(req.body ?? {});
+    invalidate();
+    res.json({ key, repo });
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+app.patch("/api/workspaces/:key", (req, res) => {
+  try {
+    const repo = updateWorkspace(req.params.key, req.body ?? {});
+    invalidate();
+    res.json({ key: req.params.key, repo });
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+app.delete("/api/workspaces/:key", (req, res) => {
+  stopPreview(req.params.key);
+  removeWorkspace(req.params.key);
+  invalidate();
+  res.json({ ok: true });
+});
+
+// Folder browser for the "add workspace" dialog — works the same in the
+// browser and in the desktop shell, no native dialog plugin needed.
+app.get("/api/fs/list", (req, res) => {
+  const raw = typeof req.query.path === "string" && req.query.path ? req.query.path : os.homedir();
+  const dir = path.resolve(expandHome(raw));
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch (err) {
+    res.status(400).json({ error: `Cannot open ${dir}` });
+    return;
+  }
+  const dirs = entries
+    .filter((e) => e.isDirectory() && !e.name.startsWith(".") && e.name !== "node_modules")
+    .map((e) => e.name)
+    .sort((a, b) => a.localeCompare(b))
+    .slice(0, 400)
+    .map((name) => {
+      const kind = detectKind(path.join(dir, name));
+      return { name, kind: kind === "generic" ? undefined : kind };
+    });
+  const kind = detectKind(dir);
+  res.json({ path: dir, parent: path.dirname(dir) === dir ? null : path.dirname(dir), home: os.homedir(), kind, dirs });
 });
 
 app.get("/api/debug/opens", (_req, res) => {
   res.json(openLog);
 });
 
-let connectionsCache: { at: number; data: unknown } | null = null;
 app.get("/api/connections", async (_req, res) => {
   // Reading every test file is a few hundred ms — cache for a minute.
   if (!connectionsCache || Date.now() - connectionsCache.at > 60_000) {
@@ -124,7 +181,7 @@ server.listen(PORT, () => {
 });
 
 function shutdown() {
-  stopPreview();
+  stopAllPreviews();
   killAllTerms();
   process.exit(0);
 }

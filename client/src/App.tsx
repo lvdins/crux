@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AppConfig } from "./types";
+import type { AppConfig, RepoInfo } from "./types";
 import { api, WS_URL } from "./net";
 import Term, { disposeTerm } from "./components/Term";
 import Preview from "./components/Preview";
 import TestTree from "./components/TestTree";
 import SpiderWeb from "./components/SpiderWeb";
 import Connections from "./components/Connections";
+import AddWorkspace from "./components/AddWorkspace";
 import { WebIcon, ClaudeLogo, CodexLogo } from "./components/icons";
 
 const CHIP_COLORS: Record<string, string> = {
   mkdocs: "#d9a05b",
   playwright: "#7ec98f",
   pytest: "#6fa8dc",
+  generic: "#b4a7d6",
 };
 
 type View = string | "connections";
@@ -46,6 +48,8 @@ export default function App() {
       localStorage.setItem("qualitylab.sideHidden", h ? "0" : "1");
       return !h;
     });
+  const [adding, setAdding] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [agentDrag, setAgentDrag] = useState<null | { cmd: "claude" | "codex"; x: number; y: number; zone: "tab" | "split" | null }>(null);
   const panesRef = useRef<HTMLDivElement>(null);
   const termPaneRef = useRef<HTMLElement>(null);
@@ -79,7 +83,9 @@ export default function App() {
       .then((r) => r.json())
       .then((c: AppConfig) => {
         setConfig(c);
-        setView(Object.keys(c.repos)[0]);
+        const keys = Object.keys(c.repos);
+        const last = localStorage.getItem("qualitylab.view");
+        setView(last && (last === "connections" || keys.includes(last)) ? last : keys[0] ?? "");
         const initialTabs: Record<string, TermTab[]> = {};
         const initialActive: Record<string, string> = {};
         for (const key of Object.keys(c.repos)) {
@@ -119,6 +125,10 @@ export default function App() {
       wsRef.current?.close();
     };
   }, []);
+
+  useEffect(() => {
+    if (view) localStorage.setItem("qualitylab.view", view);
+  }, [view]);
 
   const send = useCallback((payload: Record<string, unknown>) => {
     const ws = wsRef.current;
@@ -240,6 +250,29 @@ export default function App() {
     [view, zoneAt, launchAgent, addTab, createTab, splits],
   );
 
+  const onWorkspaceAdded = (key: string, repo: RepoInfo) => {
+    setConfig((c) => (c ? { ...c, repos: { ...c.repos, [key]: repo } } : c));
+    const id = newTabId(key);
+    setTabs((prev) => ({ ...prev, [key]: [{ id, title: "shell" }] }));
+    setActiveTab((prev) => ({ ...prev, [key]: id }));
+    setView(key);
+    setTestTab("tree");
+    setAdding(false);
+  };
+
+  const removeWs = async (key: string) => {
+    setConfirmRemove(null);
+    await api(`/api/workspaces/${key}`, { method: "DELETE" });
+    for (const t of tabs[key] ?? []) {
+      send({ type: "term:kill", id: t.id });
+      disposeTerm(t.id);
+    }
+    setTabs(({ [key]: _gone, ...rest }) => rest);
+    const { [key]: _removed, ...repos } = config?.repos ?? {};
+    if (view === key) setView(Object.keys(repos)[0] ?? "");
+    setConfig((c) => (c ? { ...c, repos } : c));
+  };
+
   const hideRight = (hidden: boolean) => {
     setRightHidden(hidden);
     localStorage.setItem("qualitylab.rightHidden", hidden ? "1" : "0");
@@ -248,7 +281,9 @@ export default function App() {
   if (!config) return <div className="loading">Loading QualityLab…</div>;
 
   const repo = view !== "connections" ? config.repos[view] : undefined;
-  const isTestRepo = repo && repo.kind !== "mkdocs";
+  const isTestRepo = repo && (repo.kind === "playwright" || repo.kind === "pytest");
+  const hasPanel = repo?.kind === "mkdocs" || !!isTestRepo;
+  const panelHidden = rightHidden || !hasPanel;
   const viewSplits = view !== "connections" ? splits[view] ?? [] : [];
   const splitInfos = viewSplits
     .map((id) => (tabs[view] ?? []).find((t) => t.id === id))
@@ -267,7 +302,7 @@ export default function App() {
         <span className="brand">
           <img src="/giraffe.png" alt="QualityLab" className="brand-logo" />
         </span>
-        <span className="workspace-label">{repo ? repo.label : "Connections"}</span>
+        <span className="workspace-label">{repo ? repo.label : view === "connections" ? "Connections" : ""}</span>
         <div className="agent-buttons">
           <button
             className="agent-btn"
@@ -295,23 +330,45 @@ export default function App() {
             if (e.propertyName === "width") window.dispatchEvent(new Event("resize"));
           }}
         >
-          <div className="side-section">Workspaces</div>
-          {Object.entries(config.repos).map(([key, r]) => (
-            <button
-              key={key}
-              className={`side-item ${view === key ? "active" : ""}`}
-              onClick={() => {
-                setView(key);
-                setTestTab("tree");
-              }}
-              title={r.path}
-            >
-              <span className="avatar" style={{ color: CHIP_COLORS[r.kind] ?? "var(--ink-soft)" }}>
-                {key[0].toUpperCase()}
-              </span>
-              <span className="side-label">{r.label}</span>
+          <div className="side-section side-section-row">
+            <span>Workspaces</span>
+            <button className="side-add" title="Add workspace" onClick={() => setAdding(true)}>
+              +
             </button>
-          ))}
+          </div>
+          {Object.entries(config.repos).map(([key, r]) =>
+            confirmRemove === key ? (
+              <div key={key} className="side-confirm">
+                <span>Remove {r.label}?</span>
+                <button className="danger" onClick={() => removeWs(key)}>Remove</button>
+                <button onClick={() => setConfirmRemove(null)}>Keep</button>
+              </div>
+            ) : (
+              <div key={key} className={`side-item ${view === key ? "active" : ""}`} title={r.path}>
+                <button
+                  className="side-item-main"
+                  onClick={() => {
+                    setView(key);
+                    setTestTab("tree");
+                  }}
+                >
+                  <span className="avatar" style={{ color: CHIP_COLORS[r.kind] ?? "var(--ink-soft)" }}>
+                    {r.label[0]?.toUpperCase()}
+                  </span>
+                  <span className="side-label">{r.label}</span>
+                </button>
+                <button className="side-remove" title="Remove workspace (files stay on disk)" onClick={() => setConfirmRemove(key)}>
+                  ×
+                </button>
+              </div>
+            ),
+          )}
+          {Object.keys(config.repos).length === 0 && (
+            <button className="side-item side-empty" onClick={() => setAdding(true)}>
+              <span className="avatar">+</span>
+              <span className="side-label">Add a repo folder</span>
+            </button>
+          )}
           <div className="side-section">Views</div>
           <button
             className={`side-item ${view === "connections" ? "active" : ""}`}
@@ -321,10 +378,22 @@ export default function App() {
             <span className="side-label">Connections</span>
           </button>
           <div className="side-footer">
-            <span className="avatar">D</span> dins · QualityLab 0.1
+            <span className="avatar">{(config.user ?? "?")[0].toUpperCase()}</span> {config.user} · QualityLab 0.1
           </div>
         </nav>
-        {view === "connections" ? (
+        {!repo && view !== "connections" ? (
+          <section className="full-pane empty-state">
+            <img src="/giraffe.png" alt="" className="empty-logo" />
+            <h2>Add your QA repos</h2>
+            <p>
+              Point QualityLab at the folders you already have — docs, Playwright E2E, pytest API, or anything else.
+              The type is detected automatically and picks the right panel: docs preview or test tree.
+            </p>
+            <button className="primary" onClick={() => setAdding(true)}>
+              + Add workspace
+            </button>
+          </section>
+        ) : view === "connections" ? (
           <section className="full-pane">
             <Connections />
           </section>
@@ -332,7 +401,7 @@ export default function App() {
           <div
             className={`panes ${dragging ? "dragging" : ""}`}
             ref={panesRef}
-            style={{ gridTemplateColumns: rightHidden ? "1fr 0px 0fr" : `${split}fr 6px ${100 - split}fr` }}
+            style={{ gridTemplateColumns: panelHidden ? "1fr 0px 0fr" : `${split}fr 6px ${100 - split}fr` }}
             onTransitionEnd={(e) => {
               // Settle terminals and panels at the final size once the slide
               // finishes — mid-animation fits leave xterm garbled otherwise.
@@ -415,19 +484,19 @@ export default function App() {
               )}
             </section>
             <div
-              className={`splitter ${rightHidden ? "collapsed" : ""}`}
-              onPointerDown={rightHidden ? undefined : onSplitDown}
+              className={`splitter ${panelHidden ? "collapsed" : ""}`}
+              onPointerDown={panelHidden ? undefined : onSplitDown}
               title="Drag to resize"
             />
             {
-              <section className={`right ${rightHidden ? "collapsed" : ""}`}>
+              <section className={`right ${panelHidden ? "collapsed" : ""}`}>
                 {repo?.kind === "mkdocs" && (
                   <>
                     <nav className="tabs">
                       <button className="active">Doc preview</button>
                       <button className="pane-collapse" title="Hide panel" onClick={() => hideRight(true)}>»</button>
                     </nav>
-                    <Preview port={config.preview.port} />
+                    <Preview key={view} wsKey={view} />
                   </>
                 )}
                 {isTestRepo && (
@@ -446,7 +515,7 @@ export default function App() {
                 )}
               </section>
             }
-            {rightHidden && (
+            {rightHidden && hasPanel && (
               <button className="pane-reopen" title="Show panel" onClick={() => hideRight(false)}>
                 «
               </button>
@@ -454,6 +523,7 @@ export default function App() {
           </div>
         )}
       </div>
+      {adding && <AddWorkspace onClose={() => setAdding(false)} onAdded={onWorkspaceAdded} />}
       {agentDrag && (
         <div className="drag-ghost" style={{ left: agentDrag.x, top: agentDrag.y }}>
           {agentDrag.cmd === "claude" ? <ClaudeLogo /> : <CodexLogo />} {agentDrag.cmd}

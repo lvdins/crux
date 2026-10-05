@@ -88,7 +88,7 @@ function parsePytestFile(abs: string, rel: string): TestFile | null {
 export function buildTree(): RepoTree[] {
   const out: RepoTree[] = [];
   for (const [key, repo] of Object.entries(config.repos)) {
-    if (repo.kind === "mkdocs") continue;
+    if (repo.kind !== "playwright" && repo.kind !== "pytest") continue;
     const tree: RepoTree = { key, label: repo.label, kind: repo.kind, files: [] };
     if (!fs.existsSync(repo.path)) {
       tree.error = `Path not found: ${repo.path}`;
