@@ -739,3 +739,90 @@ button.primary:hover:not(:disabled) { background: var(--accent-ink); }
 }
 .fm-setup-title { display: flex; align-items: center; gap: 8px; font-weight: 600; }
 .fm-setup-hint { color: var(--ink-faint); font-size: 12px; overflow-wrap: anywhere; }
+
+/* connections tabs */
+.fm-tabs { display: inline-flex; gap: 2px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 2px; }
+.fm-tabs button {
+  background: none; border: none; color: var(--ink-soft); font: inherit; font-size: 12.5px; font-weight: 500;
+  padding: 4px 12px; border-radius: 6px; cursor: pointer;
+}
+.fm-tabs button.on { background: var(--raise); color: var(--ink); }
+.fm-top { justify-content: flex-start; }
+.fm-top .fm-tools { margin-left: auto; }
+.fm-graph { flex: 1; min-height: 0; position: relative; }
+
+/* ---------- feature graph (galaxy) ---------- */
+.fg { position: absolute; inset: 0; background: #050505; overflow: hidden; }
+.fg canvas { display: block; cursor: grab; touch-action: none; }
+.fg-search {
+  position: absolute; top: 14px; left: 14px; width: 300px; max-width: calc(100% - 28px);
+  display: flex; flex-direction: column; gap: 6px; pointer-events: none;
+}
+.fg-search > * { pointer-events: auto; }
+.fg-search-box { display: flex; background: rgba(20, 20, 20, 0.92); border: 1px solid #2a2a2a; border-radius: 7px; overflow: hidden; }
+.fg-search-box input {
+  flex: 1; min-width: 0; background: none; border: none; color: var(--ink); font: inherit; font-size: 12.5px; padding: 7px 10px;
+}
+.fg-search-box input:focus { outline: none; }
+.fg-search-box button { background: none; border: none; color: var(--ink-faint); font-size: 16px; padding: 0 10px; cursor: pointer; }
+.fg-found { color: var(--ink-soft); font-size: 12.5px; padding: 0 2px; text-shadow: 0 1px 3px #000; }
+.fg-found b { color: var(--ink); font-size: 17px; font-weight: 600; }
+.fg-matches {
+  max-height: 42vh; overflow-y: auto; overflow-x: hidden; background: rgba(14, 14, 14, 0.9);
+  border: 1px solid #222; border-radius: 7px; padding: 4px;
+}
+.fg-matches button {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: none; border: none;
+  color: var(--ink-soft); font: inherit; font-size: 12px; padding: 3px 6px; border-radius: 4px; cursor: pointer;
+}
+.fg-matches button:hover, .fg-matches button.on { background: #1f1f1f; color: var(--ink); }
+.fg-m-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fg-m-good, .fg-m-bad { font-family: var(--mono); font-size: 11.5px; min-width: 22px; text-align: right; }
+.fg-m-good { color: #7ec98f; }
+.fg-m-bad { color: #e06c5c; }
+.fg-kind-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.fg-legend {
+  position: absolute; top: 14px; right: 14px; display: flex; flex-direction: column; align-items: flex-end; gap: 3px;
+}
+.fg-legend button {
+  display: inline-flex; align-items: center; gap: 7px; background: rgba(14, 14, 14, 0.75); border: 1px solid transparent;
+  color: var(--ink-soft); font: inherit; font-size: 11.5px; padding: 3px 9px; border-radius: 12px; cursor: pointer;
+}
+.fg-legend button:hover { border-color: #2a2a2a; color: var(--ink); }
+.fg-legend button.off { opacity: 0.35; }
+.fg-legend button small { color: var(--ink-faint); font-family: var(--mono); }
+.fg-legend-shared { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; color: var(--ink-faint); padding: 3px 9px; }
+.fg-legend-shared i { width: 16px; height: 2px; background: rgba(255, 140, 170, 0.7); display: inline-block; }
+.fg-tip {
+  position: absolute; pointer-events: none; display: flex; align-items: center; gap: 8px;
+  background: rgba(10, 10, 10, 0.92); border: 1px solid #333; border-radius: 4px; padding: 3px 8px; font-size: 12px;
+  white-space: nowrap; max-width: 420px;
+}
+.fg-tip-label { color: var(--ink); overflow: hidden; text-overflow: ellipsis; }
+.fg-info {
+  position: absolute; left: 14px; bottom: 34px; width: 320px; max-width: calc(100% - 28px);
+  display: flex; flex-direction: column; gap: 6px; animation: fade-in 0.2s ease-out;
+}
+.fg-info-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; color: var(--ink-soft); font-size: 13px; text-shadow: 0 1px 3px #000; }
+.fg-info-line b { color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
+.fg-info-sub { color: var(--ink-faint); font-family: var(--mono); font-size: 11px; overflow-wrap: anywhere; }
+.fg-info-box {
+  display: flex; gap: 26px; padding: 10px 14px; border: 1px solid #3a3a3a; border-radius: 4px; background: rgba(8, 8, 8, 0.85);
+}
+.fg-info-box div { display: flex; flex-direction: column; }
+.fg-info-box small { color: var(--ink-faint); font-size: 11px; }
+.fg-big { font-size: 28px; font-weight: 300; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.fg-big.good { color: #7ec98f; }
+.fg-big.bad { color: #e06c5c; }
+.fg-info-kinds { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11.5px; color: var(--ink-soft); }
+.fg-info-kinds span { display: inline-flex; align-items: center; gap: 5px; }
+.fg-open {
+  align-self: flex-start; background: rgba(20, 20, 20, 0.9); border: 1px solid #333; color: var(--ink);
+  font: inherit; font-size: 12px; border-radius: 6px; padding: 4px 10px; cursor: pointer;
+}
+.fg-open:hover { border-color: var(--ink-faint); }
+.fg-hint {
+  position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); color: var(--ink-faint);
+  font-size: 11.5px; white-space: nowrap; pointer-events: none; text-shadow: 0 1px 3px #000;
+}
+@media (max-width: 700px) { .fg-legend { display: none; } .fg-hint { display: none; } }

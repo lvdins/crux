@@ -1,19 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../net";
+import FeatureGraph from "./FeatureGraph";
 
-interface FeatureEndpoint {
+export interface FeatureEndpoint {
   path: string;
   methods: string[];
   backend?: { view: string; file?: string; line?: number };
   apiTests: string[];
   e2eTests: string[];
 }
-interface FeatureLink {
+export interface FeatureLink {
   file: string;
   tests: number;
   via: string[];
 }
-interface Feature {
+export interface Feature {
   id: string;
   label: string;
   group: string;
@@ -25,12 +26,12 @@ interface Feature {
   api: FeatureLink[];
   coverage: { endpoints: number; apiCovered: number; backendResolved: number; e2eTests: number; apiTests: number };
 }
-interface Source {
+export interface Source {
   key: string;
   label: string;
   path: string;
 }
-interface FeatureMapData {
+export interface FeatureMapData {
   ready: boolean;
   missing: string[];
   sources: Record<string, Source | null>;
@@ -267,6 +268,13 @@ export default function FeatureMap({ onAddWorkspace }: { onAddWorkspace: () => v
   const [selected, setSelected] = useState<string | null>(() => localStorage.getItem("qualitylab.feature"));
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
+  const [tab, setTab] = useState<"coverage" | "graph">(() =>
+    localStorage.getItem("qualitylab.connTab") === "graph" ? "graph" : "coverage",
+  );
+  const switchTab = (next: "coverage" | "graph") => {
+    setTab(next);
+    localStorage.setItem("qualitylab.connTab", next);
+  };
 
   const load = useCallback((refresh = false) => {
     setLoading(true);
@@ -350,6 +358,14 @@ export default function FeatureMap({ onAddWorkspace }: { onAddWorkspace: () => v
   return (
     <div className="fm">
       <header className="fm-top">
+        <div className="fm-tabs">
+          <button className={tab === "coverage" ? "on" : ""} onClick={() => switchTab("coverage")}>
+            Coverage
+          </button>
+          <button className={tab === "graph" ? "on" : ""} onClick={() => switchTab("graph")}>
+            Graph
+          </button>
+        </div>
         <div className="fm-stats">
           <div className="fm-stat">
             <b>{t.features}</b>
@@ -369,6 +385,8 @@ export default function FeatureMap({ onAddWorkspace }: { onAddWorkspace: () => v
           </div>
         </div>
         <div className="fm-tools">
+          {tab === "coverage" && (
+            <>
           <input className="fm-search" placeholder="Search features, routes, endpoints…" value={query} onChange={(e) => setQuery(e.target.value)} />
           <div className="fm-seg">
             {filters.map(([key, label, n]) => (
@@ -377,6 +395,8 @@ export default function FeatureMap({ onAddWorkspace }: { onAddWorkspace: () => v
               </button>
             ))}
           </div>
+            </>
+          )}
           <button className="fm-refresh" onClick={() => load(true)} disabled={loading} title={`Scanned in ${data.ms} ms`}>
             {loading ? "Scanning…" : "Re-scan"}
           </button>
@@ -388,6 +408,19 @@ export default function FeatureMap({ onAddWorkspace }: { onAddWorkspace: () => v
           <button onClick={onAddWorkspace}>Add folder</button>
         </div>
       )}
+      {tab === "graph" ? (
+        <div className="fm-graph">
+          <FeatureGraph
+            data={data}
+            onOpenFeature={(id) => {
+              setSelected(id);
+              setFilter("all");
+              setQuery("");
+              switchTab("coverage");
+            }}
+          />
+        </div>
+      ) : (
       <div className="fm-body">
         <nav className="fm-list">
           {visible.length === 0 && <div className="fm-empty-row">Nothing matches.</div>}
@@ -418,6 +451,7 @@ export default function FeatureMap({ onAddWorkspace }: { onAddWorkspace: () => v
         </nav>
         <div className="fm-main">{current ? <Detail key={current.id} f={current} sources={data.sources} /> : null}</div>
       </div>
+      )}
     </div>
   );
 }
