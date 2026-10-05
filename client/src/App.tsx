@@ -5,7 +5,13 @@ import Term, { disposeTerm } from "./components/Term";
 import Preview from "./components/Preview";
 import TestTree from "./components/TestTree";
 import SpiderWeb from "./components/SpiderWeb";
-import { iconFor, WebIcon, ClaudeLogo, CodexLogo } from "./components/icons";
+import { WebIcon, ClaudeLogo, CodexLogo } from "./components/icons";
+
+const CHIP_COLORS: Record<string, string> = {
+  mkdocs: "#d9a05b",
+  playwright: "#7ec98f",
+  pytest: "#6fa8dc",
+};
 
 type View = string | "connections";
 
@@ -185,28 +191,11 @@ export default function App() {
           <span className="brand-dot" /> SuperQA
         </span>
         <span className="workspace-label">{repo ? repo.label : "Connections"}</span>
-        <div className="agent-buttons">
-          <button
-            className="agent-btn"
-            disabled={!repo}
-            title={repo ? `Run claude in the ${repo.label} terminal` : "Pick a workspace first"}
-            onClick={() => launchAgent("claude")}
-          >
-            <ClaudeLogo /> Claude
-          </button>
-          <button
-            className="agent-btn"
-            disabled={!repo}
-            title={repo ? `Run codex in the ${repo.label} terminal` : "Pick a workspace first"}
-            onClick={() => launchAgent("codex")}
-          >
-            <CodexLogo /> Codex
-          </button>
-        </div>
         <span className={`conn ${connected ? "on" : "off"}`}>{connected ? "connected" : "offline"}</span>
       </header>
       <div className="body">
         <nav className="sidebar">
+          <div className="side-section">Workspaces</div>
           {Object.entries(config.repos).map(([key, r]) => (
             <button
               key={key}
@@ -217,11 +206,13 @@ export default function App() {
               }}
               title={r.path}
             >
-              <span className="side-icon">{iconFor(r.kind)}</span>
+              <span className="avatar" style={{ color: CHIP_COLORS[r.kind] ?? "var(--ink-soft)" }}>
+                {key[0].toUpperCase()}
+              </span>
               <span className="side-label">{r.label}</span>
             </button>
           ))}
-          <div className="side-sep" />
+          <div className="side-section">Views</div>
           <button
             className={`side-item ${view === "connections" ? "active" : ""}`}
             onClick={() => setView("connections")}
@@ -229,6 +220,9 @@ export default function App() {
             <span className="side-icon"><WebIcon /></span>
             <span className="side-label">Connections</span>
           </button>
+          <div className="side-footer">
+            <span className="avatar">D</span> dins · SuperQA 0.1
+          </div>
         </nav>
         {view === "connections" ? (
           <section className="full-pane">
@@ -272,6 +266,14 @@ export default function App() {
                 ))}
                 <button className="term-tab-add" title="New terminal" onClick={() => addTab(view)}>
                   +
+                </button>
+              </div>
+              <div className="agent-strip">
+                <button title={`Run claude in ${repo?.label}`} onClick={() => launchAgent("claude")}>
+                  <ClaudeLogo /> Claude
+                </button>
+                <button title={`Run codex in ${repo?.label}`} onClick={() => launchAgent("codex")}>
+                  <CodexLogo /> Codex
                 </button>
               </div>
               {(tabs[view] ?? [])

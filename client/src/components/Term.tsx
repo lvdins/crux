@@ -58,10 +58,10 @@ export default function Term({
         cursorBlink: true,
         scrollback: 8000,
         theme: {
-          background: "#101511",
-          foreground: "#e4eae5",
-          cursor: "#2fc98f",
-          selectionBackground: "#15362a",
+          background: "#0e0e0e",
+          foreground: "#ececec",
+          cursor: "#3ecf8e",
+          selectionBackground: "#2a2a2a",
         },
       });
       const fit = new FitAddon();
