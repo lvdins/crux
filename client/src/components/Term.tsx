@@ -61,21 +61,60 @@ export default function Term({
     }
     const { term, fit, el } = cached;
     container.appendChild(el);
-    fit.fit();
-    send({ type: "term:open", repo, cols: term.cols, rows: term.rows, fresh });
-    const unsubscribe = subscribe(repo, (data) => term.write(data));
 
-    const resize = () => {
+    let disposed = false;
+    let unsubscribe: (() => void) | null = null;
+    let lastCols = 0;
+    let lastRows = 0;
+
+    const doFit = () => {
+      if (disposed) return;
       fit.fit();
-      send({ type: "term:resize", repo, cols: term.cols, rows: term.rows });
+      if (term.cols !== lastCols || term.rows !== lastRows) {
+        lastCols = term.cols;
+        lastRows = term.rows;
+        send({ type: "term:resize", repo, cols: term.cols, rows: term.rows });
+      }
     };
-    const observer = new ResizeObserver(resize);
+
+    // The PTY must be created with the settled size, or programs like claude
+    // draw at the wrong width. Wait for fonts + two frames before opening.
+    const boot = async () => {
+      try {
+        await document.fonts?.ready;
+      } catch {
+        /* older webviews */
+      }
+      await new Promise(requestAnimationFrame);
+      await new Promise(requestAnimationFrame);
+      if (disposed) return;
+      fit.fit();
+      lastCols = term.cols;
+      lastRows = term.rows;
+      send({ type: "term:open", repo, cols: term.cols, rows: term.rows, fresh });
+      unsubscribe = subscribe(repo, (data) => term.write(data));
+      // One more pass shortly after, in case a scrollbar or font swap shifted
+      // the layout between the first fit and the PTY spawn.
+      setTimeout(doFit, 300);
+      term.focus();
+    };
+    void boot();
+
+    let debounce: ReturnType<typeof setTimeout>;
+    const onResize = () => {
+      clearTimeout(debounce);
+      debounce = setTimeout(doFit, 80);
+    };
+    const observer = new ResizeObserver(onResize);
     observer.observe(container);
-    term.focus();
+    window.addEventListener("resize", onResize);
 
     return () => {
-      unsubscribe();
+      disposed = true;
+      clearTimeout(debounce);
+      unsubscribe?.();
       observer.disconnect();
+      window.removeEventListener("resize", onResize);
       if (el.parentElement === container) container.removeChild(el);
     };
   }, [repo, connected, send, subscribe]);
