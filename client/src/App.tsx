@@ -366,10 +366,8 @@ export default function App() {
                         {t.title}
                         <button
                           className="term-tab-close"
-                          title="Close split (keeps the tab)"
-                          onClick={() =>
-                            setSplits((prev) => ({ ...prev, [view]: (prev[view] ?? []).filter((s) => s !== t.id) }))
-                          }
+                          title="Close this terminal"
+                          onClick={() => closeTab(view, t.id)}
                         >
                           ×
                         </button>
