@@ -9,9 +9,13 @@
   "scripts": {
     "dev": "concurrently -n server,client -c green,cyan \"npm run dev -w server\" \"npm run dev -w client\"",
     "dev:server": "npm run dev -w server",
-    "dev:client": "npm run dev -w client"
+    "dev:client": "npm run dev -w client",
+    "app:dev": "tauri dev",
+    "app:build": "tauri build",
+    "tauri": "tauri"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2",
     "concurrently": "^9.1.0"
   }
 }

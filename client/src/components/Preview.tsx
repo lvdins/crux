@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { api } from "../net";
 
 interface Status {
   state: "stopped" | "starting" | "running" | "error";
@@ -11,7 +12,7 @@ export default function Preview({ port }: { port: number }) {
   const [reloadKey, setReloadKey] = useState(0);
 
   const refresh = useCallback(() => {
-    fetch("/api/preview/status").then((r) => r.json()).then(setStatus);
+    api("/api/preview/status").then((r) => r.json()).then(setStatus);
   }, []);
 
   useEffect(() => {
@@ -20,8 +21,8 @@ export default function Preview({ port }: { port: number }) {
     return () => clearInterval(id);
   }, [refresh]);
 
-  const start = () => fetch("/api/preview/start", { method: "POST" }).then((r) => r.json()).then(setStatus);
-  const stop = () => fetch("/api/preview/stop", { method: "POST" }).then((r) => r.json()).then(setStatus);
+  const start = () => api("/api/preview/start", { method: "POST" }).then((r) => r.json()).then(setStatus);
+  const stop = () => api("/api/preview/stop", { method: "POST" }).then((r) => r.json()).then(setStatus);
 
   const running = status?.state === "running";
 

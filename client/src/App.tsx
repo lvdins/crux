@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppConfig, ChatItem } from "./types";
+import { api, WS_URL } from "./net";
 import Chat from "./components/Chat";
 import Preview from "./components/Preview";
 import TestTree from "./components/TestTree";
@@ -16,7 +17,7 @@ export default function App() {
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
-    fetch("/api/config")
+    api("/api/config")
       .then((r) => r.json())
       .then((c: AppConfig) => {
         setConfig(c);
@@ -25,12 +26,18 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const proto = location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${proto}://${location.host}/ws`);
-    wsRef.current = ws;
-    ws.onopen = () => setConnected(true);
-    ws.onclose = () => setConnected(false);
-    ws.onmessage = (event) => {
+    let closed = false;
+    let retry: ReturnType<typeof setTimeout>;
+    const connect = () => {
+      const ws = new WebSocket(WS_URL);
+      wsRef.current = ws;
+      ws.onopen = () => setConnected(true);
+      ws.onclose = () => {
+        setConnected(false);
+        setBusy(false);
+        if (!closed) retry = setTimeout(connect, 2000);
+      };
+      ws.onmessage = (event) => {
       const msg = JSON.parse(event.data);
       setItems((prev) => {
         const next = [...prev];
@@ -68,8 +75,14 @@ export default function App() {
             return prev;
         }
       });
+      };
     };
-    return () => ws.close();
+    connect();
+    return () => {
+      closed = true;
+      clearTimeout(retry);
+      wsRef.current?.close();
+    };
   }, []);
 
   const sendChat = useCallback(

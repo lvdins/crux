@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { TreeResponse, RepoTree, TestFile } from "../types";
+import { api } from "../net";
 
 function FileNode({ file, filter }: { file: TestFile; filter: string }) {
   const [open, setOpen] = useState(false);
@@ -61,7 +62,7 @@ export default function TestTree() {
 
   const load = () => {
     setError(null);
-    fetch("/api/tree")
+    api("/api/tree")
       .then((r) => r.json())
       .then(setData)
       .catch((e) => setError(String(e)));

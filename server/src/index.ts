@@ -1,5 +1,7 @@
 import express from "express";
 import http from "node:http";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { WebSocketServer, WebSocket } from "ws";
 import { config } from "./config.js";
 import { AgentSession } from "./agent.js";
@@ -9,6 +11,21 @@ import { buildTree, sharedEndpoints } from "./tree.js";
 const PORT = 8787;
 const app = express();
 app.use(express.json());
+
+// The UI may load from vite (:5180) or from the Tauri shell (tauri://) —
+// both are foreign origins to this server, so allow them. Local tool only.
+app.use((_req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  next();
+});
+app.options("*", (_req, res) => res.sendStatus(204));
+
+// Serve the built client when it exists, so the desktop app (and plain
+// http://localhost:8787) works without vite.
+const clientDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../client/dist");
+app.use(express.static(clientDist));
 
 app.get("/api/config", (_req, res) => {
   res.json({
