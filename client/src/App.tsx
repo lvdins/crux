@@ -38,7 +38,7 @@ export default function App() {
   const [dragging, setDragging] = useState(false);
   const [tabs, setTabs] = useState<Record<string, TermTab[]>>({});
   const [activeTab, setActiveTab] = useState<Record<string, string>>({});
-  const [splitTab, setSplitTab] = useState<Record<string, string | null>>({});
+  const [splits, setSplits] = useState<Record<string, string[]>>({});
   const [rightHidden, setRightHidden] = useState(() => localStorage.getItem("qualitylab.rightHidden") === "1");
   const [agentDrag, setAgentDrag] = useState<null | { cmd: "claude" | "codex"; x: number; y: number; zone: "tab" | "split" | null }>(null);
   const panesRef = useRef<HTMLDivElement>(null);
@@ -145,7 +145,7 @@ export default function App() {
     (repo: string, id: string) => {
       send({ type: "term:kill", id });
       disposeTerm(id);
-      setSplitTab((prev) => (prev[repo] === id ? { ...prev, [repo]: null } : prev));
+      setSplits((prev) => ({ ...prev, [repo]: (prev[repo] ?? []).filter((s) => s !== id) }));
       setTabs((prev) => {
         const remaining = (prev[repo] ?? []).filter((t) => t.id !== id);
         const next = { ...prev, [repo]: remaining };
@@ -220,17 +220,18 @@ export default function App() {
           return;
         }
         const zone = zoneAt(ev.clientX, ev.clientY);
-        if (zone === "tab") {
+        const splitAllowed = (splits[view] ?? []).length < 2; // 3 slots max
+        if (zone === "tab" || (zone === "split" && !splitAllowed)) {
           addTab(view, cmd, cmd, cmd);
         } else if (zone === "split") {
           const id = createTab(view, cmd, cmd, cmd);
-          setSplitTab((prev) => ({ ...prev, [view]: id }));
+          setSplits((prev) => ({ ...prev, [view]: [...(prev[view] ?? []), id] }));
         }
       };
       window.addEventListener("pointermove", move);
       window.addEventListener("pointerup", up);
     },
-    [view, zoneAt, launchAgent, addTab, createTab],
+    [view, zoneAt, launchAgent, addTab, createTab, splits],
   );
 
   const hideRight = (hidden: boolean) => {
@@ -242,8 +243,11 @@ export default function App() {
 
   const repo = view !== "connections" ? config.repos[view] : undefined;
   const isTestRepo = repo && repo.kind !== "mkdocs";
-  const termSplitId = view !== "connections" ? splitTab[view] : null;
-  const termSplitTab = termSplitId ? (tabs[view] ?? []).find((t) => t.id === termSplitId) : undefined;
+  const viewSplits = view !== "connections" ? splits[view] ?? [] : [];
+  const splitInfos = viewSplits
+    .map((id) => (tabs[view] ?? []).find((t) => t.id === id))
+    .filter(Boolean) as TermTab[];
+  const canSplit = viewSplits.length < 2;
 
   return (
     <div className="app">
@@ -311,12 +315,12 @@ export default function App() {
           <div
             className={`panes ${dragging ? "dragging" : ""}`}
             ref={panesRef}
-            style={{ gridTemplateColumns: rightHidden ? "1fr" : `minmax(280px, ${split}%) 6px minmax(340px, 1fr)` }}
+            style={{ gridTemplateColumns: rightHidden ? "1fr 0px 0fr" : `${split}fr 6px ${100 - split}fr` }}
           >
             <section className="term-pane" ref={termPaneRef}>
               <div className="term-tabs">
                 {(tabs[view] ?? [])
-                  .filter((t) => t.id !== termSplitId)
+                  .filter((t) => !viewSplits.includes(t.id))
                   .map((t) => (
                     <span
                       key={t.id}
@@ -346,54 +350,55 @@ export default function App() {
               </div>
               <div className="term-slots">
                 {(tabs[view] ?? [])
-                  .filter((t) => t.id === activeTab[view] && t.id !== termSplitId)
+                  .filter((t) => t.id === activeTab[view] && !viewSplits.includes(t.id))
                   .map((t) => (
                     <div className="term-slot" key={t.id}>
                       <Term id={t.id} repo={view} bootCmd={t.bootCmd} connected={connected} send={send} subscribe={subscribe} />
                     </div>
                   ))}
-                {termSplitId && termSplitTab && (
-                  <>
+                {splitInfos.map((t) => (
+                  <div className="term-slot-group" key={t.id}>
                     <div className="term-split-divider" />
                     <div className="term-slot split">
                       <div className="term-slot-head">
-                        {termSplitTab.agent === "claude" && <ClaudeLogo />}
-                        {termSplitTab.agent === "codex" && <CodexLogo />}
-                        {termSplitTab.title}
+                        {t.agent === "claude" && <ClaudeLogo />}
+                        {t.agent === "codex" && <CodexLogo />}
+                        {t.title}
                         <button
                           className="term-tab-close"
                           title="Close split (keeps the tab)"
-                          onClick={() => setSplitTab((prev) => ({ ...prev, [view]: null }))}
+                          onClick={() =>
+                            setSplits((prev) => ({ ...prev, [view]: (prev[view] ?? []).filter((s) => s !== t.id) }))
+                          }
                         >
                           ×
                         </button>
                       </div>
-                      <Term
-                        id={termSplitId}
-                        repo={view}
-                        bootCmd={termSplitTab.bootCmd}
-                        connected={connected}
-                        send={send}
-                        subscribe={subscribe}
-                      />
+                      <Term id={t.id} repo={view} bootCmd={t.bootCmd} connected={connected} send={send} subscribe={subscribe} />
                     </div>
-                  </>
-                )}
+                  </div>
+                ))}
               </div>
               {agentDrag && (
                 <div className="drop-zones">
-                  <div className={`drop-zone tab ${agentDrag.zone === "tab" ? "over" : ""}`}>
+                  <div className={`drop-zone tab ${agentDrag.zone === "tab" || (agentDrag.zone === "split" && !canSplit) ? "over" : ""}`}>
                     <span>Open as new tab</span>
                   </div>
-                  <div className={`drop-zone split ${agentDrag.zone === "split" ? "over" : ""}`}>
-                    <span>Split right</span>
-                  </div>
+                  {canSplit && (
+                    <div className={`drop-zone split ${agentDrag.zone === "split" ? "over" : ""}`}>
+                      <span>Split right</span>
+                    </div>
+                  )}
                 </div>
               )}
             </section>
-            {!rightHidden && <div className="splitter" onPointerDown={onSplitDown} title="Drag to resize" />}
-            {!rightHidden && (
-              <section className="right">
+            <div
+              className={`splitter ${rightHidden ? "collapsed" : ""}`}
+              onPointerDown={rightHidden ? undefined : onSplitDown}
+              title="Drag to resize"
+            />
+            {
+              <section className={`right ${rightHidden ? "collapsed" : ""}`}>
                 {repo?.kind === "mkdocs" && (
                   <>
                     <nav className="tabs">
@@ -418,7 +423,7 @@ export default function App() {
                   </>
                 )}
               </section>
-            )}
+            }
             {rightHidden && (
               <button className="pane-reopen" title="Show panel" onClick={() => hideRight(false)}>
                 «
