@@ -5,7 +5,7 @@ import Term from "./components/Term";
 import Preview from "./components/Preview";
 import TestTree from "./components/TestTree";
 import SpiderWeb from "./components/SpiderWeb";
-import { iconFor, WebIcon } from "./components/icons";
+import { iconFor, WebIcon, ClaudeLogo, CodexLogo } from "./components/icons";
 
 type View = string | "connections";
 
@@ -106,7 +106,24 @@ export default function App() {
           <span className="brand-dot" /> SuperQA
         </span>
         <span className="workspace-label">{repo ? repo.label : "Connections"}</span>
-        <span className="topbar-hint">run <code>claude</code> or <code>codex</code> in the terminal</span>
+        <div className="agent-buttons">
+          <button
+            className="agent-btn"
+            disabled={!repo}
+            title={repo ? `Run claude in the ${repo.label} terminal` : "Pick a workspace first"}
+            onClick={() => send({ type: "term:input", repo: view, data: "claude\n" })}
+          >
+            <ClaudeLogo /> Claude
+          </button>
+          <button
+            className="agent-btn"
+            disabled={!repo}
+            title={repo ? `Run codex in the ${repo.label} terminal` : "Pick a workspace first"}
+            onClick={() => send({ type: "term:input", repo: view, data: "codex\n" })}
+          >
+            <CodexLogo /> Codex
+          </button>
+        </div>
         <span className={`conn ${connected ? "on" : "off"}`}>{connected ? "connected" : "offline"}</span>
       </header>
       <div className="body">

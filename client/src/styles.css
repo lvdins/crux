@@ -48,8 +48,14 @@ body {
 .conn.off { color: var(--fail); }
 
 .workspace-label { color: var(--ink-soft); font-size: 13px; }
-.topbar-hint { color: var(--ink-faint); font-size: 12px; }
-.topbar-hint code { font-family: var(--mono); color: var(--accent-ink); font-size: 11px; }
+.agent-buttons { display: flex; gap: 7px; }
+.agent-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: var(--surface-2); color: var(--ink); border: 1px solid var(--line);
+  border-radius: 99px; padding: 5px 14px; font: inherit; font-size: 12.5px; cursor: pointer;
+}
+.agent-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-ink); }
+.agent-btn:disabled { opacity: 0.4; cursor: default; }
 
 /* terminal */
 .term-pane { display: flex; flex-direction: column; border-right: 1px solid var(--line); min-width: 0; background: var(--bg); }

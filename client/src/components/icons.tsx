@@ -48,6 +48,28 @@ export function WebIcon() {
   );
 }
 
+export function ClaudeLogo() {
+  // Simplified Anthropic spark: tapered rays in brand terracotta.
+  const rays = Array.from({ length: 8 }, (_, i) => i * 45);
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="#D97757">
+      {rays.map((deg) => (
+        <path key={deg} d="M8 8 L6.9 1.8 Q8 1.1 9.1 1.8 Z" transform={`rotate(${deg} 8 8)`} />
+      ))}
+    </svg>
+  );
+}
+
+export function CodexLogo() {
+  // Simplified OpenAI mark: hexagonal knot ring.
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round">
+      <path d="M8 1.6 L13.5 4.8 V11.2 L8 14.4 L2.5 11.2 V4.8 Z" />
+      <path d="M8 5 L10.6 6.5 V9.5 L8 11 L5.4 9.5 V6.5 Z" strokeWidth="1.1" />
+    </svg>
+  );
+}
+
 export function iconFor(kind: string) {
   switch (kind) {
     case "mkdocs":
