@@ -152,14 +152,19 @@ export default function App() {
       const repoTabs = tabs[view] ?? [];
       const active = repoTabs.find((t) => t.id === activeTab[view]);
       if (active && !active.agent) {
-        // Free tab: run here and label it.
-        send({ type: "term:input", id: active.id, data: `${cmd}\n` });
+        // Free shell tab: respawn it with the command baked into the shell
+        // invocation (typing into a live shell races prompt init — p10k eats
+        // typed-ahead input, so we never type commands at all).
+        send({ type: "term:kill", id: active.id });
+        disposeTerm(active.id);
+        const id = newTabId(view);
         setTabs((prev) => ({
           ...prev,
           [view]: (prev[view] ?? []).map((t) =>
-            t.id === active.id ? { ...t, agent: cmd, title: cmd } : t,
+            t.id === active.id ? { id, title: cmd, agent: cmd, bootCmd: cmd } : t,
           ),
         }));
+        setActiveTab((prev) => ({ ...prev, [view]: id }));
       } else {
         // Active tab already hosts an agent: open the new one in its own tab.
         addTab(view, cmd, cmd, cmd);
