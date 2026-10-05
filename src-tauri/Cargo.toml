@@ -1,7 +1,7 @@
 [package]
-name = "superqa"
+name = "qualitylab"
 version = "0.1.0"
-description = "SuperQA desktop app"
+description = "QualityLab desktop app"
 edition = "2021"
 
 [build-dependencies]

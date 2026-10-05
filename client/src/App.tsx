@@ -31,7 +31,7 @@ export default function App() {
   const [testTab, setTestTab] = useState<"tree" | "web">("tree");
   const [connected, setConnected] = useState(false);
   const [split, setSplit] = useState<number>(() => {
-    const saved = Number(localStorage.getItem("superqa.split"));
+    const saved = Number(localStorage.getItem("qualitylab.split"));
     return saved >= 20 && saved <= 75 ? saved : 42;
   });
   const [dragging, setDragging] = useState(false);
@@ -53,7 +53,7 @@ export default function App() {
     const up = () => {
       setDragging(false);
       setSplit((v) => {
-        localStorage.setItem("superqa.split", String(Math.round(v * 10) / 10));
+        localStorage.setItem("qualitylab.split", String(Math.round(v * 10) / 10));
         return v;
       });
       window.removeEventListener("pointermove", move);
@@ -179,7 +179,7 @@ export default function App() {
     [view, tabs, activeTab, send, addTab],
   );
 
-  if (!config) return <div className="loading">Loading SuperQA…</div>;
+  if (!config) return <div className="loading">Loading QualityLab…</div>;
 
   const repo = view !== "connections" ? config.repos[view] : undefined;
   const isTestRepo = repo && repo.kind !== "mkdocs";
@@ -221,7 +221,7 @@ export default function App() {
             <span className="side-label">Connections</span>
           </button>
           <div className="side-footer">
-            <span className="avatar">D</span> dins · SuperQA 0.1
+            <span className="avatar">D</span> dins · QualityLab 0.1
           </div>
         </nav>
         {view === "connections" ? (

@@ -36,7 +36,7 @@ app.get("/api/config", (_req, res) => {
   });
 });
 
-const descriptionsPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../superqa.descriptions.json");
+const descriptionsPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../qualitylab.descriptions.json");
 
 app.get("/api/tree", async (_req, res) => {
   const trees = buildTree();
@@ -110,7 +110,7 @@ wss.on("connection", (ws: WebSocket) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`SuperQA server on http://localhost:${PORT}`);
+  console.log(`QualityLab server on http://localhost:${PORT}`);
 });
 
 function shutdown() {

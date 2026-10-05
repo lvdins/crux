@@ -5,7 +5,7 @@ use std::process::{Child, Command};
 use std::sync::Mutex;
 use std::time::Duration;
 
-/// Project root, resolved at compile time. SuperQA is a local tool whose
+/// Project root, resolved at compile time. QualityLab is a local tool whose
 /// config already carries absolute repo paths, so a compile-time root is fine.
 const PROJECT_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/..");
 
@@ -34,7 +34,7 @@ fn spawn_server() -> Option<Child> {
             Some(c)
         }
         Err(err) => {
-            eprintln!("failed to start SuperQA server: {err}");
+            eprintln!("failed to start QualityLab server: {err}");
             None
         }
     }
@@ -45,7 +45,7 @@ fn main() {
 
     tauri::Builder::default()
         .build(tauri::generate_context!())
-        .expect("error building SuperQA")
+        .expect("error building QualityLab")
         .run(move |_app, event| {
             if let tauri::RunEvent::Exit = event {
                 if let Some(mut child) = server.lock().unwrap().take() {

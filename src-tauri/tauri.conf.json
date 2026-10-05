@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "SuperQA",
+  "productName": "QualityLab",
   "version": "0.1.0",
-  "identifier": "com.giraffe360.superqa",
+  "identifier": "com.giraffe360.qualitylab",
   "build": {
     "beforeDevCommand": "npm run dev -w client",
     "devUrl": "http://localhost:5180",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "SuperQA",
+        "title": "QualityLab",
         "width": 1440,
         "height": 900
       }

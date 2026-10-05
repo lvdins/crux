@@ -8,16 +8,16 @@ export interface RepoConfig {
   kind: "mkdocs" | "playwright" | "pytest";
 }
 
-export interface SuperQAConfig {
+export interface QualityLabConfig {
   repos: Record<string, RepoConfig>;
   agent: { permissionMode: "acceptEdits" | "default" | "bypassPermissions" };
   preview: { port: number };
 }
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const configPath = path.resolve(here, "../../superqa.config.json");
+const configPath = path.resolve(here, "../../qualitylab.config.json");
 
-export function loadConfig(): SuperQAConfig {
+export function loadConfig(): QualityLabConfig {
   return JSON.parse(fs.readFileSync(configPath, "utf8"));
 }
 
