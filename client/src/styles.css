@@ -16,7 +16,7 @@
 }
 
 * { box-sizing: border-box; }
-html, body, #root { height: 100%; margin: 0; }
+html, body, #root { height: 100%; margin: 0; overflow: hidden; overscroll-behavior: none; }
 body {
   background: var(--bg);
   color: var(--ink);
@@ -106,13 +106,14 @@ body {
 .term-pane { display: flex; flex-direction: column; border-right: 1px solid var(--line); min-width: 0; min-height: 0; background: var(--bg); }
 .term-tabs {
   display: flex; align-items: flex-end; gap: 2px; padding: 6px 8px 0;
-  background: var(--surface); flex-shrink: 0; overflow-x: auto;
+  background: var(--surface); flex-shrink: 0; overflow: hidden;
   border-bottom: 1px solid var(--line);
 }
 .term-tab {
   display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer;
   color: var(--ink-faint); padding: 6px 12px 7px; border-radius: 7px 7px 0 0;
   border: 1px solid transparent; border-bottom: none; white-space: nowrap; margin-bottom: -1px;
+  min-width: 0; flex-shrink: 1; overflow: hidden; text-overflow: ellipsis;
 }
 .term-tab svg { width: 11px; height: 11px; }
 .term-tab:hover { color: var(--ink-soft); }
@@ -141,6 +142,10 @@ body {
 
 .term { flex: 1; min-height: 0; padding: 8px 4px 8px 10px; }
 .term .xterm { height: 100%; }
+/* No side-to-side scrolling: xterm 6 reserves a 14px horizontal-scrollbar
+   strip under the viewport (the black bar); lines wrap anyway. */
+.term .xterm-viewport { overflow-x: hidden !important; background: transparent !important; }
+.term .xterm .scrollbar.horizontal { display: none !important; }
 
 /* split view inside the terminal pane */
 .term-pane { position: relative; }
@@ -553,3 +558,8 @@ button.primary:hover:not(:disabled) { background: var(--accent-ink); }
   animation: toast-in 0.22s cubic-bezier(0.32, 0.72, 0, 1);
 }
 @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 6px); } }
+
+/* tabs and the add button stay put; tabs shrink instead of scrolling */
+.term-tab-add { flex-shrink: 0; }
+.tree-scroll, .dir-list { overflow-x: hidden; }
+.term-tab.active { flex-shrink: 0; }
