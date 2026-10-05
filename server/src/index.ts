@@ -76,7 +76,15 @@ wss.on("connection", (ws: WebSocket) => {
     try {
       switch (msg.type) {
         case "term:open":
-          attachTerm(String(msg.id), String(msg.repo), ws, msg.cols | 0, msg.rows | 0, !!msg.fresh);
+          attachTerm(
+            String(msg.id),
+            String(msg.repo),
+            ws,
+            msg.cols | 0,
+            msg.rows | 0,
+            !!msg.fresh,
+            typeof msg.bootCmd === "string" ? msg.bootCmd : undefined,
+          );
           break;
         case "term:input":
           termInput(String(msg.id), String(msg.data ?? ""));

@@ -28,6 +28,7 @@ export function attachTerm(
   cols: number,
   rows: number,
   fresh: boolean,
+  bootCmd?: string,
 ): void {
   const repoCfg = config.repos[repo];
   if (!id || !repoCfg) return;
@@ -58,6 +59,25 @@ export function attachTerm(
     });
     terms.set(id, e);
     entry = e;
+    if (bootCmd && /^[\w ./-]+$/.test(bootCmd)) {
+      // Fancy prompts (p10k etc.) discard input typed during their async
+      // init, so type the command only once the shell has produced output
+      // and then gone quiet — like a human would.
+      let lastData = 0;
+      const seen = proc.onData(() => {
+        lastData = Date.now();
+      });
+      const started = Date.now();
+      const timer = setInterval(() => {
+        const quiet = lastData > 0 && Date.now() - lastData > 300;
+        const timedOut = Date.now() - started > 4000;
+        if (quiet || timedOut) {
+          clearInterval(timer);
+          seen.dispose();
+          if (terms.has(id)) proc.write(`${bootCmd}\n`);
+        }
+      }, 100);
+    }
   } else if (cols && rows) {
     entry.pty.resize(cols, rows);
   }
