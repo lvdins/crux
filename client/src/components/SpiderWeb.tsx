@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { TreeResponse, RepoTree } from "../types";
 import { api } from "../net";
 
@@ -143,13 +143,77 @@ function RepoWeb({
   );
 }
 
+interface ViewBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+const MIN_W = W / 10;
+const MAX_W = W * 4;
+
 export default function SpiderWeb({ repos, global = false }: { repos: string[]; global?: boolean }) {
   const [data, setData] = useState<TreeResponse | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [view, setView] = useState<ViewBox>({ x: 0, y: 0, w: W, h: H });
+  const svgRef = useRef<SVGSVGElement>(null);
+  const drag = useRef<{ px: number; py: number; view: ViewBox; moved: boolean } | null>(null);
 
   useEffect(() => {
     api("/api/tree").then((r) => r.json()).then(setData);
   }, []);
+
+  const zoomAt = (factor: number, clientX?: number, clientY?: number) => {
+    setView((v) => {
+      const svg = svgRef.current;
+      const rect = svg?.getBoundingClientRect();
+      // Zoom toward the cursor when given, else toward the current center.
+      const fx = rect && clientX != null ? (clientX - rect.left) / rect.width : 0.5;
+      const fy = rect && clientY != null ? (clientY - rect.top) / rect.height : 0.5;
+      const px = v.x + fx * v.w;
+      const py = v.y + fy * v.h;
+      const w = Math.min(MAX_W, Math.max(MIN_W, v.w * factor));
+      const h = (w / W) * H;
+      return { x: px - fx * w, y: py - fy * h, w, h };
+    });
+  };
+
+  // Native wheel listener: React's onWheel is passive, so preventDefault
+  // (needed to stop the page scrolling) only works here.
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      zoomAt(e.deltaY > 0 ? 1.15 : 1 / 1.15, e.clientX, e.clientY);
+    };
+    svg.addEventListener("wheel", onWheel, { passive: false });
+    return () => svg.removeEventListener("wheel", onWheel);
+  }, [data]);
+
+  const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    drag.current = { px: e.clientX, py: e.clientY, view, moved: false };
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+  };
+  const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    const d = drag.current;
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!d || !rect) return;
+    const dx = e.clientX - d.px;
+    const dy = e.clientY - d.py;
+    if (Math.abs(dx) + Math.abs(dy) > 4) d.moved = true;
+    if (d.moved) {
+      setView({
+        ...d.view,
+        x: d.view.x - (dx / rect.width) * d.view.w,
+        y: d.view.y - (dy / rect.height) * d.view.h,
+      });
+    }
+  };
+  const onPointerUp = () => {
+    drag.current = null;
+  };
 
   const toggle = (key: string) =>
     setExpanded((prev) => {
@@ -174,7 +238,21 @@ export default function SpiderWeb({ repos, global = false }: { repos: string[]; 
 
   return (
     <div className="web-wrap">
-      <svg viewBox={`0 0 ${W} ${H}`} className="web-svg" preserveAspectRatio="xMidYMid meet">
+      <div className="web-controls">
+        <button onClick={() => zoomAt(1 / 1.3)}>+</button>
+        <button onClick={() => zoomAt(1.3)}>−</button>
+        <button onClick={() => setView({ x: 0, y: 0, w: W, h: H })}>reset</button>
+      </div>
+      <svg
+        ref={svgRef}
+        viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
+        className={`web-svg ${drag.current?.moved ? "panning" : ""}`}
+        preserveAspectRatio="xMidYMid meet"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerLeave={onPointerUp}
+      >
         {trees.map((tree, i) => (
           <RepoWeb
             key={tree.key}
@@ -218,7 +296,7 @@ export default function SpiderWeb({ repos, global = false }: { repos: string[]; 
           </text>
         )}
       </svg>
-      <p className="web-hint">click a directory node to fan out its files · hover for details</p>
+      <p className="web-hint">scroll to zoom · drag to pan · click a directory node to fan out its files · hover for details</p>
     </div>
   );
 }
