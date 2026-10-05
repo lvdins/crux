@@ -48,6 +48,13 @@ body {
 .conn.off { color: var(--fail); }
 
 .workspace-label { color: var(--ink-soft); font-size: 13px; }
+.topbar-hint { color: var(--ink-faint); font-size: 12px; }
+.topbar-hint code { font-family: var(--mono); color: var(--accent-ink); font-size: 11px; }
+
+/* terminal */
+.term-pane { display: flex; flex-direction: column; border-right: 1px solid var(--line); min-width: 0; background: var(--bg); }
+.term { flex: 1; min-height: 0; padding: 8px 4px 8px 10px; }
+.term .xterm { height: 100%; }
 
 /* layout */
 .body { display: flex; flex: 1; min-height: 0; }
@@ -66,7 +73,8 @@ body {
 }
 .side-item:hover { background: var(--surface-2); color: var(--ink); }
 .side-item.active { background: var(--accent-soft); color: var(--accent-ink); }
-.side-icon { font-size: 15px; width: 20px; text-align: center; }
+.side-icon { width: 20px; display: inline-flex; align-items: center; justify-content: center; }
+.side-icon svg { width: 15px; height: 15px; }
 .side-sep { height: 1px; background: var(--line); margin: 8px 6px; }
 
 /* spider web */

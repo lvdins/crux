@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, WebSocket } from "ws";
 import { config } from "./config.js";
-import { AgentSession } from "./agent.js";
+import { attachTerm, termInput, termResize, detachAll, killAllTerms } from "./term.js";
 import { startPreview, stopPreview, previewStatus } from "./preview.js";
 import { buildTree, sharedEndpoints } from "./tree.js";
 
@@ -57,11 +57,6 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: "/ws" });
 
 wss.on("connection", (ws: WebSocket) => {
-  const defaultRepo = Object.values(config.repos)[0];
-  let session = new AgentSession(defaultRepo.path, (event) => {
-    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(event));
-  });
-
   ws.on("message", (raw) => {
     let msg: any;
     try {
@@ -69,24 +64,35 @@ wss.on("connection", (ws: WebSocket) => {
     } catch {
       return;
     }
-    if (msg.type === "setRepo" && config.repos[msg.repo]) {
-      session.setCwd(config.repos[msg.repo].path);
-      ws.send(JSON.stringify({ type: "repoSet", repo: msg.repo }));
-    } else if (msg.type === "chat" && typeof msg.text === "string" && msg.text.trim()) {
-      void session.send(msg.text);
+    try {
+      switch (msg.type) {
+        case "term:open":
+          attachTerm(msg.repo, ws, msg.cols | 0, msg.rows | 0, !!msg.fresh);
+          break;
+        case "term:input":
+          termInput(msg.repo, String(msg.data ?? ""));
+          break;
+        case "term:resize":
+          termResize(msg.repo, msg.cols | 0, msg.rows | 0);
+          break;
+      }
+    } catch (err) {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "term:data", repo: msg.repo, data: `\r\n[terminal error: ${err}]\r\n` }));
+      }
     }
   });
+  ws.on("close", () => detachAll(ws));
 });
 
 server.listen(PORT, () => {
   console.log(`SuperQA server on http://localhost:${PORT}`);
 });
 
-process.on("SIGINT", () => {
+function shutdown() {
   stopPreview();
+  killAllTerms();
   process.exit(0);
-});
-process.on("SIGTERM", () => {
-  stopPreview();
-  process.exit(0);
-});
+}
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);

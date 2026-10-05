@@ -9,13 +9,6 @@ export interface AppConfig {
   preview: { port: number };
 }
 
-export type ChatItem =
-  | { kind: "user"; text: string }
-  | { kind: "agent"; text: string; streaming: boolean }
-  | { kind: "tool"; name: string }
-  | { kind: "error"; text: string }
-  | { kind: "meta"; text: string };
-
 export interface TestCase {
   title: string;
   line: number;

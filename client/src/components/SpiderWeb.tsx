@@ -74,14 +74,15 @@ function RepoWeb({
   dirPos: Map<string, Positioned>;
 }) {
   const dirs = useMemo(() => groupDirs(tree), [tree]);
-  const R1 = 190 * scale;
-  const R2 = 320 * scale;
   const total = tree.files.reduce((n, f) => n + f.tests.length, 0);
+  // Ring radius grows with node count so directory nodes never crowd:
+  // ~55px of circumference per node, floor of 170.
+  const R1 = Math.max(170, (dirs.length * 55) / (2 * Math.PI)) * scale;
+  const FILE_GAP = 95 * scale;
 
   return (
     <g>
-      {/* web rings */}
-      {[0.55, 1, 1.45].map((m) => (
+      {[0.5, 0.75, 1].map((m) => (
         <circle key={m} cx={cx} cy={cy} r={R1 * m} className="web-ring" />
       ))}
       {dirs.map((dir, i) => {
@@ -90,31 +91,45 @@ function RepoWeb({
         const key = `${tree.key}:${dir.name}`;
         dirPos.set(key, p);
         const isOpen = expanded.has(key);
-        const size = Math.max(7, Math.min(17, 4 + Math.sqrt(dir.tests) * 1.6)) * scale;
+        const size = Math.max(6, Math.min(15, 4 + Math.sqrt(dir.tests) * 1.4)) * scale;
         const shown = dir.files.slice(0, 14);
+        // Directory labels sit radially outside the node; anchor flips by side.
+        const lp = polar(cx, cy, R1 + size + 10, angle);
+        const anchor = Math.cos(angle) > 0.35 ? "start" : Math.cos(angle) < -0.35 ? "end" : "middle";
+        const labelDy = Math.abs(Math.cos(angle)) <= 0.35 ? (Math.sin(angle) > 0 ? 12 : -6) : 4;
         return (
           <g key={dir.name}>
             <line x1={cx} y1={cy} x2={p.x} y2={p.y} className="web-edge" />
             {isOpen &&
               shown.map((f, j) => {
-                const spread = Math.PI / 5;
-                const fa = angle - spread / 2 + (spread * j) / Math.max(1, shown.length - 1);
-                const fp = polar(cx, cy, R2, fa);
+                // Files fan outward from their directory along its spoke,
+                // staggered across two radii so labels don't collide.
+                const spread = Math.min(Math.PI / 3.2, 0.11 * shown.length);
+                const t = shown.length === 1 ? 0.5 : j / (shown.length - 1);
+                const fa = angle - spread / 2 + spread * t;
+                const fr = R1 + FILE_GAP + (j % 2) * 44 * scale;
+                const fp = polar(cx, cy, fr, fa);
+                const fAnchor = Math.cos(fa) > 0.2 ? "start" : Math.cos(fa) < -0.2 ? "end" : "middle";
                 return (
                   <g key={f.path}>
                     <line x1={p.x} y1={p.y} x2={fp.x} y2={fp.y} className="web-edge faint" />
-                    <circle cx={fp.x} cy={fp.y} r={3.5 * scale + Math.min(4, f.tests / 4)} className="web-file">
+                    <circle cx={fp.x} cy={fp.y} r={3 * scale + Math.min(4, f.tests / 5)} className="web-file">
                       <title>{`${f.path} — ${f.tests} tests${f.endpoints.length ? `\n${f.endpoints.join("\n")}` : ""}`}</title>
                     </circle>
-                    <text x={fp.x} y={fp.y - 9 * scale} className="web-label file" textAnchor="middle">
+                    <text
+                      x={fp.x + (fAnchor === "start" ? 7 : fAnchor === "end" ? -7 : 0)}
+                      y={fp.y + (fAnchor === "middle" ? (Math.sin(fa) > 0 ? 14 : -8) : 3.5)}
+                      className="web-label file"
+                      textAnchor={fAnchor}
+                    >
                       {fileLabel(f.path)}
                     </text>
                   </g>
                 );
               })}
             {isOpen && dir.files.length > 14 && (
-              <text x={p.x} y={p.y + 24 * scale} className="web-label faint" textAnchor="middle">
-                +{dir.files.length - 14} more files
+              <text x={p.x} y={p.y + size + 14} className="web-label faint" textAnchor="middle">
+                +{dir.files.length - 14} more
               </text>
             )}
             <circle
@@ -126,7 +141,7 @@ function RepoWeb({
             >
               <title>{`${dir.name} — ${dir.files.length} files, ${dir.tests} tests (click to ${isOpen ? "collapse" : "expand"})`}</title>
             </circle>
-            <text x={p.x} y={p.y - size - 5} className="web-label" textAnchor="middle">
+            <text x={lp.x} y={lp.y + labelDy} className="web-label" textAnchor={anchor}>
               {dir.name} <tspan className="faint">({dir.tests})</tspan>
             </text>
           </g>
@@ -186,7 +201,9 @@ export default function SpiderWeb({ repos, global = false }: { repos: string[]; 
     if (!svg) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      zoomAt(e.deltaY > 0 ? 1.15 : 1 / 1.15, e.clientX, e.clientY);
+      // Proportional to scroll delta: gentle on trackpads, ~1.08/notch on wheels.
+      const factor = Math.exp(Math.max(-80, Math.min(80, e.deltaY)) * 0.001);
+      zoomAt(factor, e.clientX, e.clientY);
     };
     svg.addEventListener("wheel", onWheel, { passive: false });
     return () => svg.removeEventListener("wheel", onWheel);
