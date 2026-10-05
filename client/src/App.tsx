@@ -40,6 +40,12 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<Record<string, string>>({});
   const [splits, setSplits] = useState<Record<string, string[]>>({});
   const [rightHidden, setRightHidden] = useState(() => localStorage.getItem("qualitylab.rightHidden") === "1");
+  const [sideHidden, setSideHidden] = useState(() => localStorage.getItem("qualitylab.sideHidden") === "1");
+  const toggleSide = () =>
+    setSideHidden((h) => {
+      localStorage.setItem("qualitylab.sideHidden", h ? "0" : "1");
+      return !h;
+    });
   const [agentDrag, setAgentDrag] = useState<null | { cmd: "claude" | "codex"; x: number; y: number; zone: "tab" | "split" | null }>(null);
   const panesRef = useRef<HTMLDivElement>(null);
   const termPaneRef = useRef<HTMLElement>(null);
@@ -252,6 +258,12 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
+        <button className="side-toggle" title={sideHidden ? "Show sidebar" : "Hide sidebar"} onClick={toggleSide}>
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
+            <rect x="1.5" y="2.5" width="13" height="11" rx="2" />
+            <path d="M6 2.5v11" />
+          </svg>
+        </button>
         <span className="brand">
           <img src="/giraffe.png" alt="QualityLab" className="brand-logo" />
         </span>
@@ -277,7 +289,12 @@ export default function App() {
         <span className={`conn ${connected ? "on" : "off"}`}>{connected ? "connected" : "offline"}</span>
       </header>
       <div className="body">
-        <nav className="sidebar">
+        <nav
+          className={`sidebar ${sideHidden ? "collapsed" : ""}`}
+          onTransitionEnd={(e) => {
+            if (e.propertyName === "width") window.dispatchEvent(new Event("resize"));
+          }}
+        >
           <div className="side-section">Workspaces</div>
           {Object.entries(config.repos).map(([key, r]) => (
             <button
