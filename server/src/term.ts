@@ -41,7 +41,13 @@ export function attachTerm(
     const env = Object.fromEntries(
       Object.entries(process.env).filter(([key]) => !/^CLAUDE/i.test(key)),
     ) as Record<string, string>;
-    const proc = pty.spawn(shell, ["-l"], {
+    // Boot tabs run the command as part of the shell invocation — typing it
+    // into an interactive shell races fancy prompt init (p10k discards
+    // typed-ahead input). `-il -c` sources zshrc (PATH), runs the command
+    // once init is done, then execs a normal interactive shell.
+    const safeBoot = bootCmd && /^[\w ./-]+$/.test(bootCmd) ? bootCmd : undefined;
+    const args = safeBoot ? ["-il", "-c", `${safeBoot}; exec ${shell} -il`] : ["-l"];
+    const proc = pty.spawn(shell, args, {
       name: "xterm-256color",
       cols: cols || 100,
       rows: rows || 30,
@@ -59,25 +65,6 @@ export function attachTerm(
     });
     terms.set(id, e);
     entry = e;
-    if (bootCmd && /^[\w ./-]+$/.test(bootCmd)) {
-      // Fancy prompts (p10k etc.) discard input typed during their async
-      // init, so type the command only once the shell has produced output
-      // and then gone quiet — like a human would.
-      let lastData = 0;
-      const seen = proc.onData(() => {
-        lastData = Date.now();
-      });
-      const started = Date.now();
-      const timer = setInterval(() => {
-        const quiet = lastData > 0 && Date.now() - lastData > 300;
-        const timedOut = Date.now() - started > 4000;
-        if (quiet || timedOut) {
-          clearInterval(timer);
-          seen.dispose();
-          if (terms.has(id)) proc.write(`${bootCmd}\n`);
-        }
-      }, 100);
-    }
   } else if (cols && rows) {
     entry.pty.resize(cols, rows);
   }
