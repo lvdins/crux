@@ -4,7 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 
 export type TermSend = (payload: Record<string, unknown>) => void;
-export type TermSubscribe = (repo: string, handler: (data: string) => void) => () => void;
+export type TermSubscribe = (id: string, handler: (data: string) => void) => () => void;
 
 interface CachedTerm {
   term: Terminal;
@@ -13,16 +13,29 @@ interface CachedTerm {
 }
 
 // Terminals live outside React so scrollback and the running program survive
-// workspace switches — the DOM node is just re-parented on mount.
+// tab/workspace switches — the DOM node is just re-parented on mount.
 const cache = new Map<string, CachedTerm>();
 
+export function disposeTerm(id: string): void {
+  const cached = cache.get(id);
+  if (cached) {
+    cached.term.dispose();
+    cached.el.remove();
+    cache.delete(id);
+  }
+}
+
 export default function Term({
+  id,
   repo,
+  bootCmd,
   connected,
   send,
   subscribe,
 }: {
+  id: string;
   repo: string;
+  bootCmd?: string;
   connected: boolean;
   send: TermSend;
   subscribe: TermSubscribe;
@@ -33,7 +46,7 @@ export default function Term({
     const container = containerRef.current;
     if (!container || !connected) return;
 
-    let cached = cache.get(repo);
+    let cached = cache.get(id);
     const fresh = !cached;
     if (!cached) {
       const el = document.createElement("div");
@@ -55,9 +68,9 @@ export default function Term({
       term.loadAddon(fit);
       term.open(el);
       // Registered once for the terminal's lifetime — survives re-mounts.
-      term.onData((data) => send({ type: "term:input", repo, data }));
+      term.onData((data) => send({ type: "term:input", id, data }));
       cached = { term, fit, el };
-      cache.set(repo, cached);
+      cache.set(id, cached);
     }
     const { term, fit, el } = cached;
     container.appendChild(el);
@@ -73,7 +86,7 @@ export default function Term({
       if (term.cols !== lastCols || term.rows !== lastRows) {
         lastCols = term.cols;
         lastRows = term.rows;
-        send({ type: "term:resize", repo, cols: term.cols, rows: term.rows });
+        send({ type: "term:resize", id, cols: term.cols, rows: term.rows });
       }
     };
 
@@ -91,8 +104,11 @@ export default function Term({
       fit.fit();
       lastCols = term.cols;
       lastRows = term.rows;
-      send({ type: "term:open", repo, cols: term.cols, rows: term.rows, fresh });
-      unsubscribe = subscribe(repo, (data) => term.write(data));
+      send({ type: "term:open", id, repo, cols: term.cols, rows: term.rows, fresh });
+      unsubscribe = subscribe(id, (data) => term.write(data));
+      if (fresh && bootCmd) {
+        send({ type: "term:input", id, data: `${bootCmd}\n` });
+      }
       // One more pass shortly after, in case a scrollbar or font swap shifted
       // the layout between the first fit and the PTY spawn.
       setTimeout(doFit, 300);
@@ -117,7 +133,7 @@ export default function Term({
       window.removeEventListener("resize", onResize);
       if (el.parentElement === container) container.removeChild(el);
     };
-  }, [repo, connected, send, subscribe]);
+  }, [id, repo, bootCmd, connected, send, subscribe]);
 
   return <div className="term" ref={containerRef} />;
 }

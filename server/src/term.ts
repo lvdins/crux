@@ -3,10 +3,9 @@ import type { WebSocket } from "ws";
 import { config } from "./config.js";
 
 /**
- * One persistent PTY per workspace (repo), shared by every connected client.
- * The shell starts in the repo's directory — the user runs `claude`, `codex`,
- * or anything else themselves, and the session survives workspace switches
- * and page reloads.
+ * PTYs are keyed by client-chosen terminal id (a workspace can hold several
+ * tabs); the repo only determines the shell's cwd. Sessions are shared across
+ * clients and survive workspace switches and page reloads.
  */
 
 interface Entry {
@@ -22,10 +21,17 @@ function send(ws: WebSocket, payload: unknown) {
   if (ws.readyState === 1) ws.send(JSON.stringify(payload));
 }
 
-export function attachTerm(repo: string, ws: WebSocket, cols: number, rows: number, fresh: boolean): void {
+export function attachTerm(
+  id: string,
+  repo: string,
+  ws: WebSocket,
+  cols: number,
+  rows: number,
+  fresh: boolean,
+): void {
   const repoCfg = config.repos[repo];
-  if (!repoCfg) return;
-  let entry = terms.get(repo);
+  if (!id || !repoCfg) return;
+  let entry = terms.get(id);
   if (!entry) {
     const shell = process.env.SHELL || "/bin/zsh";
     // Strip Claude-session markers: if the SuperQA server itself was started
@@ -44,29 +50,34 @@ export function attachTerm(repo: string, ws: WebSocket, cols: number, rows: numb
     const e: Entry = { pty: proc, buffer: "", subs: new Set() };
     proc.onData((data) => {
       e.buffer = (e.buffer + data).slice(-MAX_BUFFER);
-      for (const sub of e.subs) send(sub, { type: "term:data", repo, data });
+      for (const sub of e.subs) send(sub, { type: "term:data", id, data });
     });
     proc.onExit(({ exitCode }) => {
-      for (const sub of e.subs) send(sub, { type: "term:exit", repo, code: exitCode });
-      terms.delete(repo);
+      for (const sub of e.subs) send(sub, { type: "term:exit", id, code: exitCode });
+      terms.delete(id);
     });
-    terms.set(repo, e);
+    terms.set(id, e);
     entry = e;
   } else if (cols && rows) {
     entry.pty.resize(cols, rows);
   }
   entry.subs.add(ws);
   if (fresh && entry.buffer) {
-    send(ws, { type: "term:data", repo, data: entry.buffer });
+    send(ws, { type: "term:data", id, data: entry.buffer });
   }
 }
 
-export function termInput(repo: string, data: string): void {
-  terms.get(repo)?.pty.write(data);
+export function termInput(id: string, data: string): void {
+  terms.get(id)?.pty.write(data);
 }
 
-export function termResize(repo: string, cols: number, rows: number): void {
-  if (cols > 0 && rows > 0) terms.get(repo)?.pty.resize(cols, rows);
+export function termResize(id: string, cols: number, rows: number): void {
+  if (cols > 0 && rows > 0) terms.get(id)?.pty.resize(cols, rows);
+}
+
+export function killTerm(id: string): void {
+  terms.get(id)?.pty.kill();
+  terms.delete(id);
 }
 
 export function detachAll(ws: WebSocket): void {

@@ -1,13 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppConfig } from "./types";
 import { api, WS_URL } from "./net";
-import Term from "./components/Term";
+import Term, { disposeTerm } from "./components/Term";
 import Preview from "./components/Preview";
 import TestTree from "./components/TestTree";
 import SpiderWeb from "./components/SpiderWeb";
 import { iconFor, WebIcon, ClaudeLogo, CodexLogo } from "./components/icons";
 
 type View = string | "connections";
+
+interface TermTab {
+  id: string;
+  title: string;
+  agent?: string; // set when a launcher button started claude/codex here
+  bootCmd?: string;
+}
+
+let tabSeq = 1;
+const newTabId = (repo: string) => `${repo}:${tabSeq++}:${Date.now() % 100000}`;
 
 export default function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
@@ -19,6 +29,8 @@ export default function App() {
     return saved >= 20 && saved <= 75 ? saved : 42;
   });
   const [dragging, setDragging] = useState(false);
+  const [tabs, setTabs] = useState<Record<string, TermTab[]>>({});
+  const [activeTab, setActiveTab] = useState<Record<string, string>>({});
   const panesRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const termHandlers = useRef(new Map<string, (data: string) => void>());
@@ -51,6 +63,15 @@ export default function App() {
       .then((c: AppConfig) => {
         setConfig(c);
         setView(Object.keys(c.repos)[0]);
+        const initialTabs: Record<string, TermTab[]> = {};
+        const initialActive: Record<string, string> = {};
+        for (const key of Object.keys(c.repos)) {
+          const id = newTabId(key);
+          initialTabs[key] = [{ id, title: "shell" }];
+          initialActive[key] = id;
+        }
+        setTabs(initialTabs);
+        setActiveTab(initialActive);
       });
   }, []);
 
@@ -68,9 +89,9 @@ export default function App() {
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
         if (msg.type === "term:data") {
-          termHandlers.current.get(msg.repo)?.(msg.data);
+          termHandlers.current.get(msg.id)?.(msg.data);
         } else if (msg.type === "term:exit") {
-          termHandlers.current.get(msg.repo)?.(`\r\n[shell exited: ${msg.code}]\r\n`);
+          termHandlers.current.get(msg.id)?.(`\r\n[shell exited: ${msg.code}]\r\n`);
         }
       };
     };
@@ -87,12 +108,65 @@ export default function App() {
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload));
   }, []);
 
-  const subscribe = useCallback((repo: string, handler: (data: string) => void) => {
-    termHandlers.current.set(repo, handler);
+  const subscribe = useCallback((id: string, handler: (data: string) => void) => {
+    termHandlers.current.set(id, handler);
     return () => {
-      if (termHandlers.current.get(repo) === handler) termHandlers.current.delete(repo);
+      if (termHandlers.current.get(id) === handler) termHandlers.current.delete(id);
     };
   }, []);
+
+  const addTab = useCallback((repo: string, title = "shell", agent?: string, bootCmd?: string) => {
+    const id = newTabId(repo);
+    setTabs((prev) => ({ ...prev, [repo]: [...(prev[repo] ?? []), { id, title, agent, bootCmd }] }));
+    setActiveTab((prev) => ({ ...prev, [repo]: id }));
+    return id;
+  }, []);
+
+  const closeTab = useCallback(
+    (repo: string, id: string) => {
+      send({ type: "term:kill", id });
+      disposeTerm(id);
+      setTabs((prev) => {
+        const remaining = (prev[repo] ?? []).filter((t) => t.id !== id);
+        const next = { ...prev, [repo]: remaining };
+        setActiveTab((act) => {
+          if (act[repo] !== id) return act;
+          const fallback = remaining[remaining.length - 1]?.id;
+          return { ...act, [repo]: fallback ?? "" };
+        });
+        if (remaining.length === 0) {
+          // Never leave a workspace without a terminal.
+          const freshId = newTabId(repo);
+          next[repo] = [{ id: freshId, title: "shell" }];
+          setActiveTab((act) => ({ ...act, [repo]: freshId }));
+        }
+        return next;
+      });
+    },
+    [send],
+  );
+
+  const launchAgent = useCallback(
+    (cmd: "claude" | "codex") => {
+      if (view === "connections") return;
+      const repoTabs = tabs[view] ?? [];
+      const active = repoTabs.find((t) => t.id === activeTab[view]);
+      if (active && !active.agent) {
+        // Free tab: run here and label it.
+        send({ type: "term:input", id: active.id, data: `${cmd}\n` });
+        setTabs((prev) => ({
+          ...prev,
+          [view]: (prev[view] ?? []).map((t) =>
+            t.id === active.id ? { ...t, agent: cmd, title: cmd } : t,
+          ),
+        }));
+      } else {
+        // Active tab already hosts an agent: open the new one in its own tab.
+        addTab(view, cmd, cmd, cmd);
+      }
+    },
+    [view, tabs, activeTab, send, addTab],
+  );
 
   if (!config) return <div className="loading">Loading SuperQA…</div>;
 
@@ -111,7 +185,7 @@ export default function App() {
             className="agent-btn"
             disabled={!repo}
             title={repo ? `Run claude in the ${repo.label} terminal` : "Pick a workspace first"}
-            onClick={() => send({ type: "term:input", repo: view, data: "claude\n" })}
+            onClick={() => launchAgent("claude")}
           >
             <ClaudeLogo /> Claude
           </button>
@@ -119,7 +193,7 @@ export default function App() {
             className="agent-btn"
             disabled={!repo}
             title={repo ? `Run codex in the ${repo.label} terminal` : "Pick a workspace first"}
-            onClick={() => send({ type: "term:input", repo: view, data: "codex\n" })}
+            onClick={() => launchAgent("codex")}
           >
             <CodexLogo /> Codex
           </button>
@@ -167,7 +241,47 @@ export default function App() {
             style={{ gridTemplateColumns: `minmax(280px, ${split}%) 6px minmax(340px, 1fr)` }}
           >
             <section className="term-pane">
-              <Term repo={view} connected={connected} send={send} subscribe={subscribe} />
+              <div className="term-tabs">
+                {(tabs[view] ?? []).map((t, i) => (
+                  <span
+                    key={t.id}
+                    className={`term-tab ${activeTab[view] === t.id ? "active" : ""}`}
+                    onClick={() => setActiveTab((prev) => ({ ...prev, [view]: t.id }))}
+                  >
+                    {t.agent === "claude" && <ClaudeLogo />}
+                    {t.agent === "codex" && <CodexLogo />}
+                    {t.title}
+                    {(tabs[view] ?? []).length > 1 && (
+                      <button
+                        className="term-tab-close"
+                        title="Close terminal"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          closeTab(view, t.id);
+                        }}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </span>
+                ))}
+                <button className="term-tab-add" title="New terminal" onClick={() => addTab(view)}>
+                  +
+                </button>
+              </div>
+              {(tabs[view] ?? [])
+                .filter((t) => t.id === activeTab[view])
+                .map((t) => (
+                  <Term
+                    key={t.id}
+                    id={t.id}
+                    repo={view}
+                    bootCmd={t.bootCmd}
+                    connected={connected}
+                    send={send}
+                    subscribe={subscribe}
+                  />
+                ))}
             </section>
             <div className="splitter" onPointerDown={onSplitDown} title="Drag to resize" />
             <section className="right">

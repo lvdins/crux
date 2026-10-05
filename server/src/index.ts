@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, WebSocket } from "ws";
 import { config } from "./config.js";
-import { attachTerm, termInput, termResize, detachAll, killAllTerms } from "./term.js";
+import { attachTerm, termInput, termResize, killTerm, detachAll, killAllTerms } from "./term.js";
 import { startPreview, stopPreview, previewStatus } from "./preview.js";
 import { buildTree, sharedEndpoints } from "./tree.js";
 
@@ -67,18 +67,21 @@ wss.on("connection", (ws: WebSocket) => {
     try {
       switch (msg.type) {
         case "term:open":
-          attachTerm(msg.repo, ws, msg.cols | 0, msg.rows | 0, !!msg.fresh);
+          attachTerm(String(msg.id), String(msg.repo), ws, msg.cols | 0, msg.rows | 0, !!msg.fresh);
           break;
         case "term:input":
-          termInput(msg.repo, String(msg.data ?? ""));
+          termInput(String(msg.id), String(msg.data ?? ""));
           break;
         case "term:resize":
-          termResize(msg.repo, msg.cols | 0, msg.rows | 0);
+          termResize(String(msg.id), msg.cols | 0, msg.rows | 0);
+          break;
+        case "term:kill":
+          killTerm(String(msg.id));
           break;
       }
     } catch (err) {
       if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "term:data", repo: msg.repo, data: `\r\n[terminal error: ${err}]\r\n` }));
+        ws.send(JSON.stringify({ type: "term:data", id: msg.id, data: `\r\n[terminal error: ${err}]\r\n` }));
       }
     }
   });

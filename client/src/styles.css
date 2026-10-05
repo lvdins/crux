@@ -58,7 +58,30 @@ body {
 .agent-btn:disabled { opacity: 0.4; cursor: default; }
 
 /* terminal */
-.term-pane { display: flex; flex-direction: column; border-right: 1px solid var(--line); min-width: 0; background: var(--bg); }
+.term-pane { display: flex; flex-direction: column; border-right: 1px solid var(--line); min-width: 0; min-height: 0; background: var(--bg); }
+.term-tabs {
+  display: flex; align-items: center; gap: 3px; padding: 6px 8px 0;
+  border-bottom: 1px solid var(--line); background: var(--surface); flex-shrink: 0;
+  overflow-x: auto;
+}
+.term-tab {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer;
+  color: var(--ink-soft); padding: 5px 10px 6px; border-radius: 7px 7px 0 0;
+  border: 1px solid transparent; border-bottom: none; white-space: nowrap;
+}
+.term-tab svg { width: 11px; height: 11px; }
+.term-tab:hover { color: var(--ink); background: var(--surface-2); }
+.term-tab.active { color: var(--ink); background: var(--bg); border-color: var(--line); }
+.term-tab-close {
+  background: none; border: none; color: var(--ink-faint); cursor: pointer;
+  font-size: 13px; padding: 0 1px; line-height: 1;
+}
+.term-tab-close:hover { color: var(--fail); }
+.term-tab-add {
+  background: none; border: 1px solid var(--line); border-radius: 6px; color: var(--ink-soft);
+  cursor: pointer; font-size: 13px; width: 22px; height: 22px; line-height: 1; margin-left: 4px;
+}
+.term-tab-add:hover { color: var(--accent-ink); border-color: var(--accent); }
 .term { flex: 1; min-height: 0; padding: 8px 4px 8px 10px; }
 .term .xterm { height: 100%; }
 
