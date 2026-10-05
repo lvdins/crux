@@ -88,6 +88,8 @@ export default function Term({
         lastRows = term.rows;
         send({ type: "term:resize", id, cols: term.cols, rows: term.rows });
       }
+      // Full repaint: fits during pane animations can leave stale glyphs.
+      term.refresh(0, term.rows - 1);
     };
 
     // The PTY must be created with the settled size, or programs like claude

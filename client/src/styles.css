@@ -198,10 +198,17 @@ body {
 /* ---------- right pane ---------- */
 .right {
   display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden;
-  transition: opacity 0.4s cubic-bezier(0.32, 0.72, 0, 1), transform 0.55s cubic-bezier(0.32, 0.72, 0, 1);
+  transition: opacity 0.4s cubic-bezier(0.32, 0.72, 0, 1), transform 0.55s cubic-bezier(0.32, 0.72, 0, 1),
+    visibility 0s linear 0s;
   will-change: opacity, transform;
 }
-.right.collapsed { opacity: 0; transform: translateX(32px); pointer-events: none; }
+.right.collapsed {
+  opacity: 0; transform: translateX(32px); pointer-events: none;
+  /* fully hide once the fade is done so nothing paints at zero width */
+  visibility: hidden;
+  transition: opacity 0.4s cubic-bezier(0.32, 0.72, 0, 1), transform 0.55s cubic-bezier(0.32, 0.72, 0, 1),
+    visibility 0s linear 0.45s;
+}
 .splitter { transition: opacity 0.3s ease; }
 .splitter.collapsed { opacity: 0; pointer-events: none; }
 .pane-reopen { animation: reopen-in 0.3s cubic-bezier(0.32, 0.72, 0, 1) 0.35s both; }

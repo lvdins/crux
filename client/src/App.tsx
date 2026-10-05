@@ -316,6 +316,13 @@ export default function App() {
             className={`panes ${dragging ? "dragging" : ""}`}
             ref={panesRef}
             style={{ gridTemplateColumns: rightHidden ? "1fr 0px 0fr" : `${split}fr 6px ${100 - split}fr` }}
+            onTransitionEnd={(e) => {
+              // Settle terminals and panels at the final size once the slide
+              // finishes — mid-animation fits leave xterm garbled otherwise.
+              if (e.propertyName === "grid-template-columns") {
+                window.dispatchEvent(new Event("resize"));
+              }
+            }}
           >
             <section className="term-pane" ref={termPaneRef}>
               <div className="term-tabs">
