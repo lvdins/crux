@@ -1253,3 +1253,6 @@ button.primary:hover:not(:disabled) { background: var(--accent-ink); }
   color: var(--ink-faint); font-size: 14px; line-height: 1; cursor: pointer; padding: 0;
 }
 .pane-tab-add:hover { background: var(--surface-2); color: var(--ink); }
+
+/* the terminal Git (and other actions) will target, when split */
+.term-slot.focused { box-shadow: inset 0 0 0 1px rgba(62, 207, 142, 0.35); }

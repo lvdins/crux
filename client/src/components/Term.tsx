@@ -40,7 +40,10 @@ export default function Term({
   connected,
   send,
   subscribe,
+  onFocus,
 }: {
+  /** Called when this terminal gets keyboard focus or is clicked. */
+  onFocus?: (id: string) => void;
   id: string;
   repo: string;
   bootCmd?: string;
@@ -49,6 +52,8 @@ export default function Term({
   subscribe: TermSubscribe;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const onFocusRef = useRef(onFocus);
+  onFocusRef.current = onFocus;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -104,6 +109,10 @@ export default function Term({
     container.appendChild(el);
 
     let disposed = false;
+    // Report focus (keyboard or click) so actions can target this terminal.
+    const reportFocus = () => onFocusRef.current?.(id);
+    term.textarea?.addEventListener("focus", reportFocus);
+    container.addEventListener("pointerdown", reportFocus, true);
     let unsubscribe: (() => void) | null = null;
     let lastCols = 0;
     let lastRows = 0;
@@ -164,6 +173,8 @@ export default function Term({
 
     return () => {
       disposed = true;
+      term.textarea?.removeEventListener("focus", reportFocus);
+      container.removeEventListener("pointerdown", reportFocus, true);
       clearTimeout(debounce);
       unsubscribe?.();
       observer.disconnect();

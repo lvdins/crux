@@ -136,8 +136,14 @@ export default function App() {
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [jiraMenu, setJiraMenu] = useState<DOMRect | null>(null);
-  const [gitMenu, setGitMenu] = useState<null | { anchor: DOMRect; mode: "agent" | "shell"; tabId: string }>(null);
+  const [gitMenu, setGitMenu] = useState<null | { anchor: DOMRect; mode: "agent" | "shell"; tabId: string; target: string }>(null);
   const [branches, setBranches] = useState<Record<string, string | null>>({});
+  // Last terminal the user clicked / typed in, per workspace (Git targets it).
+  const [focusedTerm, setFocusedTerm] = useState<Record<string, string>>({});
+  const noteFocus = useCallback((id: string) => {
+    const ws = id.split(":")[0];
+    setFocusedTerm((prev) => (prev[ws] === id ? prev : { ...prev, [ws]: id }));
+  }, []);
   const [jiraBoards, setJiraBoards] = useState(loadJiraBoards);
   const [jiraOpen, setJiraOpen] = useState<{ url: string; nonce: number } | null>(null);
   // Open Jira tabs, mirrored from the Jira browser (and localStorage when it isn't mounted).
@@ -648,9 +654,27 @@ export default function App() {
     if (view && view !== "connections" && view !== "jira") refreshBranch(view);
   }, [view, refreshBranch]);
 
-  // Git button: is the active tab running an agent or a plain shell?
+  // Terminals currently shown: the main pane's tab + each split pane's tab.
+  const visibleTermIds = (): string[] => {
+    const layout = layouts[view] ?? rootLayout();
+    const ids: string[] = [];
+    const walk = (n: PaneNode) => {
+      if (n.kind === "split") return n.children.forEach(walk);
+      if (n.id === MAIN) {
+        if (activeTab[view]) ids.push(activeTab[view]);
+      } else ids.push(paneActive(n));
+    };
+    walk(layout);
+    return ids;
+  };
+
+  // Git button: is the target tab running an agent or a plain shell?
   const openGitMenu = async (anchor: DOMRect) => {
-    const tabId = activeTab[view];
+    // Target the terminal the user last focused, if it's on screen;
+    // otherwise the main pane's active tab.
+    const onScreen = visibleTermIds();
+    const focused = focusedTerm[view];
+    const tabId = focused && onScreen.includes(focused) ? focused : activeTab[view];
     const tab = (tabs[view] ?? []).find((t) => t.id === tabId);
     if (!tab) return;
     let mode: "agent" | "shell" = tab.agent ? "agent" : "shell";
@@ -664,7 +688,8 @@ export default function App() {
       /* older server: fall back to how the tab was opened */
     }
     refreshBranch(view);
-    setGitMenu({ anchor, mode, tabId: tab.id });
+    const panes = onScreen.length > 1;
+    setGitMenu({ anchor, mode, tabId: tab.id, target: panes ? tab.title : "" });
   };
 
   // Type the action into the terminal, then press Enter separately (TUIs
@@ -728,6 +753,7 @@ export default function App() {
     window.addEventListener("pointerup", up);
   };
 
+  const hasSplits = viewLayout.kind === "split";
   const renderPane = (node: PaneNode, path: number[]): React.ReactNode => {
     if (node.kind === "split") {
       return (
@@ -753,8 +779,8 @@ export default function App() {
     if (node.id === MAIN) {
       const t = (tabs[view] ?? []).find((x) => x.id === activeTab[view] && !viewSplits.includes(x.id));
       return (
-        <div className="term-slot" data-pane-id={MAIN} key={MAIN}>
-          {t && <Term key={t.id} id={t.id} repo={view} bootCmd={t.bootCmd} connected={connected} send={send} subscribe={subscribe} />}
+        <div className={`term-slot ${hasSplits && t && focusedTerm[view] === t.id ? "focused" : ""}`} data-pane-id={MAIN} key={MAIN}>
+          {t && <Term key={t.id} id={t.id} repo={view} bootCmd={t.bootCmd} connected={connected} send={send} subscribe={subscribe} onFocus={noteFocus} />}
         </div>
       );
     }
@@ -765,7 +791,7 @@ export default function App() {
     const shown = paneTabList.find((x) => x.id === activeId) ?? paneTabList[paneTabList.length - 1];
     if (!shown) return null;
     return (
-      <div className="term-slot split" data-pane-id={node.id} key={node.id}>
+      <div className={`term-slot split ${focusedTerm[view] === shown.id ? "focused" : ""}`} data-pane-id={node.id} key={node.id}>
         <div className="term-slot-head">
           <div className="pane-tabs">
             {paneTabList.map((t) => (
@@ -801,7 +827,7 @@ export default function App() {
             +
           </button>
         </div>
-        <Term key={shown.id} id={shown.id} repo={view} bootCmd={shown.bootCmd} connected={connected} send={send} subscribe={subscribe} />
+        <Term key={shown.id} id={shown.id} repo={view} bootCmd={shown.bootCmd} connected={connected} send={send} subscribe={subscribe} onFocus={noteFocus} />
       </div>
     );
   };
@@ -1204,6 +1230,7 @@ export default function App() {
         <GitMenu
           anchor={gitMenu.anchor}
           mode={gitMenu.mode}
+          target={gitMenu.target}
           branch={branches[view] ?? null}
           onPick={(a) => runGitAction(a, gitMenu.mode, gitMenu.tabId)}
           onClose={() => setGitMenu(null)}

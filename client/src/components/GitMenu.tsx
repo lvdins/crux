@@ -106,12 +106,15 @@ export const GIT_ACTIONS: GitAction[] = [
 export default function GitMenu({
   anchor,
   mode,
+  target,
   branch,
   onPick,
   onClose,
 }: {
   anchor: DOMRect;
   mode: "agent" | "shell";
+  /** Name of the terminal the action goes to (shown when panes are split). */
+  target?: string;
   branch: string | null;
   onPick: (action: GitAction) => void;
   onClose: () => void;
@@ -152,7 +155,10 @@ export default function GitMenu({
     <div className="ctx-menu git-menu" ref={ref} style={pos} role="menu">
       <div className="git-menu-head">
         <span className="git-branch">{branch ?? "git"}</span>
-        <span className={`git-mode ${mode}`}>{mode === "agent" ? "asks the agent" : "runs in shell"}</span>
+        <span className={`git-mode ${mode}`}>
+          {target ? `→ ${target} · ` : ""}
+          {mode === "agent" ? "asks the agent" : "runs in shell"}
+        </span>
       </div>
       {groups.map((items, gi) => (
         <div key={gi} className="ctx-group">
