@@ -70,6 +70,7 @@ export default function App() {
   // Agent drove the browser of the workspace on screen: show it.
   const revealBrowserRef = useRef<(ws: string) => void>(() => {});
   const toggleSideRef = useRef(toggleSide);
+  const toggleRightRef = useRef<() => void>(() => {});
   toggleSideRef.current = toggleSide;
   const [adding, setAdding] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
@@ -199,7 +200,7 @@ export default function App() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  // ⌘S — toggle the sidebar. In the desktop app the native menu owns the
+  // ⌘S — toggle the sidebar; ⌘B — toggle the right panel. In the desktop app the native menu owns the
   // shortcut (it works even with a terminal/browser pane focused) and tells
   // us via an event; in a plain browser tab we catch the key ourselves.
   useEffect(() => {
@@ -207,9 +208,12 @@ export default function App() {
       let unlisten: (() => void) | undefined;
       let cancelled = false;
       void import("@tauri-apps/api/event").then(({ listen }) =>
-        listen("menu:toggle-sidebar", () => toggleSideRef.current()).then((fn) => {
-          if (cancelled) fn();
-          else unlisten = fn;
+        Promise.all([
+          listen("menu:toggle-sidebar", () => toggleSideRef.current()),
+          listen("menu:toggle-right", () => toggleRightRef.current()),
+        ]).then((fns) => {
+          if (cancelled) fns.forEach((fn) => fn());
+          else unlisten = () => fns.forEach((fn) => fn());
         }),
       );
       return () => {
@@ -218,10 +222,12 @@ export default function App() {
       };
     }
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "s") {
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
+      const key = e.key.toLowerCase();
+      if (key === "s" || key === "b") {
         e.preventDefault();
         e.stopPropagation();
-        toggleSideRef.current();
+        (key === "s" ? toggleSideRef : toggleRightRef).current();
       }
     };
     window.addEventListener("keydown", onKey, true);
@@ -477,6 +483,10 @@ export default function App() {
     if (ws !== viewRef.current) return;
     if (rightHidden) hideRight(false);
     if (panelTabs[ws] !== "browser") setPanelTab(ws, "browser");
+  };
+
+  toggleRightRef.current = () => {
+    if (viewRef.current && viewRef.current !== "connections") hideRight(!rightHidden);
   };
 
   const hideRight = (hidden: boolean) => {
@@ -766,7 +776,7 @@ export default function App() {
                           {name}
                         </button>
                       ))}
-                      <button className="pane-collapse" title="Hide panel" onClick={() => hideRight(true)}>»</button>
+                      <button className="pane-collapse" title="Hide panel (⌘B)" onClick={() => hideRight(true)}>»</button>
                     </nav>
                     {panelTab === "preview" && <Preview key={view} wsKey={view} />}
                     {panelTab === "tree" && <TestTree repo={view} />}
@@ -779,7 +789,7 @@ export default function App() {
               </section>
             }
             {rightHidden && hasPanel && (
-              <button className="pane-reopen" title="Show panel" onClick={() => hideRight(false)}>
+              <button className="pane-reopen" title="Show panel (⌘B)" onClick={() => hideRight(false)}>
                 «
               </button>
             )}

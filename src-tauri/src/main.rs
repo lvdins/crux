@@ -69,25 +69,29 @@ fn spawn_server(app: &tauri::App) -> Option<Child> {
     }
 }
 
-/// Default macOS menu plus View → Toggle Sidebar (⌘S). A menu accelerator
+/// Default macOS menu plus View → Toggle Sidebar (⌘S) / Right Panel (⌘B). A menu accelerator
 /// fires even when a terminal or a native browser pane has keyboard focus.
 fn install_menu(app: &mut tauri::App) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItemBuilder, MenuItemKind, SubmenuBuilder};
     let toggle = MenuItemBuilder::with_id("toggle-sidebar", "Toggle Sidebar")
         .accelerator("CmdOrCtrl+S")
         .build(app)?;
+    let toggle_right = MenuItemBuilder::with_id("toggle-right", "Toggle Right Panel")
+        .accelerator("CmdOrCtrl+B")
+        .build(app)?;
     let menu = Menu::default(app.handle())?;
     let mut placed = false;
     for item in menu.items()? {
         if let MenuItemKind::Submenu(sub) = item {
             if sub.text()? == "View" {
+                sub.prepend(&toggle_right)?;
                 sub.prepend(&toggle)?;
                 placed = true;
             }
         }
     }
     if !placed {
-        menu.append(&SubmenuBuilder::new(app, "View").item(&toggle).build()?)?;
+        menu.append(&SubmenuBuilder::new(app, "View").item(&toggle).item(&toggle_right).build()?)?;
     }
     app.set_menu(menu)?;
     Ok(())
@@ -104,8 +108,14 @@ fn main() {
             Ok(())
         })
         .on_menu_event(|app, event| {
-            if event.id() == "toggle-sidebar" {
-                let _ = app.emit_to("main", "menu:toggle-sidebar", ());
+            match event.id().as_ref() {
+                "toggle-sidebar" => {
+                    let _ = app.emit_to("main", "menu:toggle-sidebar", ());
+                }
+                "toggle-right" => {
+                    let _ = app.emit_to("main", "menu:toggle-right", ());
+                }
+                _ => {}
             }
         })
         .invoke_handler(tauri::generate_handler![
