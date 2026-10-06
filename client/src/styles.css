@@ -88,11 +88,13 @@ body {
     opacity 0.35s ease, border-color 0.3s ease;
 }
 .sidebar.collapsed { width: 0; padding-left: 0; padding-right: 0; opacity: 0; border-right-width: 0; pointer-events: none; }
+/* same pill as the Claude / Codex buttons */
 .side-toggle {
-  background: none; border: none; color: var(--ink-faint); cursor: pointer;
-  padding: 4px; border-radius: 6px; display: inline-flex; margin-right: -4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--surface-2); color: var(--ink); border: 1px solid var(--line);
+  border-radius: 99px; padding: 5px 12px; cursor: pointer;
 }
-.side-toggle:hover { color: var(--ink); background: var(--surface-2); }
+.side-toggle:hover { border-color: var(--ink-soft); }
 .side-section {
   font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase;
   color: var(--ink-faint); padding: 10px 10px 5px; user-select: none;
