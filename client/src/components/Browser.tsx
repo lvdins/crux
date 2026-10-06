@@ -121,6 +121,13 @@ export default function Browser({
   const [savedBookmarks, setSavedBookmarks] = useState(loadBookmarks);
   const bookmarks = fixedBookmarks ?? savedBookmarks;
   const [frameKey, setFrameKey] = useState(0);
+  // Collapse the address bar + bookmarks for more page space (remembered).
+  const [chromeHidden, setChromeHidden] = useState(() => localStorage.getItem("qualitylab.browserChrome") === "hidden");
+  const toggleChrome = () =>
+    setChromeHidden((h) => {
+      localStorage.setItem("qualitylab.browserChrome", h ? "shown" : "hidden");
+      return !h;
+    });
   const slotRef = useRef<HTMLDivElement>(null);
   const opened = useRef(new Set<string>());
   const editing = useRef(false);
@@ -332,7 +339,18 @@ export default function Browser({
         <button className="browser-tab-add" title="New tab" onClick={() => addTab(defaultUrl ?? bookmarks[0]?.url ?? DEFAULT_BOOKMARKS[0].url)}>
           +
         </button>
+        <button
+          className={`browser-chrome-toggle ${chromeHidden ? "collapsed" : ""}`}
+          title={chromeHidden ? "Show address bar" : "Hide address bar"}
+          onClick={toggleChrome}
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 7.5L6 4.5L9 7.5" />
+          </svg>
+        </button>
       </div>
+      <div className={`browser-chrome ${chromeHidden ? "collapsed" : ""}`}>
+      <div className="browser-chrome-inner">
       <div className="browser-bar">
         <button title="Back" onClick={() => action("back")} disabled={!isTauri}>
           ‹
@@ -381,6 +399,8 @@ export default function Browser({
           ))}
         </div>
       )}
+      </div>
+      </div>
       {loading && <div className="browser-progress" />}
       {error && <div className="browser-error">{error}</div>}
       <div className="browser-slot" ref={slotRef}>

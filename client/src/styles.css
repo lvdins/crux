@@ -1014,3 +1014,19 @@ button.primary:hover:not(:disabled) { background: var(--accent-ink); }
 .jira-add .primary { align-self: flex-end; padding: 4px 12px; font-size: 12.5px; }
 .jira-add .primary:disabled { opacity: 0.4; cursor: default; }
 .jira-error { color: var(--fail); font-size: 12px; }
+
+/* collapsible address bar + bookmarks */
+.browser-chrome {
+  display: grid; grid-template-rows: 1fr;
+  transition: grid-template-rows 0.32s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.2s ease;
+}
+.browser-chrome.collapsed { grid-template-rows: 0fr; opacity: 0; pointer-events: none; }
+.browser-chrome-inner { min-height: 0; overflow: hidden; }
+.browser-tabs .browser-chrome-toggle {
+  margin-left: auto; flex-shrink: 0; width: 22px; height: 22px; border: none; border-radius: 6px; background: none;
+  color: var(--ink-faint); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0;
+}
+.browser-chrome-toggle:hover { background: var(--surface); color: var(--ink); }
+.browser-chrome-toggle svg { transition: transform 0.32s cubic-bezier(0.32, 0.72, 0, 1); }
+.browser-chrome-toggle.collapsed svg { transform: rotate(180deg); }
+.browser-tabs { padding-bottom: 4px; }
