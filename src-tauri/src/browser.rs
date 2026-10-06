@@ -54,7 +54,11 @@ fn create(app: &AppHandle, label: &str, url: &str, x: f64, y: f64, w: f64, h: f6
     let window = app.get_window("main").ok_or("main window missing")?;
     let events = app.clone();
     let event_label = label.to_string();
-    let builder = WebviewBuilder::new(label, WebviewUrl::External(parse(url)?)).on_page_load(move |_view, payload| {
+    let builder = WebviewBuilder::new(label, WebviewUrl::External(parse(url)?))
+        // Web Inspector for the DevTools button (also makes the page
+        // inspectable from Safari's Develop menu).
+        .devtools(true)
+        .on_page_load(move |_view, payload| {
         let _ = events.emit_to(
             "main",
             "browser:nav",
@@ -89,16 +93,23 @@ pub async fn browser_ensure(app: AppHandle, label: String, url: String) -> Resul
 /// `page_world` = run alongside the page's own scripts (sees its globals);
 /// otherwise an isolated world that shares only the DOM.
 #[tauri::command]
-pub async fn browser_js(app: AppHandle, label: String, script: String, page_world: Option<bool>) -> Result<String, String> {
+pub async fn browser_js(
+    app: AppHandle,
+    label: String,
+    script: String,
+    page_world: Option<bool>,
+    timeout_secs: Option<u64>,
+) -> Result<String, String> {
     let view = app.get_webview(&label).ok_or("browser not open")?;
     #[cfg(target_os = "macos")]
     {
         let rx = mac::run_js(&view, script, page_world.unwrap_or(false))?;
-        wait(rx, 45).await
+        // The element picker waits on the user, so it asks for longer.
+        wait(rx, timeout_secs.unwrap_or(45).min(900)).await
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (view, script, page_world);
+        let _ = (view, script, page_world, timeout_secs);
         Err("agent browser control is only implemented on macOS".into())
     }
 }
@@ -243,6 +254,19 @@ mod mac {
         })
         .map_err(|e| e.to_string())?;
         Ok(rx)
+    }
+}
+
+/// Open or close Web Inspector for a pane. Returns whether it is now open.
+#[tauri::command]
+pub async fn browser_devtools(app: AppHandle, label: String) -> Result<bool, String> {
+    let view = app.get_webview(&label).ok_or("browser not open")?;
+    if view.is_devtools_open() {
+        view.close_devtools();
+        Ok(false)
+    } else {
+        view.open_devtools();
+        Ok(true)
     }
 }
 

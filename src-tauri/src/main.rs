@@ -127,6 +127,7 @@ fn main() {
             browser::browser_ensure,
             browser::browser_js,
             browser::browser_screenshot,
+            browser::browser_devtools,
         ])
         .build(tauri::generate_context!())
         .expect("error building QualityLab")

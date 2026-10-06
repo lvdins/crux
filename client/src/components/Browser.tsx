@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { browserLabel, setActiveBrowserLabel } from "../agentBrowser";
+import { CANCEL_PICK_SCRIPT, PICK_SCRIPT, type PickedElement } from "../elementPicker";
 
 /**
  * In-app browser with minimal tabs. In the desktop app each tab is a native
@@ -121,6 +122,11 @@ export default function Browser({
   const [savedBookmarks, setSavedBookmarks] = useState(loadBookmarks);
   const bookmarks = fixedBookmarks ?? savedBookmarks;
   const [frameKey, setFrameKey] = useState(0);
+  // Element picker + Web Inspector.
+  const [picking, setPicking] = useState(false);
+  const [picked, setPicked] = useState<PickedElement | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+  const [devtoolsOpen, setDevtoolsOpen] = useState(false);
   // Collapse the address bar + bookmarks for more page space (remembered).
   const [chromeHidden, setChromeHidden] = useState(() => localStorage.getItem("qualitylab.browserChrome") === "hidden");
   const toggleChrome = () =>
@@ -304,6 +310,41 @@ export default function Browser({
     else if (name === "reload") setFrameKey((k) => k + 1);
   };
 
+  const togglePicker = async () => {
+    if (!isTauri) return;
+    if (picking) {
+      void invoke("browser_js", { label, script: CANCEL_PICK_SCRIPT }).catch(() => undefined);
+      return;
+    }
+    setPicking(true);
+    setPicked(null);
+    try {
+      const raw = await invoke<string>("browser_js", { label, script: PICK_SCRIPT, timeoutSecs: 600 });
+      const info = JSON.parse(raw) as PickedElement | null;
+      if (info) setPicked(info);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setPicking(false);
+    }
+  };
+
+  const toggleDevtools = () => {
+    if (!isTauri) return;
+    void invoke<boolean>("browser_devtools", { label })
+      .then(setDevtoolsOpen)
+      .catch((err) => setError(String(err)));
+  };
+
+  const copy = (text: string) => {
+    void navigator.clipboard.writeText(text).catch(() => undefined);
+    setCopied(text);
+    setTimeout(() => setCopied((c) => (c === text ? null : c)), 1200);
+  };
+
+  // A different tab or page invalidates the picked element.
+  useEffect(() => setPicked(null), [active.id]);
+
   const isBookmarked = bookmarks.some((b) => b.url === active.url);
   const toggleBookmark = () => {
     const next = isBookmarked
@@ -384,6 +425,27 @@ export default function Browser({
             onChange={(e) => setInput(e.target.value)}
           />
         </form>
+        <button
+          title={picking ? "Cancel inspecting (Esc)" : "Inspect an element: pick it on the page to get Playwright locators"}
+          onClick={() => void togglePicker()}
+          className={`browser-tool ${picking ? "on" : ""}`}
+          disabled={!isTauri}
+        >
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+            <path d="M2.5 6V3.5a1 1 0 0 1 1-1H6M10 2.5h2.5a1 1 0 0 1 1 1V6M13.5 10v2.5a1 1 0 0 1-1 1H10M6 13.5H3.5a1 1 0 0 1-1-1V10" />
+            <circle cx="8" cy="8" r="1.6" />
+          </svg>
+        </button>
+        <button
+          title={devtoolsOpen ? "Close Web Inspector" : "Open Web Inspector (DevTools)"}
+          onClick={toggleDevtools}
+          className={`browser-tool ${devtoolsOpen ? "on" : ""}`}
+          disabled={!isTauri}
+        >
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10" />
+          </svg>
+        </button>
         {!fixedBookmarks && (
           <button title={isBookmarked ? "Remove bookmark" : "Bookmark this page"} onClick={toggleBookmark} className={isBookmarked ? "on" : ""}>
             {isBookmarked ? "★" : "☆"}
@@ -401,6 +463,43 @@ export default function Browser({
       )}
       </div>
       </div>
+      {picking && <div className="browser-picking">Hover the page and click an element · Esc to cancel</div>}
+      {picked && (
+        <div className="browser-picked">
+          <div className="picked-head">
+            <code className="picked-tag">
+              {picked.tag}
+              {picked.id && <span>#{picked.id}</span>}
+              {picked.classes.slice(0, 2).map((c) => (
+                <span key={c}>.{c}</span>
+              ))}
+            </code>
+            {picked.role && (
+              <span className="picked-meta">
+                {picked.role}
+                {picked.name ? ` "${picked.name.slice(0, 40)}"` : ""}
+              </span>
+            )}
+            <span className="picked-meta">{picked.size}</span>
+            <button className="picked-again" onClick={() => void togglePicker()} title="Pick another element">
+              Pick again
+            </button>
+            <button className="picked-close" onClick={() => setPicked(null)} title="Close">
+              ×
+            </button>
+          </div>
+          {picked.locators.map((l) => (
+            <div key={l.code} className="picked-row">
+              <span className="picked-kind">{l.kind}</span>
+              <code title={l.code}>{l.code}</code>
+              <span className={`picked-count ${l.matches === 1 ? "unique" : "multi"}`} title="Elements this locator matches on the page">
+                {l.matches === 1 ? "unique" : `${l.matches} matches`}
+              </span>
+              <button onClick={() => copy(l.code)}>{copied === l.code ? "copied" : "copy"}</button>
+            </div>
+          ))}
+        </div>
+      )}
       {loading && <div className="browser-progress" />}
       {error && <div className="browser-error">{error}</div>}
       <div className="browser-slot" ref={slotRef}>
