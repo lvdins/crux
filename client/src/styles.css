@@ -1283,3 +1283,16 @@ button.primary:hover:not(:disabled) { background: var(--accent-ink); }
 /* top-left brand: logo + bold name, sidebar toggle after it */
 .brand-name { font-size: 17px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink); }
 .brand-mark { width: 20px; height: 20px; display: block; }
+
+/* chats under each workspace */
+.ws-chat-toggle { margin-left: 0; }
+.side-item .side-add-chat { font-size: 14px; }
+.side-item .side-add-chat:hover { color: var(--accent); }
+.ws-chat { gap: 7px; }
+.ws-chat-icon { display: inline-flex; width: 12px; justify-content: center; flex-shrink: 0; color: var(--ink-faint); }
+.ws-chat-icon svg { width: 11px; height: 11px; }
+.ws-chat.active .ws-chat-icon { color: var(--ink-soft); }
+/* row controls only take space on hover, so names stay readable */
+.side-item > .ws-chat-toggle, .side-item > .side-add-chat, .side-item > .side-remove { display: none; }
+.side-item:hover > .ws-chat-toggle, .side-item:hover > .side-add-chat, .side-item:hover > .side-remove { display: inline-flex; align-items: center; justify-content: center; }
+.side-item > .ws-chat-toggle.collapsed { display: inline-flex; }

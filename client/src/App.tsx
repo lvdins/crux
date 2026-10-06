@@ -30,7 +30,7 @@ import {
 } from "./paneLayout";
 import JiraMenu, { loadJiraBoards, saveJiraBoards, nameForJiraUrl } from "./components/JiraMenu";
 import ContextMenu, { MenuIcons } from "./components/ContextMenu";
-import { WebIcon, ClaudeLogo, CodexLogo, JiraIcon } from "./components/icons";
+import { WebIcon, ClaudeLogo, CodexLogo, JiraIcon, TerminalIcon } from "./components/icons";
 
 const CHIP_COLORS: Record<string, string> = {
   mkdocs: "#d9a05b",
@@ -136,6 +136,16 @@ export default function App() {
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [jiraMenu, setJiraMenu] = useState<DOMRect | null>(null);
+  // "+" next to a workspace: pick Claude / Codex / terminal for a new chat.
+  const [chatMenu, setChatMenu] = useState<null | { key: string; x: number; y: number }>(null);
+  // Workspaces whose chat list is folded in the sidebar (remembered).
+  const [chatsFolded, setChatsFolded] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem("crux.chatsFolded") ?? "[]"));
+    } catch {
+      return new Set();
+    }
+  });
   const [gitMenu, setGitMenu] = useState<null | { anchor: DOMRect; mode: "agent" | "shell"; tabId: string; target: string }>(null);
   const [branches, setBranches] = useState<Record<string, string | null>>({});
   // Last terminal the user clicked / typed in, per workspace (Git targets it).
@@ -710,6 +720,46 @@ export default function App() {
     if (mode === "agent" || !action.shellNoEnter) setTimeout(() => send({ type: "term:input", id: tabId, data: "\r" }), 150);
   };
 
+  const toggleChatsFolded = (key: string) =>
+    setChatsFolded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      localStorage.setItem("crux.chatsFolded", JSON.stringify([...next]));
+      return next;
+    });
+
+  // Jump to a chat from the sidebar: its workspace, its pane, its tab.
+  const openChat = (key: string, id: string) => {
+    setView(key);
+    let pane: string | null = null;
+    const walk = (n: PaneNode) => {
+      if (n.kind === "split") return n.children.forEach(walk);
+      if (n.id !== MAIN && paneTabs(n).includes(id)) pane = n.id;
+    };
+    if (layouts[key]) walk(layouts[key]);
+    if (pane) setLayouts((prev) => ({ ...prev, [key]: setPaneActive(prev[key] ?? rootLayout(), pane!, id) }));
+    else setActiveTab((prev) => ({ ...prev, [key]: id }));
+    setFocusedTerm((prev) => ({ ...prev, [key]: id }));
+  };
+
+  const newChat = (key: string, kind: "claude" | "codex" | "shell") => {
+    setView(key);
+    if (chatsFolded.has(key)) toggleChatsFolded(key);
+    if (kind === "shell") addTab(key);
+    else addTab(key, kind, kind, kind);
+  };
+
+  // "claude", "claude 2", … so repeated chats are tellable apart.
+  const chatNames = (list: TermTab[]) => {
+    const seen = new Map<string, number>();
+    return list.map((t) => {
+      const n = (seen.get(t.title) ?? 0) + 1;
+      seen.set(t.title, n);
+      return n === 1 ? t.title : `${t.title} ${n}`;
+    });
+  };
+
   const hideRight = (hidden: boolean) => {
     setRightHidden(hidden);
     localStorage.setItem("crux.rightHidden", hidden ? "1" : "0");
@@ -732,7 +782,7 @@ export default function App() {
     : [];
   const panelTab = panelTabList.some(([k]) => k === panelTabs[view]) ? panelTabs[view] : panelTabList[0]?.[0];
   // Native browser views float above HTML: hide them under overlays.
-  const overlayOpen = adding || !!menu || !!confirmDelete || !!agentDrag || dragging || !!jiraMenu || !!gitMenu;
+  const overlayOpen = adding || !!menu || !!confirmDelete || !!agentDrag || dragging || !!jiraMenu || !!gitMenu || !!chatMenu;
   const viewLayout = (!isSpecialView && layouts[view]) || rootLayout();
   const viewSplits = splitTabIds(viewLayout);
 
@@ -919,8 +969,8 @@ export default function App() {
                 />
               </div>
             ) : (
+              <Fragment key={key}>
               <div
-                key={key}
                 className={`side-item ${view === key ? "active" : ""}`}
                 onContextMenu={(e) => {
                   e.preventDefault();
@@ -946,10 +996,66 @@ export default function App() {
                   {r.pinned && <span className="side-pin" title="Pinned">{MenuIcons.pin}</span>}
                   {unread.has(key) && <span className="unread-dot" title="New activity" />}
                 </button>
+                {(tabs[key] ?? []).length > 0 && (
+                  <span
+                    className={`side-sub-toggle ws-chat-toggle ${chatsFolded.has(key) ? "collapsed" : ""}`}
+                    role="button"
+                    title={chatsFolded.has(key) ? "Show chats" : "Hide chats"}
+                    onClick={() => toggleChatsFolded(key)}
+                  >
+                    <small>{(tabs[key] ?? []).length}</small>
+                    <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M2.5 3.75 5 6.25l2.5-2.5" />
+                    </svg>
+                  </span>
+                )}
+                <button
+                  className="side-remove side-add-chat"
+                  title="New chat"
+                  onClick={(e) => {
+                    const r = e.currentTarget.getBoundingClientRect();
+                    setChatMenu({ key, x: r.right + 6, y: r.top });
+                  }}
+                >
+                  +
+                </button>
                 <button className="side-remove" title="Remove workspace (files stay on disk)" onClick={() => setConfirmRemove(key)}>
                   ×
                 </button>
               </div>
+              <div className={`side-sub ws-chats ${chatsFolded.has(key) || !(tabs[key] ?? []).length ? "collapsed" : ""}`}>
+                <div className="side-sub-inner">
+                  {(() => {
+                    const list = tabs[key] ?? [];
+                    const names = chatNames(list);
+                    const current = focusedTerm[key] ?? activeTab[key];
+                    return list.map((t, i) => (
+                      <div
+                        key={t.id}
+                        className={`side-sub-item ws-chat ${view === key && current === t.id ? "active" : ""}`}
+                        onClick={() => openChat(key, t.id)}
+                        title={names[i]}
+                      >
+                        <span className="ws-chat-icon">
+                          {t.agent === "claude" ? <ClaudeLogo /> : t.agent === "codex" ? <CodexLogo /> : <TerminalIcon />}
+                        </span>
+                        <span className="side-sub-label">{names[i]}</span>
+                        <button
+                          className="side-remove"
+                          title="Close chat"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            closeTab(key, t.id);
+                          }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ));
+                  })()}
+                </div>
+              </div>
+              </Fragment>
             ),
           )}
           {Object.keys(config.repos).length === 0 && (
@@ -1235,6 +1341,20 @@ export default function App() {
         </div>
       )}
       {toast && <div className="toast">{toast}</div>}
+      {chatMenu && config.repos[chatMenu.key] && (
+        <ContextMenu
+          x={chatMenu.x}
+          y={chatMenu.y}
+          onClose={() => setChatMenu(null)}
+          groups={[
+            [
+              { label: "New Claude chat", icon: <ClaudeLogo />, onSelect: () => newChat(chatMenu.key, "claude") },
+              { label: "New Codex chat", icon: <CodexLogo />, onSelect: () => newChat(chatMenu.key, "codex") },
+              { label: "New terminal", icon: <TerminalIcon />, onSelect: () => newChat(chatMenu.key, "shell") },
+            ],
+          ]}
+        />
+      )}
       {gitMenu && (
         <GitMenu
           anchor={gitMenu.anchor}

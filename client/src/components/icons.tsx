@@ -93,3 +93,12 @@ export function JiraIcon() {
     </svg>
   );
 }
+
+export function TerminalIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="1.5" y="2.5" width="13" height="11" rx="2" />
+      <path d="M4.5 6l2 2-2 2M8.5 10.5h3" />
+    </svg>
+  );
+}
