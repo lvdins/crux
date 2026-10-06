@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -11,6 +12,14 @@ export const ROOT = process.env.CRUX_ROOT ?? path.resolve(path.dirname(fileURLTo
 export const PACKAGED = !!process.env.CRUX_ROOT;
 
 export const rootPath = (...parts: string[]) => path.join(ROOT, ...parts);
+
+/** Per-user data folder. `npm run app:dev` points this at ~/.crux-dev so a
+ *  development copy never touches the installed app's settings. */
+export const DEFAULT_HOME = path.join(os.homedir(), ".crux");
+export const CRUX_HOME = process.env.CRUX_HOME || DEFAULT_HOME;
+/** Server port (installed app 8787, dev 8788). */
+export const PORT = Number(process.env.CRUX_PORT) || 8787;
+export const SERVER_URL = `http://127.0.0.1:${PORT}`;
 
 /**
  * Apps launched from Finder get a bare PATH (/usr/bin:/bin:…), so git, uv,

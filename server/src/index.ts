@@ -10,11 +10,10 @@ import { attachTerm, termInput, termResize, killTerm, detachAll, killAllTerms, o
 import { startPreview, stopPreview, stopAllPreviews, previewStatus } from "./preview.js";
 import { buildTree, sharedEndpoints } from "./tree.js";
 import { installAgentSetup } from "./agent-setup.js";
-import { adoptLoginShellPath, checkTools, PACKAGED, rootPath } from "./paths.js";
+import { adoptLoginShellPath, checkTools, PACKAGED, PORT, rootPath } from "./paths.js";
 
 adoptLoginShellPath();
 
-const PORT = Number(process.env.CRUX_PORT) || 8787;
 let connectionsCache: { at: number; data: unknown } | null = null;
 let featuresCache: { at: number; data: unknown } | null = null;
 const app = express();

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { rootPath } from "./paths.js";
+import { CRUX_HOME, DEFAULT_HOME, rootPath } from "./paths.js";
 
 export type RepoKind = "mkdocs" | "playwright" | "pytest" | "frontend" | "backend" | "generic";
 
@@ -23,14 +23,14 @@ export interface CruxConfig {
 // first-run user config with the repos that exist on this machine.
 const defaultsPath = rootPath("crux.config.json");
 // Per-user workspaces live outside the app so every teammate has their own.
-export const userConfigPath = process.env.CRUX_CONFIG ?? path.join(os.homedir(), ".crux", "config.json");
+export const userConfigPath = process.env.CRUX_CONFIG ?? path.join(CRUX_HOME, "config.json");
 
 // One-time move from the app's old name: ~/.qualitylab → ~/.crux. Per item,
 // because the desktop shell may already have created ~/.crux for its log.
 (function migrateFromQualityLab() {
   const oldDir = path.join(os.homedir(), ".qualitylab");
   const newDir = path.join(os.homedir(), ".crux");
-  if (process.env.CRUX_CONFIG || !fs.existsSync(oldDir)) return;
+  if (process.env.CRUX_CONFIG || CRUX_HOME !== DEFAULT_HOME || !fs.existsSync(oldDir)) return;
   fs.mkdirSync(newDir, { recursive: true });
   for (const name of fs.readdirSync(oldDir)) {
     const target = path.join(newDir, name);
@@ -60,6 +60,13 @@ function loadConfig(): CruxConfig {
   const user = readJson(userConfigPath);
   if (user?.repos) {
     return { agent: { permissionMode: "bypassPermissions" }, preview: { port: 8321 }, ...user };
+  }
+  // A dev copy (separate CRUX_HOME) starts with the installed app's workspaces.
+  const installed = CRUX_HOME !== DEFAULT_HOME ? readJson(path.join(DEFAULT_HOME, "config.json")) : null;
+  if (installed?.repos) {
+    const copy = { agent: { permissionMode: "bypassPermissions" }, preview: { port: 8321 }, ...installed };
+    saveConfig(copy);
+    return copy;
   }
   const defaults = readJson(defaultsPath) ?? {};
   const seeded: CruxConfig = {

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { config } from "./config.js";
-import { rootPath } from "./paths.js";
+import { CRUX_HOME, SERVER_URL, rootPath } from "./paths.js";
 
 /**
  * Gives claude / codex started in a Crux terminal the
@@ -13,11 +13,10 @@ import { rootPath } from "./paths.js";
  * the MCP config. Nothing in the user's dotfiles or repos is modified.
  */
 
-const home = path.join(os.homedir(), ".crux");
+const home = CRUX_HOME;
 export const ZSH_DIR = path.join(home, "zsh");
 const MCP_DIR = path.join(home, "mcp");
 export const BROWSER_MCP = rootPath("server", "mcp", "browser-mcp.mjs");
-const SERVER_URL = "http://127.0.0.1:8787";
 
 export const mcpConfigPath = (ws: string) => path.join(MCP_DIR, `${ws}.json`);
 

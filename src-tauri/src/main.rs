@@ -12,8 +12,14 @@ use std::time::Duration;
 /// config already carries absolute repo paths, so a compile-time root is fine.
 const PROJECT_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/..");
 
+/// 8787 for the installed app; `npm run app:dev` sets CRUX_PORT=8788.
+fn server_port() -> u16 {
+    std::env::var("CRUX_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8787)
+}
+
 fn server_running() -> bool {
-    TcpStream::connect_timeout(&"127.0.0.1:8787".parse().unwrap(), Duration::from_millis(300)).is_ok()
+    let addr = format!("127.0.0.1:{}", server_port());
+    TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_millis(300)).is_ok()
 }
 
 /// Packaged app: run the bundled Node + server from Resources/ql-runtime.
@@ -44,7 +50,9 @@ fn spawn_server(app: &tauri::App) -> Option<Child> {
         }
     };
     // Keep a log for "it doesn't start" reports: ~/.crux/server.log
-    let log_dir = std::path::Path::new(&home).join(".crux");
+    let log_dir = std::env::var("CRUX_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::Path::new(&home).join(".crux"));
     let _ = std::fs::create_dir_all(&log_dir);
     if let Ok(log) = std::fs::OpenOptions::new().create(true).append(true).open(log_dir.join("server.log")) {
         if let Ok(err) = log.try_clone() {

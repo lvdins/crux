@@ -898,6 +898,7 @@ export default function App() {
         <span className="brand">
           <img src="/crux-mark.svg" alt="" className="brand-mark" />
           <span className="brand-name">Crux</span>
+          {import.meta.env.DEV && <span className="brand-dev" title="Development build (npm run app:dev)">DEV</span>}
         </span>
         <button className="side-toggle" title={sideHidden ? "Show sidebar (⌘S)" : "Hide sidebar (⌘S)"} onClick={toggleSide}>
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
