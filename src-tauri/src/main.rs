@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod browser;
+
 use std::net::TcpStream;
 use std::process::{Child, Command};
 use std::sync::Mutex;
@@ -44,6 +46,13 @@ fn main() {
     let server: Mutex<Option<Child>> = Mutex::new(spawn_server());
 
     tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![
+            browser::browser_show,
+            browser::browser_hide,
+            browser::browser_navigate,
+            browser::browser_action,
+            browser::browser_close,
+        ])
         .build(tauri::generate_context!())
         .expect("error building QualityLab")
         .run(move |_app, event| {

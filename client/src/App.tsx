@@ -5,6 +5,7 @@ import Term, { disposeTerm } from "./components/Term";
 import Preview from "./components/Preview";
 import TestTree from "./components/TestTree";
 import SuiteCoverage from "./components/SuiteCoverage";
+import Browser from "./components/Browser";
 import FeatureMap from "./components/FeatureMap";
 import AddWorkspace from "./components/AddWorkspace";
 import ContextMenu, { MenuIcons } from "./components/ContextMenu";
@@ -34,7 +35,20 @@ const newTabId = (repo: string) => `${repo}:${tabSeq++}:${Date.now() % 100000}`;
 export default function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [view, setView] = useState<View>("");
-  const [testTab, setTestTab] = useState<"tree" | "coverage">("tree");
+  // Right-panel tab per workspace: tree / coverage / preview / browser.
+  const [panelTabs, setPanelTabs] = useState<Record<string, string>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("qualitylab.panelTabs") ?? "{}");
+    } catch {
+      return {};
+    }
+  });
+  const setPanelTab = (key: string, tab: string) =>
+    setPanelTabs((prev) => {
+      const next = { ...prev, [key]: tab };
+      localStorage.setItem("qualitylab.panelTabs", JSON.stringify(next));
+      return next;
+    });
   const [connected, setConnected] = useState(false);
   const [split, setSplit] = useState<number>(() => {
     const saved = Number(localStorage.getItem("qualitylab.split"));
@@ -307,13 +321,16 @@ export default function App() {
     setTabs((prev) => ({ ...prev, [key]: [{ id, title: "shell" }] }));
     setActiveTab((prev) => ({ ...prev, [key]: id }));
     setView(key);
-    setTestTab("tree");
     setAdding(false);
   };
 
   const removeWs = async (key: string, alreadyRemoved = false) => {
     setConfirmRemove(null);
     if (!alreadyRemoved) await api(`/api/workspaces/${key}`, { method: "DELETE" });
+    if ("__TAURI_INTERNALS__" in window) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      void invoke("browser_close", { label: `browser-${key.replace(/[^a-zA-Z0-9_-]/g, "_")}` }).catch(() => undefined);
+    }
     for (const t of tabs[key] ?? []) {
       send({ type: "term:kill", id: t.id });
       disposeTerm(t.id);
@@ -418,8 +435,19 @@ export default function App() {
 
   const repo = view !== "connections" ? config.repos[view] : undefined;
   const isTestRepo = repo && (repo.kind === "playwright" || repo.kind === "pytest");
-  const hasPanel = repo?.kind === "mkdocs" || !!isTestRepo;
+  // Every workspace has a panel now — at minimum the browser.
+  const hasPanel = !!repo;
   const panelHidden = rightHidden || !hasPanel;
+  const panelTabList: [string, string][] = repo
+    ? repo.kind === "mkdocs"
+      ? [["preview", "Doc preview"], ["browser", "Browser"]]
+      : isTestRepo
+        ? [["tree", "Tests"], ["coverage", "Coverage"], ["browser", "Browser"]]
+        : [["browser", "Browser"]]
+    : [];
+  const panelTab = panelTabList.some(([k]) => k === panelTabs[view]) ? panelTabs[view] : panelTabList[0]?.[0];
+  // Native browser views float above HTML: hide them under overlays.
+  const overlayOpen = adding || !!menu || !!confirmDelete || !!agentDrag || dragging;
   const viewSplits = view !== "connections" ? splits[view] ?? [] : [];
   const splitInfos = viewSplits
     .map((id) => (tabs[view] ?? []).find((t) => t.id === id))
@@ -517,8 +545,7 @@ export default function App() {
                   className="side-item-main"
                   onClick={() => {
                     setView(key);
-                    setTestTab("tree");
-                    setUnread((u) => {
+                                    setUnread((u) => {
                       if (!u.has(key)) return u;
                       const n = new Set(u);
                       n.delete(key);
@@ -671,31 +698,22 @@ export default function App() {
             />
             {
               <section className={`right ${panelHidden ? "collapsed" : ""}`}>
-                {repo?.kind === "mkdocs" && (
+                {repo && (
                   <>
                     <nav className="tabs">
-                      <button className="active">Doc preview</button>
+                      {panelTabList.map(([k, name]) => (
+                        <button key={k} className={panelTab === k ? "active" : ""} onClick={() => setPanelTab(view, k)}>
+                          {name}
+                        </button>
+                      ))}
                       <button className="pane-collapse" title="Hide panel" onClick={() => hideRight(true)}>»</button>
                     </nav>
-                    <Preview key={view} wsKey={view} />
-                  </>
-                )}
-                {isTestRepo && (
-                  <>
-                    <nav className="tabs">
-                      <button className={testTab === "tree" ? "active" : ""} onClick={() => setTestTab("tree")}>
-                        Tests
-                      </button>
-                      <button className={testTab === "coverage" ? "active" : ""} onClick={() => setTestTab("coverage")}>
-                        Coverage
-                      </button>
-                      <button className="pane-collapse" title="Hide panel" onClick={() => hideRight(true)}>»</button>
-                    </nav>
-                    {testTab === "tree" ? (
-                      <TestTree repo={view} />
-                    ) : (
-                      <SuiteCoverage key={view} suite={repo?.kind === "pytest" ? "api" : "e2e"} repoKey={view} />
+                    {panelTab === "preview" && <Preview key={view} wsKey={view} />}
+                    {panelTab === "tree" && <TestTree repo={view} />}
+                    {panelTab === "coverage" && (
+                      <SuiteCoverage key={view} suite={repo.kind === "pytest" ? "api" : "e2e"} repoKey={view} />
                     )}
+                    {panelTab === "browser" && <Browser key={view} wsKey={view} visible={!panelHidden && !overlayOpen} />}
                   </>
                 )}
               </section>
