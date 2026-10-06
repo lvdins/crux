@@ -332,7 +332,13 @@ export default function Browser({
   const toggleDevtools = () => {
     if (!isTauri) return;
     void invoke<boolean>("browser_devtools", { label })
-      .then(setDevtoolsOpen)
+      .then((open) => {
+        setDevtoolsOpen(open);
+        // Snap the page back into the panel in case WebKit moved it.
+        place();
+        setTimeout(place, 300);
+        setTimeout(place, 1000);
+      })
       .catch((err) => setError(String(err)));
   };
 

@@ -228,6 +228,32 @@ mod mac {
         Ok(rx)
     }
 
+    /// Undock Web Inspector into its own window (private _WKInspector API,
+    /// guarded with respondsToSelector so a WebKit change can't crash us).
+    pub fn detach_inspector(view: &tauri::Webview) {
+        use objc2::{msg_send, sel};
+        let _ = view.with_webview(|pv| unsafe {
+            let wk = pv.inner() as *mut AnyObject;
+            if wk.is_null() {
+                return;
+            }
+            let wk = &*wk;
+            let has_inspector: bool = msg_send![wk, respondsToSelector: sel!(_inspector)];
+            if !has_inspector {
+                return;
+            }
+            let inspector: *mut AnyObject = msg_send![wk, _inspector];
+            if inspector.is_null() {
+                return;
+            }
+            let inspector = &*inspector;
+            let can_detach: bool = msg_send![inspector, respondsToSelector: sel!(detach)];
+            if can_detach {
+                let _: () = msg_send![inspector, detach];
+            }
+        });
+    }
+
     pub fn snapshot(view: &tauri::Webview) -> Result<Receiver<Reply>, String> {
         let (tx, rx) = channel::<Reply>();
         view.with_webview(move |pv| unsafe {
@@ -266,8 +292,22 @@ pub async fn browser_devtools(app: AppHandle, label: String) -> Result<bool, Str
         Ok(false)
     } else {
         view.open_devtools();
+        // WebKit docks the inspector inside our window and resizes the page
+        // to fit, wrecking the layout. Move it to its own window; retry while
+        // the inspector finishes attaching. The UI re-places the page after.
+        #[cfg(target_os = "macos")]
+        for delay in [0u64, 150, 400, 900] {
+            if delay > 0 {
+                tokio_sleep(delay).await;
+            }
+            mac::detach_inspector(&view);
+        }
         Ok(true)
     }
+}
+
+async fn tokio_sleep(ms: u64) {
+    let _ = tauri::async_runtime::spawn_blocking(move || std::thread::sleep(std::time::Duration::from_millis(ms))).await;
 }
 
 #[tauri::command]
