@@ -1282,3 +1282,4 @@ button.primary:hover:not(:disabled) { background: var(--accent-ink); }
 
 /* top-left brand: logo + bold name, sidebar toggle after it */
 .brand-name { font-size: 17px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink); }
+.brand-mark { width: 20px; height: 20px; display: block; }

@@ -846,6 +846,7 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <span className="brand">
+          <img src="/crux-mark.svg" alt="" className="brand-mark" />
           <span className="brand-name">Crux</span>
         </span>
         <button className="side-toggle" title={sideHidden ? "Show sidebar (⌘S)" : "Hide sidebar (⌘S)"} onClick={toggleSide}>
