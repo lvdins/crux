@@ -9,6 +9,12 @@
 export const browserLabel = (ws: string) => `browser-${ws.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
 export const DEFAULT_BROWSER_URL = "https://dashboard.g360lab.com/";
 
+// The agent drives whichever browser tab is active in that workspace.
+export function setActiveBrowserLabel(ws: string, label: string): void {
+  localStorage.setItem(`qualitylab.browserActive.${ws}`, label);
+}
+const activeBrowserLabel = (ws: string) => localStorage.getItem(`qualitylab.browserActive.${ws}`) ?? browserLabel(ws);
+
 export interface AgentResult {
   text: string;
   image?: string; // base64 PNG
@@ -271,7 +277,7 @@ function normaliseUrl(input: string): string {
 }
 
 export async function runAgentCommand(ws: string, op: string, args: Record<string, any>): Promise<AgentResult> {
-  const label = browserLabel(ws);
+  const label = activeBrowserLabel(ws);
   const startUrl = localStorage.getItem(`qualitylab.browserUrl.${ws}`) ?? DEFAULT_BROWSER_URL;
   const created = await invoke<boolean>("browser_ensure", { label, url: op === "navigate" && args.url ? normaliseUrl(args.url) : startUrl });
 

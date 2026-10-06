@@ -10,8 +10,9 @@ import { runAgentCommand, browserLabel } from "./agentBrowser";
 import FeatureMap from "./components/FeatureMap";
 import AddWorkspace from "./components/AddWorkspace";
 import SetupChecklist from "./components/SetupChecklist";
+import JiraMenu, { loadJiraBoards, saveJiraBoards } from "./components/JiraMenu";
 import ContextMenu, { MenuIcons } from "./components/ContextMenu";
-import { WebIcon, ClaudeLogo, CodexLogo } from "./components/icons";
+import { WebIcon, ClaudeLogo, CodexLogo, JiraIcon } from "./components/icons";
 
 const CHIP_COLORS: Record<string, string> = {
   mkdocs: "#d9a05b",
@@ -75,6 +76,9 @@ export default function App() {
   const [adding, setAdding] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [jiraMenu, setJiraMenu] = useState<DOMRect | null>(null);
+  const [jiraBoards, setJiraBoards] = useState(loadJiraBoards);
+  const [jiraOpen, setJiraOpen] = useState<{ url: string; nonce: number } | null>(null);
   const [menu, setMenu] = useState<null | { key: string; x: number; y: number }>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState("");
@@ -122,7 +126,7 @@ export default function App() {
         setConfig(c);
         const keys = Object.keys(c.repos);
         const last = localStorage.getItem("qualitylab.view");
-        setView(last && (last === "connections" || keys.includes(last)) ? last : keys[0] ?? "");
+        setView(last && (last === "connections" || last === "jira" || keys.includes(last)) ? last : keys[0] ?? "");
         const initialTabs: Record<string, TermTab[]> = {};
         const initialActive: Record<string, string> = {};
         for (const key of Object.keys(c.repos)) {
@@ -302,7 +306,7 @@ export default function App() {
 
   const launchAgent = useCallback(
     (cmd: "claude" | "codex") => {
-      if (view === "connections") return;
+      if (view === "connections" || view === "jira") return;
       const repoTabs = tabs[view] ?? [];
       const active = repoTabs.find((t) => t.id === activeTab[view]);
       if (active && !active.agent) {
@@ -336,7 +340,7 @@ export default function App() {
 
   const startAgentDrag = useCallback(
     (cmd: "claude" | "codex") => (e: React.PointerEvent) => {
-      if (view === "connections") return;
+      if (view === "connections" || view === "jira") return;
       e.preventDefault();
       const startX = e.clientX;
       const startY = e.clientY;
@@ -382,7 +386,17 @@ export default function App() {
     if (!alreadyRemoved) await api(`/api/workspaces/${key}`, { method: "DELETE" });
     if ("__TAURI_INTERNALS__" in window) {
       const { invoke } = await import("@tauri-apps/api/core");
-      void invoke("browser_close", { label: browserLabel(key) }).catch(() => undefined);
+      let ids = [1];
+      try {
+        ids = JSON.parse(localStorage.getItem(`qualitylab.browserTabs.${key}`) ?? "null")?.tabs?.map((t: { id: number }) => t.id) ?? ids;
+      } catch {
+        /* keep default */
+      }
+      for (const id of ids) {
+        const label = id === 1 ? browserLabel(key) : `${browserLabel(key)}-t${id}`;
+        void invoke("browser_close", { label }).catch(() => undefined);
+      }
+      localStorage.removeItem(`qualitylab.browserTabs.${key}`);
     }
     for (const t of tabs[key] ?? []) {
       send({ type: "term:kill", id: t.id });
@@ -486,7 +500,7 @@ export default function App() {
   };
 
   toggleRightRef.current = () => {
-    if (viewRef.current && viewRef.current !== "connections") hideRight(!rightHidden);
+    if (viewRef.current && viewRef.current !== "connections" && viewRef.current !== "jira") hideRight(!rightHidden);
   };
 
   const hideRight = (hidden: boolean) => {
@@ -496,7 +510,8 @@ export default function App() {
 
   if (!config) return <div className="loading">Loading QualityLab…</div>;
 
-  const repo = view !== "connections" ? config.repos[view] : undefined;
+  const isSpecialView = view === "connections" || view === "jira";
+  const repo = !isSpecialView ? config.repos[view] : undefined;
   const isTestRepo = repo && (repo.kind === "playwright" || repo.kind === "pytest");
   // Every workspace has a panel now — at minimum the browser.
   const hasPanel = !!repo;
@@ -510,8 +525,8 @@ export default function App() {
     : [];
   const panelTab = panelTabList.some(([k]) => k === panelTabs[view]) ? panelTabs[view] : panelTabList[0]?.[0];
   // Native browser views float above HTML: hide them under overlays.
-  const overlayOpen = adding || !!menu || !!confirmDelete || !!agentDrag || dragging;
-  const viewSplits = view !== "connections" ? splits[view] ?? [] : [];
+  const overlayOpen = adding || !!menu || !!confirmDelete || !!agentDrag || dragging || !!jiraMenu;
+  const viewSplits = !isSpecialView ? splits[view] ?? [] : [];
   const splitInfos = viewSplits
     .map((id) => (tabs[view] ?? []).find((t) => t.id === id))
     .filter(Boolean) as TermTab[];
@@ -529,7 +544,7 @@ export default function App() {
         <span className="brand">
           <img src="/giraffe.png" alt="QualityLab" className="brand-logo" />
         </span>
-        <span className="workspace-label">{repo ? repo.label : view === "connections" ? "Connections" : ""}</span>
+        <span className="workspace-label">{repo ? repo.label : view === "connections" ? "Connections" : view === "jira" ? "Jira" : ""}</span>
         <div className="agent-buttons">
           <button
             className="agent-btn"
@@ -648,11 +663,22 @@ export default function App() {
             <span className="side-icon"><WebIcon /></span>
             <span className="side-label">Connections</span>
           </button>
+          <button
+            className={`side-item ${view === "jira" ? "active" : ""} ${jiraMenu ? "menu-open" : ""}`}
+            onClick={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect();
+              setJiraMenu((m) => (m ? null : rect));
+            }}
+            title="Jira boards"
+          >
+            <span className="side-icon"><JiraIcon /></span>
+            <span className="side-label">Jira</span>
+          </button>
           <div className="side-footer">
             <span className="avatar">{(config.user ?? "?")[0].toUpperCase()}</span> {config.user} · QualityLab 0.1
           </div>
         </nav>
-        {!repo && view !== "connections" ? (
+        {!repo && !isSpecialView ? (
           <section className="full-pane empty-state">
             <img src="/giraffe.png" alt="" className="empty-logo" />
             <h2>Add your QA repos</h2>
@@ -674,6 +700,27 @@ export default function App() {
         ) : view === "connections" ? (
           <section className="full-pane">
             <FeatureMap onAddWorkspace={() => setAdding(true)} />
+          </section>
+        ) : view === "jira" ? (
+          <section className="full-pane jira-pane">
+            {jiraBoards.length === 0 && !jiraOpen ? (
+              <div className="jira-empty">
+                <JiraIcon />
+                <h2>Jira inside QualityLab</h2>
+                <p>Save the boards, backlogs, filters or issues you use, then open them here next to your terminals. Your Atlassian login stays signed in.</p>
+                <button className="primary" onClick={(e) => setJiraMenu(e.currentTarget.getBoundingClientRect())}>
+                  + Add a Jira link
+                </button>
+              </div>
+            ) : (
+              <Browser
+                wsKey="jira"
+                visible={!overlayOpen}
+                defaultUrl={jiraBoards[0]?.url ?? jiraOpen?.url}
+                bookmarks={jiraBoards}
+                openRequest={jiraOpen}
+              />
+            )}
           </section>
         ) : (
           <div
@@ -819,6 +866,22 @@ export default function App() {
         </div>
       )}
       {toast && <div className="toast">{toast}</div>}
+      {jiraMenu && (
+        <JiraMenu
+          anchor={jiraMenu}
+          boards={jiraBoards}
+          onBoards={(next) => {
+            setJiraBoards(next);
+            saveJiraBoards(next);
+          }}
+          onOpen={(url) => {
+            setJiraMenu(null);
+            setView("jira");
+            setJiraOpen({ url, nonce: Date.now() });
+          }}
+          onClose={() => setJiraMenu(null)}
+        />
+      )}
       {adding && <AddWorkspace onClose={() => setAdding(false)} onAdded={onWorkspaceAdded} />}
       {agentDrag && (
         <div className="drag-ghost" style={{ left: agentDrag.x, top: agentDrag.y }}>
