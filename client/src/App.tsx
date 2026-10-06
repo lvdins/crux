@@ -752,7 +752,7 @@ export default function App() {
   // Suggested name: "claude", "claude 2", … whichever is free.
   const askChatName = (key: string, kind: "claude" | "codex" | "shell") => {
     const taken = new Set(chatNames(tabs[key] ?? []));
-    let name = kind;
+    let name: string = kind;
     for (let n = 2; taken.has(name); n++) name = `${kind} ${n}`;
     setNameChat({ key, kind, name });
   };
