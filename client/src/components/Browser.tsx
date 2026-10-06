@@ -168,21 +168,41 @@ export default function Browser({
       return;
     }
     let raf = 0;
+    const timers: ReturnType<typeof setTimeout>[] = [];
     const schedule = () => {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(place);
     };
+    // WebKit child views are positioned from the window's bottom edge; if we
+    // place during a window resize, macOS may still report the old height and
+    // the view lands too high (white gap underneath). Re-place once the native
+    // resize has settled.
+    const settle = () => {
+      schedule();
+      timers.push(setTimeout(schedule, 150), setTimeout(schedule, 500));
+    };
     schedule();
     const ro = new ResizeObserver(schedule);
     if (slotRef.current) ro.observe(slotRef.current);
-    window.addEventListener("resize", schedule);
+    window.addEventListener("resize", settle);
+    let unlistenNative: (() => void) | undefined;
+    let disposed = false;
+    void import("@tauri-apps/api/window").then(({ getCurrentWindow }) =>
+      Promise.all([getCurrentWindow().onResized(settle), getCurrentWindow().onScaleChanged(settle)]).then((fns) => {
+        if (disposed) fns.forEach((fn) => fn());
+        else unlistenNative = () => fns.forEach((fn) => fn());
+      }),
+    );
     // Panel slides move the box without resizing it — catch those too.
     document.addEventListener("transitionend", schedule, true);
     document.addEventListener("transitionrun", schedule, true);
     return () => {
+      disposed = true;
+      unlistenNative?.();
+      timers.forEach(clearTimeout);
       cancelAnimationFrame(raf);
       ro.disconnect();
-      window.removeEventListener("resize", schedule);
+      window.removeEventListener("resize", settle);
       document.removeEventListener("transitionend", schedule, true);
       document.removeEventListener("transitionrun", schedule, true);
       void invoke("browser_hide", { label });
