@@ -291,12 +291,16 @@ pub async fn browser_devtools(app: AppHandle, label: String) -> Result<bool, Str
         view.close_devtools();
         Ok(false)
     } else {
+        // Hidden while WebKit docks-then-undocks the inspector, so the
+        // temporary full-window stretch never shows; the UI re-places and
+        // shows it again right after.
+        view.hide().map_err(|e| e.to_string())?;
         view.open_devtools();
         // WebKit docks the inspector inside our window and resizes the page
         // to fit, wrecking the layout. Move it to its own window; retry while
         // the inspector finishes attaching. The UI re-places the page after.
         #[cfg(target_os = "macos")]
-        for delay in [0u64, 150, 400, 900] {
+        for delay in [0u64, 100, 250, 500] {
             if delay > 0 {
                 tokio_sleep(delay).await;
             }
