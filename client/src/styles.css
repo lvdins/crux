@@ -1234,3 +1234,22 @@ button.primary:hover:not(:disabled) { background: var(--accent-ink); }
 }
 /* terminals may shrink below their current character grid while resizing */
 .term-slot .term { min-width: 0; min-height: 0; overflow: hidden; }
+
+/* tabs inside a split pane */
+.term-slot.split .term-slot-head { padding: 3px 6px; gap: 4px; }
+.pane-tabs { display: flex; align-items: center; gap: 2px; min-width: 0; flex: 1; overflow: hidden; }
+.pane-tab {
+  display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 160px; flex: 0 1 auto;
+  padding: 2px 4px 2px 8px; border-radius: 5px; color: var(--ink-faint); cursor: default; font-size: 11.5px;
+}
+.pane-tab svg { width: 11px; height: 11px; flex-shrink: 0; }
+.pane-tab-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pane-tab:hover { color: var(--ink-soft); background: var(--surface-2); }
+.pane-tab.on { color: var(--ink); background: var(--raise); }
+.pane-tab .term-tab-close { margin-left: 0; opacity: 0; }
+.pane-tab:hover .term-tab-close, .pane-tab.on .term-tab-close { opacity: 1; }
+.pane-tab-add {
+  flex-shrink: 0; width: 20px; height: 20px; border: none; border-radius: 5px; background: none;
+  color: var(--ink-faint); font-size: 14px; line-height: 1; cursor: pointer; padding: 0;
+}
+.pane-tab-add:hover { background: var(--surface-2); color: var(--ink); }

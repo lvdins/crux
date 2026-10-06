@@ -11,7 +11,23 @@ import FeatureMap from "./components/FeatureMap";
 import AddWorkspace from "./components/AddWorkspace";
 import SetupChecklist from "./components/SetupChecklist";
 import GitMenu, { type GitAction } from "./components/GitMenu";
-import { MAIN, MAX_PANES, insertAt, leafIds, removeLeaf, rootLayout, setSizesAt, sideAt, type DropSide, type PaneNode } from "./paneLayout";
+import {
+  MAIN,
+  MAX_PANES,
+  addTabToPane,
+  insertAt,
+  leafIds,
+  paneActive,
+  paneTabs,
+  removeTab,
+  rootLayout,
+  setPaneActive,
+  setSizesAt,
+  sideAt,
+  splitTabIds,
+  type DropSide,
+  type PaneNode,
+} from "./paneLayout";
 import JiraMenu, { loadJiraBoards, saveJiraBoards, nameForJiraUrl } from "./components/JiraMenu";
 import ContextMenu, { MenuIcons } from "./components/ContextMenu";
 import { WebIcon, ClaudeLogo, CodexLogo, JiraIcon } from "./components/icons";
@@ -340,7 +356,7 @@ export default function App() {
     (repo: string, id: string) => {
       send({ type: "term:kill", id });
       disposeTerm(id);
-      setLayouts((prev) => (prev[repo] ? { ...prev, [repo]: removeLeaf(prev[repo], id) } : prev));
+      setLayouts((prev) => (prev[repo] ? { ...prev, [repo]: removeTab(prev[repo], id) } : prev));
       setTabs((prev) => {
         const remaining = (prev[repo] ?? []).filter((t) => t.id !== id);
         const next = { ...prev, [repo]: remaining };
@@ -425,7 +441,13 @@ export default function App() {
         const drop = dropAt(ev.clientX, ev.clientY);
         if (!drop) return;
         if (drop.side === "center") {
-          addTab(view, cmd, cmd, cmd);
+          if (drop.paneId === MAIN) {
+            addTab(view, cmd, cmd, cmd);
+          } else {
+            // Middle of a split pane: becomes a tab in that pane.
+            const id = createTab(view, cmd, cmd, cmd);
+            setLayouts((prev) => ({ ...prev, [view]: addTabToPane(prev[view] ?? rootLayout(), drop.paneId, id) }));
+          }
           return;
         }
         const id = createTab(view, cmd, cmd, cmd);
@@ -677,7 +699,7 @@ export default function App() {
   // Native browser views float above HTML: hide them under overlays.
   const overlayOpen = adding || !!menu || !!confirmDelete || !!agentDrag || dragging || !!jiraMenu || !!gitMenu;
   const viewLayout = (!isSpecialView && layouts[view]) || rootLayout();
-  const viewSplits = leafIds(viewLayout).filter((id) => id !== MAIN);
+  const viewSplits = splitTabIds(viewLayout);
 
   // Drag a divider: resize the two panes either side of it.
   const startPaneResize = (e: React.PointerEvent, path: number[], index: number, dir: "row" | "col", sizes: number[]) => {
@@ -736,19 +758,50 @@ export default function App() {
         </div>
       );
     }
-    const t = (tabs[view] ?? []).find((x) => x.id === node.id);
-    if (!t) return null;
+    // A split pane with its own tabs.
+    const ids = paneTabs(node);
+    const activeId = paneActive(node);
+    const paneTabList = ids.map((id) => (tabs[view] ?? []).find((x) => x.id === id)).filter(Boolean) as TermTab[];
+    const shown = paneTabList.find((x) => x.id === activeId) ?? paneTabList[paneTabList.length - 1];
+    if (!shown) return null;
     return (
-      <div className="term-slot split" data-pane-id={t.id} key={t.id}>
+      <div className="term-slot split" data-pane-id={node.id} key={node.id}>
         <div className="term-slot-head">
-          {t.agent === "claude" && <ClaudeLogo />}
-          {t.agent === "codex" && <CodexLogo />}
-          {t.title}
-          <button className="term-tab-close" title="Close this terminal" onClick={() => closeTab(view, t.id)}>
-            ×
+          <div className="pane-tabs">
+            {paneTabList.map((t) => (
+              <span
+                key={t.id}
+                className={`pane-tab ${t.id === shown.id ? "on" : ""}`}
+                onClick={() => setLayouts((prev) => ({ ...prev, [view]: setPaneActive(prev[view] ?? rootLayout(), node.id, t.id) }))}
+              >
+                {t.agent === "claude" && <ClaudeLogo />}
+                {t.agent === "codex" && <CodexLogo />}
+                <span className="pane-tab-title">{t.title}</span>
+                <button
+                  className="term-tab-close"
+                  title="Close this terminal"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    closeTab(view, t.id);
+                  }}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+          <button
+            className="pane-tab-add"
+            title="New terminal in this pane"
+            onClick={() => {
+              const id = createTab(view);
+              setLayouts((prev) => ({ ...prev, [view]: addTabToPane(prev[view] ?? rootLayout(), node.id, id) }));
+            }}
+          >
+            +
           </button>
         </div>
-        <Term id={t.id} repo={view} bootCmd={t.bootCmd} connected={connected} send={send} subscribe={subscribe} />
+        <Term key={shown.id} id={shown.id} repo={view} bootCmd={shown.bootCmd} connected={connected} send={send} subscribe={subscribe} />
       </div>
     );
   };
