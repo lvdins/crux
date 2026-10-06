@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { config } from "./config.js";
+import { rootPath } from "./paths.js";
 import { buildTree, walk, type RepoTree } from "./tree.js";
 
 /**
@@ -180,7 +181,7 @@ function intersect(a: Set<string>, b: Set<string>): string[] {
 }
 
 function loadFeatureLinks(): FeatureLink[] {
-  const featuresPath = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../qualitylab.features.json");
+  const featuresPath = rootPath("qualitylab.features.json");
   try {
     const parsed = JSON.parse(fs.readFileSync(featuresPath, "utf8"));
     return Array.isArray(parsed.features) ? parsed.features : [];

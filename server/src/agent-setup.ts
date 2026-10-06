@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { config } from "./config.js";
+import { rootPath } from "./paths.js";
 
 /**
  * Gives claude / codex started in a QualityLab terminal the
@@ -16,8 +16,7 @@ import { config } from "./config.js";
 const home = path.join(os.homedir(), ".qualitylab");
 export const ZSH_DIR = path.join(home, "zsh");
 const MCP_DIR = path.join(home, "mcp");
-const here = path.dirname(fileURLToPath(import.meta.url));
-export const BROWSER_MCP = path.resolve(here, "../mcp/browser-mcp.mjs");
+export const BROWSER_MCP = rootPath("server", "mcp", "browser-mcp.mjs");
 const SERVER_URL = "http://127.0.0.1:8787";
 
 export const mcpConfigPath = (ws: string) => path.join(MCP_DIR, `${ws}.json`);

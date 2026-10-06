@@ -3,7 +3,7 @@
 mod browser;
 
 use std::net::TcpStream;
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 use std::process::{Child, Command};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -16,25 +16,51 @@ fn server_running() -> bool {
     TcpStream::connect_timeout(&"127.0.0.1:8787".parse().unwrap(), Duration::from_millis(300)).is_ok()
 }
 
-fn spawn_server() -> Option<Child> {
+/// Packaged app: run the bundled Node + server from Resources/qualitylab.
+/// Development: fall back to `npm run start -w server` in the repo.
+fn spawn_server(app: &tauri::App) -> Option<Child> {
     if server_running() {
         // Dev convenience: a server started by `npm run dev` is already up.
         return None;
     }
-    let child = Command::new("npm")
-        .args(["run", "start", "-w", "server"])
-        .current_dir(PROJECT_ROOT)
-        .spawn();
-    match child {
-        Ok(c) => {
+    let bundled = app
+        .path()
+        .resource_dir()
+        .ok()
+        .map(|dir| dir.join("qualitylab"))
+        .filter(|root| root.join("node").exists() && root.join("server/dist/index.mjs").exists());
+
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/".into());
+    let mut cmd = match bundled {
+        Some(root) => {
+            let mut c = Command::new(root.join("node"));
+            c.arg(root.join("server/dist/index.mjs")).env("QUALITYLAB_ROOT", &root).current_dir(&home);
+            c
+        }
+        None => {
+            let mut c = Command::new("npm");
+            c.args(["run", "start", "-w", "server"]).current_dir(PROJECT_ROOT);
+            c
+        }
+    };
+    // Keep a log for "it doesn't start" reports: ~/.qualitylab/server.log
+    let log_dir = std::path::Path::new(&home).join(".qualitylab");
+    let _ = std::fs::create_dir_all(&log_dir);
+    if let Ok(log) = std::fs::OpenOptions::new().create(true).append(true).open(log_dir.join("server.log")) {
+        if let Ok(err) = log.try_clone() {
+            cmd.stdout(log).stderr(err);
+        }
+    }
+    match cmd.spawn() {
+        Ok(child) => {
             // Give the server a moment to bind before the UI starts polling.
-            for _ in 0..50 {
+            for _ in 0..75 {
                 if server_running() {
                     break;
                 }
                 std::thread::sleep(Duration::from_millis(200));
             }
-            Some(c)
+            Some(child)
         }
         Err(err) => {
             eprintln!("failed to start QualityLab server: {err}");
@@ -68,10 +94,12 @@ fn install_menu(app: &mut tauri::App) -> tauri::Result<()> {
 }
 
 fn main() {
-    let server: Mutex<Option<Child>> = Mutex::new(spawn_server());
+    let server: std::sync::Arc<Mutex<Option<Child>>> = Default::default();
+    let server_for_setup = server.clone();
 
     tauri::Builder::default()
-        .setup(|app| {
+        .setup(move |app| {
+            *server_for_setup.lock().unwrap() = spawn_server(app);
             install_menu(app)?;
             Ok(())
         })

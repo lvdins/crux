@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { rootPath } from "./paths.js";
 
 export type RepoKind = "mkdocs" | "playwright" | "pytest" | "frontend" | "backend" | "generic";
 
@@ -18,10 +18,9 @@ export interface QualityLabConfig {
   preview: { port: number };
 }
 
-const here = path.dirname(fileURLToPath(import.meta.url));
 // Bundled defaults (the original Giraffe360 setup); used only to seed a
 // first-run user config with the repos that exist on this machine.
-const defaultsPath = path.resolve(here, "../../qualitylab.config.json");
+const defaultsPath = rootPath("qualitylab.config.json");
 // Per-user workspaces live outside the app so every teammate has their own.
 export const userConfigPath = process.env.QUALITYLAB_CONFIG ?? path.join(os.homedir(), ".qualitylab", "config.json");
 

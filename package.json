@@ -12,8 +12,9 @@
     "dev:server": "npm run dev -w server",
     "dev:client": "npm run dev -w client",
     "app:dev": "tauri dev",
-    "app:build": "tauri build",
-    "tauri": "tauri"
+    "app:build": "tauri build --config src-tauri/tauri.bundle.json",
+    "tauri": "tauri",
+    "bundle:server": "node scripts/bundle-server.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

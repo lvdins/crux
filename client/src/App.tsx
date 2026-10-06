@@ -9,6 +9,7 @@ import Browser from "./components/Browser";
 import { runAgentCommand, browserLabel } from "./agentBrowser";
 import FeatureMap from "./components/FeatureMap";
 import AddWorkspace from "./components/AddWorkspace";
+import SetupChecklist from "./components/SetupChecklist";
 import ContextMenu, { MenuIcons } from "./components/ContextMenu";
 import { WebIcon, ClaudeLogo, CodexLogo } from "./components/icons";
 
@@ -646,12 +647,19 @@ export default function App() {
             <img src="/giraffe.png" alt="" className="empty-logo" />
             <h2>Add your QA repos</h2>
             <p>
-              Point QualityLab at the folders you already have — docs, Playwright E2E, pytest API, or anything else.
-              The type is detected automatically and picks the right panel: docs preview or test tree.
+              Point QualityLab at the folders you already have: product docs, Playwright E2E, pytest API, the dashboard
+              and backend repos. Each folder's type is detected and gets the right panel: docs preview, test tree and
+              coverage, or just terminals and a browser.
             </p>
             <button className="primary" onClick={() => setAdding(true)}>
               + Add workspace
             </button>
+            <ol className="empty-steps">
+              <li>Add each repo folder with <b>+</b> (they stay where they are; nothing is copied)</li>
+              <li>Add the dashboard and backend repos too to unlock <b>Connections</b></li>
+              <li>Open a terminal, click <b>Claude</b> or <b>Codex</b>, and work</li>
+            </ol>
+            <SetupChecklist />
           </section>
         ) : view === "connections" ? (
           <section className="full-pane">

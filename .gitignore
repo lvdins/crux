@@ -5,3 +5,6 @@ dist/
 src-tauri/target/
 src-tauri/gen/
 *.tsbuildinfo
+
+# packaging output (scripts/bundle-server.mjs)
+build/

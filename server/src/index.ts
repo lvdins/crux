@@ -4,15 +4,17 @@ import { execFile } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { WebSocketServer, WebSocket } from "ws";
-import { config, addWorkspace, updateWorkspace, removeWorkspace, detectKind, expandHome } from "./config.js";
+import { config, userConfigPath, addWorkspace, updateWorkspace, removeWorkspace, detectKind, expandHome } from "./config.js";
 import { attachTerm, termInput, termResize, killTerm, detachAll, killAllTerms, openLog } from "./term.js";
 import { startPreview, stopPreview, stopAllPreviews, previewStatus } from "./preview.js";
 import { buildTree, sharedEndpoints } from "./tree.js";
 import { installAgentSetup } from "./agent-setup.js";
+import { adoptLoginShellPath, checkTools, PACKAGED, rootPath } from "./paths.js";
 
-const PORT = 8787;
+adoptLoginShellPath();
+
+const PORT = Number(process.env.QUALITYLAB_PORT) || 8787;
 let connectionsCache: { at: number; data: unknown } | null = null;
 let featuresCache: { at: number; data: unknown } | null = null;
 const app = express();
@@ -30,7 +32,7 @@ app.options("*", (_req, res) => res.sendStatus(204));
 
 // Serve the built client when it exists, so the desktop app (and plain
 // http://localhost:8787) works without vite.
-const clientDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../client/dist");
+const clientDist = rootPath("client", "dist");
 app.use(express.static(clientDist));
 
 app.get("/api/config", (_req, res) => {
@@ -42,7 +44,7 @@ app.get("/api/config", (_req, res) => {
   });
 });
 
-const descriptionsPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../qualitylab.descriptions.json");
+const descriptionsPath = rootPath("qualitylab.descriptions.json");
 
 app.get("/api/tree", async (_req, res) => {
   const trees = buildTree();
@@ -52,7 +54,19 @@ app.get("/api/tree", async (_req, res) => {
   } catch {
     // No descriptions file yet — the UI falls back gracefully.
   }
+  // Bundled folder descriptions are written for the Giraffe360 suites; a
+  // teammate's workspace keys differ, so fall back by suite type.
+  for (const t of trees) {
+    if (!descriptions[t.key]) {
+      const fallback = descriptions[t.kind === "playwright" ? "e2e" : "api"];
+      if (fallback) descriptions[t.key] = fallback;
+    }
+  }
   res.json({ trees, shared: sharedEndpoints(trees), descriptions });
+});
+
+app.get("/api/system", (_req, res) => {
+  res.json({ packaged: PACKAGED, tools: checkTools(), configPath: userConfigPath });
 });
 
 app.post("/api/preview/:key/start", (req, res) => {
