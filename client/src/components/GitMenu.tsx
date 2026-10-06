@@ -132,6 +132,8 @@ export default function GitMenu({
         if (e.key === "Escape") onClose();
         return;
       }
+      // The Git button toggles the menu itself; don't double-handle it here.
+      if ((e.target as Element | null)?.closest?.("[data-menu-anchor='git']")) return;
       if (!ref.current?.contains(e.target as Node)) onClose();
     };
     window.addEventListener("pointerdown", close, true);

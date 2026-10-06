@@ -60,6 +60,8 @@ export default function JiraMenu({
         if (e.key === "Escape") onClose();
         return;
       }
+      // The Jira row toggles the menu itself; don't double-handle it here.
+      if ((e.target as Element | null)?.closest?.("[data-menu-anchor='jira']")) return;
       if (!ref.current?.contains(e.target as Node)) onClose();
     };
     window.addEventListener("pointerdown", close, true);

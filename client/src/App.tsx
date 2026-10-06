@@ -803,6 +803,7 @@ export default function App() {
               </button>
               <button
                 className={`side-item view-item ${view === "jira" ? "active" : ""} ${jiraMenu ? "menu-open" : ""}`}
+                data-menu-anchor="jira"
                 onClick={(e) => {
                   const rect = e.currentTarget.getBoundingClientRect();
                   setJiraMenu((m) => (m ? null : rect));
@@ -947,6 +948,7 @@ export default function App() {
                 </button>
                 <button
                   className={`git-btn ${gitMenu ? "on" : ""}`}
+                  data-menu-anchor="git"
                   title="Git actions for the active terminal"
                   onClick={(e) => {
                     if (gitMenu) return setGitMenu(null);
