@@ -1281,4 +1281,4 @@ button.primary:hover:not(:disabled) { background: var(--accent-ink); }
 .branch-note { color: var(--ink-faint); font-size: 12px; padding: 8px; }
 
 /* top-left brand: logo + bold name, sidebar toggle after it */
-.brand-name { font-size: 14px; font-weight: 700; letter-spacing: -0.015em; color: var(--ink); }
+.brand-name { font-size: 17px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink); }
