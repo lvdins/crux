@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { api } from "../net";
 
 /**
  * Git actions for the active terminal. Agent tabs (claude / codex) get a
@@ -103,14 +104,116 @@ export const GIT_ACTIONS: GitAction[] = [
   },
 ];
 
+interface BranchList {
+  current: string;
+  local: { name: string; when: string }[];
+  remote: { name: string; when: string }[];
+}
+
+const shellQuote = (b: string) => (/^[\w./-]+$/.test(b) ? b : `'${b.replace(/'/g, "'\\''")}'`);
+
+/** What to type for a branch switch, for an agent or a shell. */
+export function branchSwitchText(branch: string, create: boolean, mode: "agent" | "shell"): string {
+  if (mode === "shell") return `git switch ${create ? "-c " : ""}${shellQuote(branch)}`;
+  return create
+    ? `Create and switch to a new git branch named "${branch}". Keep any uncommitted changes on the new branch.`
+    : `Switch to the git branch "${branch}" (git switch). If uncommitted changes would block it, stash them first and tell me.`;
+}
+
+function BranchPicker({
+  wsKey,
+  onBack,
+  onSwitch,
+}: {
+  wsKey: string;
+  onBack: () => void;
+  onSwitch: (branch: string, create: boolean) => void;
+}) {
+  const [data, setData] = useState<BranchList | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [query, setQuery] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    api(`/api/workspaces/${wsKey}/branches`)
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then(setData)
+      .catch(() => setFailed(true));
+  }, [wsKey]);
+
+  const q = query.trim().toLowerCase();
+  const local = useMemo(() => (data?.local ?? []).filter((b) => b.name.toLowerCase().includes(q)), [data, q]);
+  const remote = useMemo(() => (data?.remote ?? []).filter((b) => b.name.toLowerCase().includes(q)), [data, q]);
+  const exists = !!data && [...data.local, ...data.remote].some((b) => b.name === query.trim());
+  const first = local.find((b) => b.name !== data?.current) ?? remote[0];
+
+  return (
+    <div className="branch-picker">
+      <div className="branch-head">
+        <button onClick={onBack} title="Back">
+          ‹
+        </button>
+        <input
+          ref={inputRef}
+          value={query}
+          placeholder={failed ? "Type a branch name" : "Find or create a branch…"}
+          spellCheck={false}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter") return;
+            if (first && q) onSwitch(first.name, false);
+            else if (query.trim()) onSwitch(query.trim(), !exists && !failed ? true : false);
+          }}
+        />
+      </div>
+      <div className="branch-list">
+        {!data && !failed && <div className="branch-note">Loading branches…</div>}
+        {failed && <div className="branch-note">Couldn't list branches. Type a name and press Enter.</div>}
+        {local.map((b) => (
+          <button
+            key={b.name}
+            className={`branch-row ${b.name === data?.current ? "current" : ""}`}
+            disabled={b.name === data?.current}
+            onClick={() => onSwitch(b.name, false)}
+          >
+            <span className="branch-mark">{b.name === data?.current ? "✓" : ""}</span>
+            <span className="branch-name">{b.name}</span>
+            <span className="branch-when">{b.when}</span>
+          </button>
+        ))}
+        {remote.length > 0 && <div className="branch-section">origin</div>}
+        {remote.map((b) => (
+          <button key={`r-${b.name}`} className="branch-row" onClick={() => onSwitch(b.name, false)}>
+            <span className="branch-mark" />
+            <span className="branch-name">{b.name}</span>
+            <span className="branch-when">{b.when}</span>
+          </button>
+        ))}
+        {data && local.length === 0 && remote.length === 0 && !query.trim() && <div className="branch-note">No branches found.</div>}
+        {query.trim() && !exists && !failed && (
+          <button className="branch-row create" onClick={() => onSwitch(query.trim(), true)}>
+            <span className="branch-mark">+</span>
+            <span className="branch-name">Create & switch to “{query.trim()}”</span>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function GitMenu({
   anchor,
   mode,
   target,
   branch,
+  wsKey,
   onPick,
+  onSwitchBranch,
   onClose,
 }: {
+  wsKey: string;
+  onSwitchBranch: (branch: string, create: boolean) => void;
   anchor: DOMRect;
   mode: "agent" | "shell";
   /** Name of the terminal the action goes to (shown when panes are split). */
@@ -120,6 +223,7 @@ export default function GitMenu({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [picking, setPicking] = useState(false);
   const [pos, setPos] = useState({ left: anchor.right - 260, top: anchor.bottom + 6 });
 
   useLayoutEffect(() => {
@@ -127,7 +231,7 @@ export default function GitMenu({
     if (!el) return;
     const w = el.offsetWidth;
     setPos({ left: Math.max(8, Math.min(anchor.right - w, window.innerWidth - w - 8)), top: anchor.bottom + 6 });
-  }, [anchor]);
+  }, [anchor, picking]);
 
   useEffect(() => {
     const close = (e: Event) => {
@@ -160,7 +264,24 @@ export default function GitMenu({
           {mode === "agent" ? "asks the agent" : "runs in shell"}
         </span>
       </div>
-      {groups.map((items, gi) => (
+      {picking ? (
+        <BranchPicker
+          wsKey={wsKey}
+          onBack={() => setPicking(false)}
+          onSwitch={(b, create) => {
+            onClose();
+            onSwitchBranch(b, create);
+          }}
+        />
+      ) : (
+        <div className="ctx-group">
+          <button role="menuitem" className="ctx-item" onClick={() => setPicking(true)}>
+            <span className="ctx-label">Switch branch…</span>
+            <span className="git-hint">Pick or create</span>
+          </button>
+        </div>
+      )}
+      {!picking && groups.map((items, gi) => (
         <div key={gi} className="ctx-group">
           {items.map((a) => (
             <button

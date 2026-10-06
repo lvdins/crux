@@ -130,6 +130,37 @@ app.get("/api/workspaces/:key/branch", (req, res) => {
   });
 });
 
+app.get("/api/workspaces/:key/branches", (req, res) => {
+  const repo = config.repos[req.params.key];
+  if (!repo) return void res.status(404).json({ error: "Unknown workspace" });
+  const fmt = "%(refname:short)\t%(committerdate:relative)";
+  execFile(
+    "git",
+    ["-C", repo.path, "for-each-ref", "--sort=-committerdate", `--format=${fmt}`, "refs/heads", "refs/remotes/origin"],
+    { maxBuffer: 4 * 1024 * 1024 },
+    (err, stdout) => {
+      if (err) return void res.status(400).json({ error: "Not a git repository" });
+      execFile("git", ["-C", repo.path, "rev-parse", "--abbrev-ref", "HEAD"], (_e, head) => {
+        const local: { name: string; when: string }[] = [];
+        const remote: { name: string; when: string }[] = [];
+        for (const line of stdout.split("\n")) {
+          const [ref, when] = line.split("\t");
+          if (!ref || ref === "origin/HEAD" || ref === "origin") continue;
+          if (ref.startsWith("origin/")) remote.push({ name: ref.slice(7), when });
+          else local.push({ name: ref, when });
+        }
+        const localNames = new Set(local.map((b) => b.name));
+        res.json({
+          current: head.trim(),
+          local: local.slice(0, 200),
+          // Remote branches you don't have locally (git switch creates them).
+          remote: remote.filter((b) => !localNames.has(b.name)).slice(0, 200),
+        });
+      });
+    },
+  );
+});
+
 // "Delete" moves the folder to the Trash (recoverable), never rm -rf.
 app.post("/api/workspaces/:key/trash", (req, res) => {
   const repo = config.repos[req.params.key];

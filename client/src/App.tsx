@@ -10,7 +10,7 @@ import { runAgentCommand, browserLabel } from "./agentBrowser";
 import FeatureMap from "./components/FeatureMap";
 import AddWorkspace from "./components/AddWorkspace";
 import SetupChecklist from "./components/SetupChecklist";
-import GitMenu, { type GitAction } from "./components/GitMenu";
+import GitMenu, { branchSwitchText, type GitAction } from "./components/GitMenu";
 import {
   MAIN,
   MAX_PANES,
@@ -1232,7 +1232,15 @@ export default function App() {
           mode={gitMenu.mode}
           target={gitMenu.target}
           branch={branches[view] ?? null}
+          wsKey={view}
           onPick={(a) => runGitAction(a, gitMenu.mode, gitMenu.tabId)}
+          onSwitchBranch={(b, create) => {
+            const { tabId, mode } = gitMenu;
+            send({ type: "term:input", id: tabId, data: branchSwitchText(b, create, mode) });
+            setTimeout(() => send({ type: "term:input", id: tabId, data: "\r" }), 150);
+            // Refresh the branch label once the switch has had a moment.
+            setTimeout(() => refreshBranch(view), mode === "shell" ? 1200 : 8000);
+          }}
           onClose={() => setGitMenu(null)}
         />
       )}
