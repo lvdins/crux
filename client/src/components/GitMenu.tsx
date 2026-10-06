@@ -24,7 +24,7 @@ export const GIT_ACTIONS: GitAction[] = [
     id: "status",
     label: "Status",
     hint: "What changed",
-    agent: "Show git status and give me a short summary of what changed on this branch.",
+    agent: "Show git status",
     shell: "git status",
     group: 0,
   },
@@ -32,7 +32,7 @@ export const GIT_ACTIONS: GitAction[] = [
     id: "pull",
     label: "Pull",
     hint: "Get latest for this branch",
-    agent: "Pull the latest changes for the current branch (git pull). If there are conflicts, stop and tell me which files.",
+    agent: "Pull the latest changes",
     shell: "git pull",
     group: 0,
   },
@@ -40,7 +40,7 @@ export const GIT_ACTIONS: GitAction[] = [
     id: "commit",
     label: "Commit",
     hint: "Commit current changes",
-    agent: "Review the current changes and create a git commit with a clear, conventional message. Don't push.",
+    agent: "Commit the current changes",
     shell: "git add -A && git commit",
     group: 1,
   },
@@ -48,7 +48,7 @@ export const GIT_ACTIONS: GitAction[] = [
     id: "push",
     label: "Push",
     hint: "Push this branch",
-    agent: "Push the current branch to origin, setting the upstream if needed.",
+    agent: "Push this branch",
     shell: "git push -u origin HEAD",
     group: 1,
   },
@@ -56,7 +56,7 @@ export const GIT_ACTIONS: GitAction[] = [
     id: "commit-push",
     label: "Commit & push",
     hint: "Both in one go",
-    agent: "Commit the current changes with a clear, conventional message and push the branch to origin.",
+    agent: "Commit and push the current changes",
     shell: "git add -A && git commit && git push -u origin HEAD",
     group: 1,
   },
@@ -64,8 +64,7 @@ export const GIT_ACTIONS: GitAction[] = [
     id: "mr",
     label: "Create MR",
     hint: "Merge request on GitLab",
-    agent:
-      "Push this branch and create a GitLab merge request into the default branch with a clear title and a short description of the changes. Use glab if it's installed; otherwise use git push options (-o merge_request.create) and give me the MR link.",
+    agent: "Create a merge request for this branch",
     shell: "git push -u origin HEAD -o merge_request.create -o merge_request.remove_source_branch",
     group: 2,
   },
@@ -73,7 +72,7 @@ export const GIT_ACTIONS: GitAction[] = [
     id: "branch",
     label: "New branch",
     hint: "Create and switch",
-    agent: "Create and switch to a new git branch with a good name for the current work. Ask me for the name if it isn't clear.",
+    agent: "Create a new branch for this work",
     shell: "git switch -c ",
     shellNoEnter: true,
     group: 2,
@@ -82,7 +81,7 @@ export const GIT_ACTIONS: GitAction[] = [
     id: "rebase",
     label: "Update from main",
     hint: "Rebase on default branch",
-    agent: "Fetch origin and rebase the current branch onto the default branch. If there are conflicts, stop and tell me which files.",
+    agent: "Rebase this branch on main",
     shell: "git fetch origin && git rebase origin/$(git remote show origin | sed -n 's/.*HEAD branch: //p')",
     group: 2,
   },
@@ -90,15 +89,15 @@ export const GIT_ACTIONS: GitAction[] = [
     id: "stash",
     label: "Stash",
     hint: "Park changes",
-    agent: "Stash my current changes with a descriptive message.",
-    shell: "git stash push -u",
+    agent: "Stash my changes",
+    shell: "git stash",
     group: 3,
   },
   {
     id: "log",
     label: "Log",
     hint: "Last 15 commits",
-    agent: "Show the last 15 commits on this branch as a short list.",
+    agent: "Show the last 15 commits",
     shell: "git log --oneline --decorate -15",
     group: 3,
   },
@@ -115,9 +114,7 @@ const shellQuote = (b: string) => (/^[\w./-]+$/.test(b) ? b : `'${b.replace(/'/g
 /** What to type for a branch switch, for an agent or a shell. */
 export function branchSwitchText(branch: string, create: boolean, mode: "agent" | "shell"): string {
   if (mode === "shell") return `git switch ${create ? "-c " : ""}${shellQuote(branch)}`;
-  return create
-    ? `Create and switch to a new git branch named "${branch}". Keep any uncommitted changes on the new branch.`
-    : `Switch to the git branch "${branch}" (git switch). If uncommitted changes would block it, stash them first and tell me.`;
+  return create ? `Create and switch to branch ${branch}` : `Switch to branch ${branch}`;
 }
 
 function BranchPicker({
