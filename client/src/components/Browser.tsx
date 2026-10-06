@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { browserLabel, setActiveBrowserLabel } from "../agentBrowser";
 import { CANCEL_PICK_SCRIPT, PICK_SCRIPT, type PickedElement } from "../elementPicker";
+import NetworkPanel from "./NetworkPanel";
 
 /**
  * In-app browser with minimal tabs. In the desktop app each tab is a native
@@ -127,6 +128,29 @@ export default function Browser({
   const [picked, setPicked] = useState<PickedElement | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [devtoolsOpen, setDevtoolsOpen] = useState(false);
+  const [netOpen, setNetOpen] = useState(() => localStorage.getItem("qualitylab.netOpen") === "1");
+  const [netHeight, setNetHeight] = useState(() => Number(localStorage.getItem("qualitylab.netHeight")) || 220);
+  const toggleNet = () =>
+    setNetOpen((o) => {
+      localStorage.setItem("qualitylab.netOpen", o ? "0" : "1");
+      return !o;
+    });
+  const startNetResize = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = netHeight;
+    const move = (ev: PointerEvent) => setNetHeight(Math.min(window.innerHeight * 0.7, Math.max(110, startH + (startY - ev.clientY))));
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setNetHeight((h) => {
+        localStorage.setItem("qualitylab.netHeight", String(Math.round(h)));
+        return h;
+      });
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
   // Collapse the address bar + bookmarks for more page space (remembered).
   const [chromeHidden, setChromeHidden] = useState(() => localStorage.getItem("qualitylab.browserChrome") === "hidden");
   const toggleChrome = () =>
@@ -386,15 +410,6 @@ export default function Browser({
         <button className="browser-tab-add" title="New tab" onClick={() => addTab(defaultUrl ?? bookmarks[0]?.url ?? DEFAULT_BOOKMARKS[0].url)}>
           +
         </button>
-        <button
-          className={`browser-chrome-toggle ${chromeHidden ? "collapsed" : ""}`}
-          title={chromeHidden ? "Show address bar" : "Hide address bar"}
-          onClick={toggleChrome}
-        >
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 7.5L6 4.5L9 7.5" />
-          </svg>
-        </button>
       </div>
       <div className={`browser-chrome ${chromeHidden ? "collapsed" : ""}`}>
       <div className="browser-chrome-inner">
@@ -443,13 +458,12 @@ export default function Browser({
           </svg>
         </button>
         <button
-          title={devtoolsOpen ? "Close Web Inspector" : "Open Web Inspector (DevTools)"}
-          onClick={toggleDevtools}
-          className={`browser-tool ${devtoolsOpen ? "on" : ""}`}
-          disabled={!isTauri}
+          title={netOpen ? "Hide network calls" : "Show network calls (fetch / XHR)"}
+          onClick={toggleNet}
+          className={`browser-tool ${netOpen ? "on" : ""}`}
         >
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10" />
+            <path d="M5 2.5v9M2.5 9 5 11.5 7.5 9M11 13.5v-9M8.5 7 11 4.5 13.5 7" />
           </svg>
         </button>
         {!fixedBookmarks && (
@@ -468,6 +482,13 @@ export default function Browser({
         </div>
       )}
       </div>
+      </div>
+      <div className="browser-handle">
+        <button onClick={toggleChrome} title={chromeHidden ? "Show address bar" : "Hide address bar"} className={chromeHidden ? "collapsed" : ""}>
+          <svg width="14" height="10" viewBox="0 0 14 10" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3.5 4.5 7 1.5l3.5 3M3.5 8.5 7 5.5l3.5 3" />
+          </svg>
+        </button>
       </div>
       {picking && <div className="browser-picking">Hover the page and click an element · Esc to cancel</div>}
       {picked && (
@@ -512,6 +533,23 @@ export default function Browser({
         {!isTauri && <iframe key={`${active.id}-${frameKey}`} src={active.url} title="Browser" />}
         {isTauri && !visible && <div className="browser-paused">Browser hidden while an overlay is open</div>}
       </div>
+      {netOpen && (
+        <>
+          <div className="net-resize" onPointerDown={startNetResize} title="Drag to resize" />
+          <div className="net-wrap" style={{ height: netHeight }}>
+            {isTauri ? (
+              <NetworkPanel label={label} active={visible} />
+            ) : (
+              <div className="net-empty">The network checker needs the desktop app.</div>
+            )}
+            {isTauri && (
+              <button className="net-inspector" onClick={toggleDevtools} title="Full Safari Web Inspector in its own window">
+                {devtoolsOpen ? "Close inspector" : "Inspector ↗"}
+              </button>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

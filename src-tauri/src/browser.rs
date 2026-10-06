@@ -58,6 +58,8 @@ fn create(app: &AppHandle, label: &str, url: &str, x: f64, y: f64, w: f64, h: f6
         // Web Inspector for the DevTools button (also makes the page
         // inspectable from Safari's Develop menu).
         .devtools(true)
+        // Records fetch/XHR from document start for the Network panel.
+        .initialization_script(include_str!("../../client/src/netRecorder.js"))
         .on_page_load(move |_view, payload| {
         let _ = events.emit_to(
             "main",
