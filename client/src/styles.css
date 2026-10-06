@@ -1145,3 +1145,20 @@ button.primary:hover:not(:disabled) { background: var(--accent-ink); }
 
 /* sidebar rows use the normal arrow cursor (no hand) */
 .sidebar .side-item, .sidebar .side-item-main { cursor: default; }
+
+/* Views section: same rhythm as workspace rows, collapsible */
+.side-section-toggle {
+  display: flex; align-items: center; gap: 6px; width: 100%; background: none; border: none;
+  font: inherit; font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; text-align: left;
+  color: var(--ink-faint); cursor: default; border-radius: 6px;
+}
+.side-section-toggle:hover { color: var(--ink-soft); }
+.side-section-toggle svg { transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1); }
+.side-section-toggle.collapsed svg { transform: rotate(-90deg); }
+.side-views { display: grid; grid-template-rows: 1fr; transition: grid-template-rows 0.3s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.2s ease; }
+.side-views.collapsed { grid-template-rows: 0fr; opacity: 0; }
+.side-views-inner { min-height: 0; overflow: hidden; }
+.sidebar .side-item.view-item { padding: 6px 9px; gap: 9px; }
+.avatar.view-icon { color: var(--ink-soft); }
+.avatar.view-icon svg { width: 11px; height: 11px; }
+.side-item.active .avatar.view-icon { color: var(--ink); }

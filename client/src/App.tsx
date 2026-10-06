@@ -80,6 +80,12 @@ export default function App() {
     });
   // Agent drove the browser of the workspace on screen: show it.
   const revealBrowserRef = useRef<(ws: string) => void>(() => {});
+  const [viewsHidden, setViewsHidden] = useState(() => localStorage.getItem("qualitylab.viewsHidden") === "1");
+  const toggleViews = () =>
+    setViewsHidden((h) => {
+      localStorage.setItem("qualitylab.viewsHidden", h ? "0" : "1");
+      return !h;
+    });
   const toggleSideRef = useRef(toggleSide);
   const toggleRightRef = useRef<() => void>(() => {});
   toggleSideRef.current = toggleSide;
@@ -666,25 +672,39 @@ export default function App() {
               <span className="side-label">Add a repo folder</span>
             </button>
           )}
-          <div className="side-section">Views</div>
           <button
-            className={`side-item ${view === "connections" ? "active" : ""}`}
-            onClick={() => setView("connections")}
+            className={`side-section side-section-toggle ${viewsHidden ? "collapsed" : ""}`}
+            onClick={toggleViews}
+            title={viewsHidden ? "Show views" : "Hide views"}
           >
-            <span className="side-icon"><WebIcon /></span>
-            <span className="side-label">Connections</span>
+            <span>Views</span>
+            <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M2.5 3.75 5 6.25l2.5-2.5" />
+            </svg>
           </button>
-          <button
-            className={`side-item ${view === "jira" ? "active" : ""} ${jiraMenu ? "menu-open" : ""}`}
-            onClick={(e) => {
-              const rect = e.currentTarget.getBoundingClientRect();
-              setJiraMenu((m) => (m ? null : rect));
-            }}
-            title="Jira boards"
-          >
-            <span className="side-icon"><JiraIcon /></span>
-            <span className="side-label">Jira</span>
-          </button>
+          <div className={`side-views ${viewsHidden ? "collapsed" : ""}`}>
+            <div className="side-views-inner">
+              <button
+                className={`side-item view-item ${view === "connections" ? "active" : ""}`}
+                onClick={() => setView("connections")}
+                tabIndex={viewsHidden ? -1 : 0}
+              >
+                <span className="avatar view-icon"><WebIcon /></span>
+                <span className="side-label">Connections</span>
+              </button>
+              <button
+                className={`side-item view-item ${view === "jira" ? "active" : ""} ${jiraMenu ? "menu-open" : ""}`}
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  setJiraMenu((m) => (m ? null : rect));
+                }}
+                tabIndex={viewsHidden ? -1 : 0}
+              >
+                <span className="avatar view-icon"><JiraIcon /></span>
+                <span className="side-label">Jira</span>
+              </button>
+            </div>
+          </div>
           <div className="side-footer">
             <span className="avatar">{(config.user ?? "?")[0].toUpperCase()}</span> {config.user} · QualityLab 0.1
           </div>
