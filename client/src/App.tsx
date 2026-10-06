@@ -845,16 +845,16 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
+        <span className="brand">
+          <img src="/giraffe.png" alt="" className="brand-logo" />
+          <span className="brand-name">QualityLab</span>
+        </span>
         <button className="side-toggle" title={sideHidden ? "Show sidebar (⌘S)" : "Hide sidebar (⌘S)"} onClick={toggleSide}>
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
             <rect x="1.5" y="2.5" width="13" height="11" rx="2" />
             <path d="M6 2.5v11" />
           </svg>
         </button>
-        <span className="brand">
-          <img src="/giraffe.png" alt="QualityLab" className="brand-logo" />
-        </span>
-        <span className="workspace-label">{repo ? repo.label : view === "connections" ? "Connections" : view === "jira" ? "Jira" : ""}</span>
         <div className="agent-buttons">
           <button
             className="agent-btn"
