@@ -4,7 +4,7 @@ import type { Bookmark } from "./Browser";
 /** Saved Jira links: name + URL, kept per user in localStorage. */
 export function loadJiraBoards(): Bookmark[] {
   try {
-    const saved = JSON.parse(localStorage.getItem("qualitylab.jiraBoards") ?? "[]");
+    const saved = JSON.parse(localStorage.getItem("crux.jiraBoards") ?? "[]");
     return Array.isArray(saved) ? saved : [];
   } catch {
     return [];
@@ -12,7 +12,7 @@ export function loadJiraBoards(): Bookmark[] {
 }
 
 export function saveJiraBoards(boards: Bookmark[]): void {
-  localStorage.setItem("qualitylab.jiraBoards", JSON.stringify(boards));
+  localStorage.setItem("crux.jiraBoards", JSON.stringify(boards));
 }
 
 /** A readable default name from a Jira URL. */

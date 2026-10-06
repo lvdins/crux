@@ -3,12 +3,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
- * Where QualityLab's own files live. In development that's the repo root;
- * in the packaged app the desktop shell sets QUALITYLAB_ROOT to the bundled
+ * Where Crux's own files live. In development that's the repo root;
+ * in the packaged app the desktop shell sets CRUX_ROOT to the bundled
  * resources folder, which mirrors the repo layout.
  */
-export const ROOT = process.env.QUALITYLAB_ROOT ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-export const PACKAGED = !!process.env.QUALITYLAB_ROOT;
+export const ROOT = process.env.CRUX_ROOT ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+export const PACKAGED = !!process.env.CRUX_ROOT;
 
 export const rootPath = (...parts: string[]) => path.join(ROOT, ...parts);
 

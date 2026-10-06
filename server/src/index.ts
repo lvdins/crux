@@ -14,7 +14,7 @@ import { adoptLoginShellPath, checkTools, PACKAGED, rootPath } from "./paths.js"
 
 adoptLoginShellPath();
 
-const PORT = Number(process.env.QUALITYLAB_PORT) || 8787;
+const PORT = Number(process.env.CRUX_PORT) || 8787;
 let connectionsCache: { at: number; data: unknown } | null = null;
 let featuresCache: { at: number; data: unknown } | null = null;
 const app = express();
@@ -44,7 +44,7 @@ app.get("/api/config", (_req, res) => {
   });
 });
 
-const descriptionsPath = rootPath("qualitylab.descriptions.json");
+const descriptionsPath = rootPath("crux.descriptions.json");
 
 app.get("/api/tree", async (_req, res) => {
   const trees = buildTree();
@@ -245,7 +245,7 @@ app.post("/api/agent-browser/:ws", async (req, res) => {
   if (!config.repos[ws]) return void res.status(404).json({ ok: false, error: `Unknown workspace "${ws}"` });
   const host = [...browserHosts].pop();
   if (!host || host.readyState !== WebSocket.OPEN) {
-    return void res.status(503).json({ ok: false, error: "The QualityLab desktop app isn't open — the browser lives in its window." });
+    return void res.status(503).json({ ok: false, error: "The Crux desktop app isn't open — the browser lives in its window." });
   }
   const id = `b${++browserSeq}`;
   const result = await new Promise<any>((resolve) => {
@@ -320,7 +320,7 @@ wss.on("connection", (ws: WebSocket) => {
 installAgentSetup();
 
 server.listen(PORT, () => {
-  console.log(`QualityLab server on http://localhost:${PORT}`);
+  console.log(`Crux server on http://localhost:${PORT}`);
 });
 
 function shutdown() {

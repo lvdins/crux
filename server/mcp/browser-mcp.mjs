@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// qualitylab-browser — MCP server (stdio, no dependencies) that lets an
-// agent drive the browser panel of the QualityLab workspace it runs in.
-// Requests go to the QualityLab server, which relays them to the desktop
+// crux-browser — MCP server (stdio, no dependencies) that lets an
+// agent drive the browser panel of the Crux workspace it runs in.
+// Requests go to the Crux server, which relays them to the desktop
 // window that owns the native browser.
 
-const WORKSPACE = process.env.QUALITYLAB_WORKSPACE;
-const BASE = process.env.QUALITYLAB_URL || "http://127.0.0.1:8787";
+const WORKSPACE = process.env.CRUX_WORKSPACE;
+const BASE = process.env.CRUX_URL || "http://127.0.0.1:8787";
 
 const target = {
   ref: { type: "number", description: "Element ref from the latest browser_snapshot, e.g. 12 for [12]" },
@@ -17,7 +17,7 @@ const TOOLS = [
   {
     name: "browser_navigate",
     description:
-      "Open a URL in the QualityLab browser panel the user is watching (already signed in to whatever they signed in to). Waits for the page to load.",
+      "Open a URL in the Crux browser panel the user is watching (already signed in to whatever they signed in to). Waits for the page to load.",
     inputSchema: { type: "object", properties: { url: { type: "string" } }, required: ["url"] },
   },
   {
@@ -86,7 +86,7 @@ const TOOLS = [
 
 async function call(name, args) {
   if (!WORKSPACE) {
-    return { isError: true, content: [{ type: "text", text: "Not running inside a QualityLab terminal (QUALITYLAB_WORKSPACE is unset)." }] };
+    return { isError: true, content: [{ type: "text", text: "Not running inside a Crux terminal (CRUX_WORKSPACE is unset)." }] };
   }
   const op = name.replace(/^browser_/, "");
   let body;
@@ -98,7 +98,7 @@ async function call(name, args) {
     });
     body = await res.json();
   } catch (err) {
-    return { isError: true, content: [{ type: "text", text: `QualityLab server unreachable at ${BASE}: ${err.message}` }] };
+    return { isError: true, content: [{ type: "text", text: `Crux server unreachable at ${BASE}: ${err.message}` }] };
   }
   if (!body.ok) return { isError: true, content: [{ type: "text", text: body.error || "Browser command failed" }] };
   const content = [{ type: "text", text: body.result?.text ?? "" }];
@@ -121,9 +121,9 @@ async function handle(msg) {
         result: {
           protocolVersion: params?.protocolVersion || "2025-06-18",
           capabilities: { tools: {} },
-          serverInfo: { name: "qualitylab-browser", version: "0.1.0" },
+          serverInfo: { name: "crux-browser", version: "0.1.0" },
           instructions:
-            "These tools drive the browser panel inside QualityLab that the user is watching. Start with browser_snapshot (or browser_navigate), act with browser_click / browser_type using [ref] numbers from the latest snapshot, and snapshot again after each change.",
+            "These tools drive the browser panel inside Crux that the user is watching. Start with browser_snapshot (or browser_navigate), act with browser_click / browser_type using [ref] numbers from the latest snapshot, and snapshot again after each change.",
         },
       });
     }

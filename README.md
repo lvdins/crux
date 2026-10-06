@@ -1,4 +1,4 @@
-# QualityLab
+# Crux
 
 Chat-driven QA workbench: talk to a Claude agent that works directly in the QA
 repos, with a live MkDocs preview and a test tree beside the conversation.
@@ -10,7 +10,7 @@ repos, with a live MkDocs preview and a test tree beside the conversation.
 | `server/` | Express + WebSocket backend (:8787). Runs Claude Agent SDK sessions (one per repo, resumed turn-by-turn), spawns `mkdocs serve` via uv, scans the Playwright/pytest suites into the test tree. Serves the built client. |
 | `client/` | React/Vite UI (:5180 in dev). Chat left; Doc preview / Test tree tabs right. |
 | `src-tauri/` | Tauri 2 desktop shell (same stack as platform-lab). Spawns the server if :8787 is not already up. |
-| `qualitylab.config.json` | Repo paths, agent permission mode, preview port. Edit paths here. |
+| `crux.config.json` | Repo paths, agent permission mode, preview port. Edit paths here. |
 
 ## Run
 

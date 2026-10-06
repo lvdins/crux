@@ -41,7 +41,7 @@ export function attachTerm(
   let entry = terms.get(id);
   if (!entry) {
     const shell = process.env.SHELL || "/bin/zsh";
-    // Strip Claude-session markers: if the QualityLab server itself was started
+    // Strip Claude-session markers: if the Crux server itself was started
     // from a Claude Code session, child shells would otherwise be treated as
     // nested sessions (transcript saving off, etc.).
     const env = Object.fromEntries(

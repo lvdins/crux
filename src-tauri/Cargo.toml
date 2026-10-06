@@ -1,7 +1,7 @@
 [package]
-name = "qualitylab"
+name = "crux"
 version = "0.1.0"
-description = "QualityLab desktop app"
+description = "Crux desktop app"
 edition = "2021"
 
 [build-dependencies]

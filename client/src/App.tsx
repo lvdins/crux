@@ -55,7 +55,7 @@ interface JiraTab {
   url: string;
   title: string;
 }
-const JIRA_TABS_KEY = "qualitylab.browserTabs.jira";
+const JIRA_TABS_KEY = "crux.browserTabs.jira";
 function readJiraTabs(): { tabs: JiraTab[]; active: number } {
   try {
     const saved = JSON.parse(localStorage.getItem(JIRA_TABS_KEY) ?? "null");
@@ -93,7 +93,7 @@ export default function App() {
   // Right-panel tab per workspace: tree / coverage / preview / browser.
   const [panelTabs, setPanelTabs] = useState<Record<string, string>>(() => {
     try {
-      return JSON.parse(localStorage.getItem("qualitylab.panelTabs") ?? "{}");
+      return JSON.parse(localStorage.getItem("crux.panelTabs") ?? "{}");
     } catch {
       return {};
     }
@@ -101,12 +101,12 @@ export default function App() {
   const setPanelTab = (key: string, tab: string) =>
     setPanelTabs((prev) => {
       const next = { ...prev, [key]: tab };
-      localStorage.setItem("qualitylab.panelTabs", JSON.stringify(next));
+      localStorage.setItem("crux.panelTabs", JSON.stringify(next));
       return next;
     });
   const [connected, setConnected] = useState(false);
   const [split, setSplit] = useState<number>(() => {
-    const saved = Number(localStorage.getItem("qualitylab.split"));
+    const saved = Number(localStorage.getItem("crux.split"));
     return saved >= 20 && saved <= 75 ? saved : 42;
   });
   const [dragging, setDragging] = useState(false);
@@ -114,19 +114,19 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<Record<string, string>>({});
   // Terminal pane layout per workspace (split tree; MAIN = tab-strip pane).
   const [layouts, setLayouts] = useState<Record<string, PaneNode>>({});
-  const [rightHidden, setRightHidden] = useState(() => localStorage.getItem("qualitylab.rightHidden") === "1");
-  const [sideHidden, setSideHidden] = useState(() => localStorage.getItem("qualitylab.sideHidden") === "1");
+  const [rightHidden, setRightHidden] = useState(() => localStorage.getItem("crux.rightHidden") === "1");
+  const [sideHidden, setSideHidden] = useState(() => localStorage.getItem("crux.sideHidden") === "1");
   const toggleSide = () =>
     setSideHidden((h) => {
-      localStorage.setItem("qualitylab.sideHidden", h ? "0" : "1");
+      localStorage.setItem("crux.sideHidden", h ? "0" : "1");
       return !h;
     });
   // Agent drove the browser of the workspace on screen: show it.
   const revealBrowserRef = useRef<(ws: string) => void>(() => {});
-  const [viewsHidden, setViewsHidden] = useState(() => localStorage.getItem("qualitylab.viewsHidden") === "1");
+  const [viewsHidden, setViewsHidden] = useState(() => localStorage.getItem("crux.viewsHidden") === "1");
   const toggleViews = () =>
     setViewsHidden((h) => {
-      localStorage.setItem("qualitylab.viewsHidden", h ? "0" : "1");
+      localStorage.setItem("crux.viewsHidden", h ? "0" : "1");
       return !h;
     });
   const toggleSideRef = useRef(toggleSide);
@@ -148,14 +148,14 @@ export default function App() {
   const [jiraOpen, setJiraOpen] = useState<{ url: string; nonce: number } | null>(null);
   // Open Jira tabs, mirrored from the Jira browser (and localStorage when it isn't mounted).
   const [jiraTabs, setJiraTabs] = useState<{ tabs: JiraTab[]; active: number }>(() => readJiraTabs());
-  const [jiraTabsHidden, setJiraTabsHidden] = useState(() => localStorage.getItem("qualitylab.jiraTabsHidden") === "1");
+  const [jiraTabsHidden, setJiraTabsHidden] = useState(() => localStorage.getItem("crux.jiraTabsHidden") === "1");
   const [menu, setMenu] = useState<null | { key: string; x: number; y: number }>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState("");
   const [toast, setToast] = useState("");
   const [unread, setUnread] = useState<Set<string>>(() => {
     try {
-      return new Set(JSON.parse(localStorage.getItem("qualitylab.unread") ?? "[]"));
+      return new Set(JSON.parse(localStorage.getItem("crux.unread") ?? "[]"));
     } catch {
       return new Set();
     }
@@ -190,7 +190,7 @@ export default function App() {
       apply();
       setDragging(false);
       setSplit(pct);
-      localStorage.setItem("qualitylab.split", String(Math.round(pct * 10) / 10));
+      localStorage.setItem("crux.split", String(Math.round(pct * 10) / 10));
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       window.dispatchEvent(new Event("resize"));
@@ -205,7 +205,7 @@ export default function App() {
       .then((c: AppConfig) => {
         setConfig(c);
         const keys = Object.keys(c.repos);
-        const last = localStorage.getItem("qualitylab.view");
+        const last = localStorage.getItem("crux.view");
         setView(last && (last === "connections" || last === "jira" || keys.includes(last)) ? last : keys[0] ?? "");
         const initialTabs: Record<string, TermTab[]> = {};
         const initialActive: Record<string, string> = {};
@@ -265,7 +265,7 @@ export default function App() {
 
   useEffect(() => {
     viewRef.current = view;
-    if (view) localStorage.setItem("qualitylab.view", view);
+    if (view) localStorage.setItem("crux.view", view);
     setUnread((u) => {
       if (!u.has(view)) return u;
       const next = new Set(u);
@@ -275,7 +275,7 @@ export default function App() {
   }, [view]);
 
   useEffect(() => {
-    localStorage.setItem("qualitylab.unread", JSON.stringify([...unread]));
+    localStorage.setItem("crux.unread", JSON.stringify([...unread]));
   }, [unread]);
 
   useEffect(() => {
@@ -491,7 +491,7 @@ export default function App() {
       const { invoke } = await import("@tauri-apps/api/core");
       let ids = [1];
       try {
-        ids = JSON.parse(localStorage.getItem(`qualitylab.browserTabs.${key}`) ?? "null")?.tabs?.map((t: { id: number }) => t.id) ?? ids;
+        ids = JSON.parse(localStorage.getItem(`crux.browserTabs.${key}`) ?? "null")?.tabs?.map((t: { id: number }) => t.id) ?? ids;
       } catch {
         /* keep default */
       }
@@ -499,7 +499,7 @@ export default function App() {
         const label = id === 1 ? browserLabel(key) : `${browserLabel(key)}-t${id}`;
         void invoke("browser_close", { label }).catch(() => undefined);
       }
-      localStorage.removeItem(`qualitylab.browserTabs.${key}`);
+      localStorage.removeItem(`crux.browserTabs.${key}`);
     }
     for (const t of tabs[key] ?? []) {
       send({ type: "term:kill", id: t.id });
@@ -649,7 +649,7 @@ export default function App() {
 
   const toggleJiraTabs = () =>
     setJiraTabsHidden((h) => {
-      localStorage.setItem("qualitylab.jiraTabsHidden", h ? "0" : "1");
+      localStorage.setItem("crux.jiraTabsHidden", h ? "0" : "1");
       return !h;
     });
 
@@ -712,10 +712,10 @@ export default function App() {
 
   const hideRight = (hidden: boolean) => {
     setRightHidden(hidden);
-    localStorage.setItem("qualitylab.rightHidden", hidden ? "1" : "0");
+    localStorage.setItem("crux.rightHidden", hidden ? "1" : "0");
   };
 
-  if (!config) return <div className="loading">Loading QualityLab…</div>;
+  if (!config) return <div className="loading">Loading Crux…</div>;
 
   const isSpecialView = view === "connections" || view === "jira";
   const repo = !isSpecialView ? config.repos[view] : undefined;
@@ -846,8 +846,7 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <span className="brand">
-          <img src="/giraffe.png" alt="" className="brand-logo" />
-          <span className="brand-name">QualityLab</span>
+          <span className="brand-name">Crux</span>
         </span>
         <button className="side-toggle" title={sideHidden ? "Show sidebar (⌘S)" : "Hide sidebar (⌘S)"} onClick={toggleSide}>
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
@@ -1033,15 +1032,14 @@ export default function App() {
             </div>
           </div>
           <div className="side-footer">
-            <span className="avatar">{(config.user ?? "?")[0].toUpperCase()}</span> {config.user} · QualityLab 0.1
+            <span className="avatar">{(config.user ?? "?")[0].toUpperCase()}</span> {config.user} · Crux 0.1
           </div>
         </nav>
         {!repo && !isSpecialView ? (
           <section className="full-pane empty-state">
-            <img src="/giraffe.png" alt="" className="empty-logo" />
             <h2>Add your QA repos</h2>
             <p>
-              Point QualityLab at the folders you already have: product docs, Playwright E2E, pytest API, the dashboard
+              Point Crux at the folders you already have: product docs, Playwright E2E, pytest API, the dashboard
               and backend repos. Each folder's type is detected and gets the right panel: docs preview, test tree and
               coverage, or just terminals and a browser.
             </p>
@@ -1064,7 +1062,7 @@ export default function App() {
             {jiraBoards.length === 0 && !jiraOpen ? (
               <div className="jira-empty">
                 <JiraIcon />
-                <h2>Jira inside QualityLab</h2>
+                <h2>Jira inside Crux</h2>
                 <p>Save the boards, backlogs, filters or issues you use, then open them here next to your terminals. Your Atlassian login stays signed in.</p>
                 <button className="primary" onClick={(e) => setJiraMenu(e.currentTarget.getBoundingClientRect())}>
                   + Add a Jira link
@@ -1223,7 +1221,7 @@ export default function App() {
               <span>Delete {config.repos[confirmDelete].label}?</span>
             </div>
             <div className="confirm-body">
-              <p>This moves the folder to the Trash and removes it from QualityLab. You can restore it from the Trash.</p>
+              <p>This moves the folder to the Trash and removes it from Crux. You can restore it from the Trash.</p>
               <code>{config.repos[confirmDelete].path}</code>
               {deleteError && <div className="modal-error">{deleteError}</div>}
             </div>

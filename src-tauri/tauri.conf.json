@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "QualityLab",
+  "productName": "Crux",
   "version": "0.1.0",
   "identifier": "com.giraffe360.qualitylab",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "QualityLab",
+        "title": "Crux",
         "width": 1440,
         "height": 900
       }

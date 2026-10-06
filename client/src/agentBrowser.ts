@@ -1,6 +1,6 @@
 /**
  * Executes agent browser commands (relayed by the server from the
- * qualitylab-browser MCP tools) against the native browser panes.
+ * crux-browser MCP tools) against the native browser panes.
  *
  * Page helpers run in WebKit's isolated client world: they share the DOM
  * with the page but not its JavaScript, so the page can't tamper with them.
@@ -11,9 +11,9 @@ export const DEFAULT_BROWSER_URL = "https://dashboard.g360lab.com/";
 
 // The agent drives whichever browser tab is active in that workspace.
 export function setActiveBrowserLabel(ws: string, label: string): void {
-  localStorage.setItem(`qualitylab.browserActive.${ws}`, label);
+  localStorage.setItem(`crux.browserActive.${ws}`, label);
 }
-const activeBrowserLabel = (ws: string) => localStorage.getItem(`qualitylab.browserActive.${ws}`) ?? browserLabel(ws);
+const activeBrowserLabel = (ws: string) => localStorage.getItem(`crux.browserActive.${ws}`) ?? browserLabel(ws);
 
 export interface AgentResult {
   text: string;
@@ -278,7 +278,7 @@ function normaliseUrl(input: string): string {
 
 export async function runAgentCommand(ws: string, op: string, args: Record<string, any>): Promise<AgentResult> {
   const label = activeBrowserLabel(ws);
-  const startUrl = localStorage.getItem(`qualitylab.browserUrl.${ws}`) ?? DEFAULT_BROWSER_URL;
+  const startUrl = localStorage.getItem(`crux.browserUrl.${ws}`) ?? DEFAULT_BROWSER_URL;
   const created = await invoke<boolean>("browser_ensure", { label, url: op === "navigate" && args.url ? normaliseUrl(args.url) : startUrl });
 
   switch (op) {

@@ -265,15 +265,15 @@ export default function FeatureMap({ onAddWorkspace }: { onAddWorkspace: () => v
   const [data, setData] = useState<FeatureMapData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [selected, setSelected] = useState<string | null>(() => localStorage.getItem("qualitylab.feature"));
+  const [selected, setSelected] = useState<string | null>(() => localStorage.getItem("crux.feature"));
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [tab, setTab] = useState<"coverage" | "graph">(() =>
-    localStorage.getItem("qualitylab.connTab") === "graph" ? "graph" : "coverage",
+    localStorage.getItem("crux.connTab") === "graph" ? "graph" : "coverage",
   );
   const switchTab = (next: "coverage" | "graph") => {
     setTab(next);
-    localStorage.setItem("qualitylab.connTab", next);
+    localStorage.setItem("crux.connTab", next);
   };
 
   const load = useCallback((refresh = false) => {
@@ -289,7 +289,7 @@ export default function FeatureMap({ onAddWorkspace }: { onAddWorkspace: () => v
   useEffect(() => load(), [load]);
 
   useEffect(() => {
-    if (selected) localStorage.setItem("qualitylab.feature", selected);
+    if (selected) localStorage.setItem("crux.feature", selected);
   }, [selected]);
 
   const visible = useMemo(() => {

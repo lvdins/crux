@@ -13,7 +13,7 @@ export interface RepoConfig {
   color?: string;
 }
 
-export interface QualityLabConfig {
+export interface CruxConfig {
   repos: Record<string, RepoConfig>;
   agent: { permissionMode: "acceptEdits" | "default" | "bypassPermissions" };
   preview: { port: number };
@@ -21,9 +21,32 @@ export interface QualityLabConfig {
 
 // Bundled defaults (the original Giraffe360 setup); used only to seed a
 // first-run user config with the repos that exist on this machine.
-const defaultsPath = rootPath("qualitylab.config.json");
+const defaultsPath = rootPath("crux.config.json");
 // Per-user workspaces live outside the app so every teammate has their own.
-export const userConfigPath = process.env.QUALITYLAB_CONFIG ?? path.join(os.homedir(), ".qualitylab", "config.json");
+export const userConfigPath = process.env.CRUX_CONFIG ?? path.join(os.homedir(), ".crux", "config.json");
+
+// One-time move from the app's old name: ~/.qualitylab → ~/.crux. Per item,
+// because the desktop shell may already have created ~/.crux for its log.
+(function migrateFromQualityLab() {
+  const oldDir = path.join(os.homedir(), ".qualitylab");
+  const newDir = path.join(os.homedir(), ".crux");
+  if (process.env.CRUX_CONFIG || !fs.existsSync(oldDir)) return;
+  fs.mkdirSync(newDir, { recursive: true });
+  for (const name of fs.readdirSync(oldDir)) {
+    const target = path.join(newDir, name);
+    if (fs.existsSync(target)) continue;
+    try {
+      fs.renameSync(path.join(oldDir, name), target);
+    } catch {
+      /* leave it; the user can move it by hand */
+    }
+  }
+  try {
+    if (fs.readdirSync(oldDir).length === 0) fs.rmdirSync(oldDir);
+  } catch {
+    /* not empty or already gone */
+  }
+})();
 
 function readJson(file: string): any {
   try {
@@ -33,13 +56,13 @@ function readJson(file: string): any {
   }
 }
 
-function loadConfig(): QualityLabConfig {
+function loadConfig(): CruxConfig {
   const user = readJson(userConfigPath);
   if (user?.repos) {
     return { agent: { permissionMode: "bypassPermissions" }, preview: { port: 8321 }, ...user };
   }
   const defaults = readJson(defaultsPath) ?? {};
-  const seeded: QualityLabConfig = {
+  const seeded: CruxConfig = {
     repos: Object.fromEntries(
       Object.entries((defaults.repos ?? {}) as Record<string, RepoConfig>).filter(([, r]) => fs.existsSync(r.path)),
     ),
@@ -50,7 +73,7 @@ function loadConfig(): QualityLabConfig {
   return seeded;
 }
 
-export function saveConfig(next: QualityLabConfig = config): void {
+export function saveConfig(next: CruxConfig = config): void {
   fs.mkdirSync(path.dirname(userConfigPath), { recursive: true });
   fs.writeFileSync(userConfigPath, JSON.stringify(next, null, 2) + "\n");
 }

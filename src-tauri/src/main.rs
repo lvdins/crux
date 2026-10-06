@@ -8,7 +8,7 @@ use std::process::{Child, Command};
 use std::sync::Mutex;
 use std::time::Duration;
 
-/// Project root, resolved at compile time. QualityLab is a local tool whose
+/// Project root, resolved at compile time. Crux is a local tool whose
 /// config already carries absolute repo paths, so a compile-time root is fine.
 const PROJECT_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/..");
 
@@ -34,7 +34,7 @@ fn spawn_server(app: &tauri::App) -> Option<Child> {
     let mut cmd = match bundled {
         Some(root) => {
             let mut c = Command::new(root.join("node"));
-            c.arg(root.join("server/dist/index.mjs")).env("QUALITYLAB_ROOT", &root).current_dir(&home);
+            c.arg(root.join("server/dist/index.mjs")).env("CRUX_ROOT", &root).current_dir(&home);
             c
         }
         None => {
@@ -43,8 +43,8 @@ fn spawn_server(app: &tauri::App) -> Option<Child> {
             c
         }
     };
-    // Keep a log for "it doesn't start" reports: ~/.qualitylab/server.log
-    let log_dir = std::path::Path::new(&home).join(".qualitylab");
+    // Keep a log for "it doesn't start" reports: ~/.crux/server.log
+    let log_dir = std::path::Path::new(&home).join(".crux");
     let _ = std::fs::create_dir_all(&log_dir);
     if let Ok(log) = std::fs::OpenOptions::new().create(true).append(true).open(log_dir.join("server.log")) {
         if let Ok(err) = log.try_clone() {
@@ -63,7 +63,7 @@ fn spawn_server(app: &tauri::App) -> Option<Child> {
             Some(child)
         }
         Err(err) => {
-            eprintln!("failed to start QualityLab server: {err}");
+            eprintln!("failed to start Crux server: {err}");
             None
         }
     }
@@ -130,7 +130,7 @@ fn main() {
             browser::browser_devtools,
         ])
         .build(tauri::generate_context!())
-        .expect("error building QualityLab")
+        .expect("error building Crux")
         .run(move |_app, event| {
             if let tauri::RunEvent::Exit = event {
                 if let Some(mut child) = server.lock().unwrap().take() {

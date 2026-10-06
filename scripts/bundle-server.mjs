@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Assembles build/qualitylab — everything the packaged app runs besides the
+// Assembles build/crux — everything the packaged app runs besides the
 // UI: a Node runtime, the bundled server, node-pty's native bits, the agent
 // browser MCP server and the default data files. The layout mirrors the
-// repo so server paths work unchanged (QUALITYLAB_ROOT points here).
+// repo so server paths work unchanged (CRUX_ROOT points here).
 import { build } from "esbuild";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -11,7 +11,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const out = path.join(repo, "build", "qualitylab");
+const out = path.join(repo, "build", "crux");
 const cache = path.join(repo, "build", "cache");
 const arch = process.arch === "arm64" ? "arm64" : "x64";
 const NODE_VERSION = process.env.QL_NODE_VERSION ?? process.version; // e.g. v24.15.0
@@ -42,10 +42,10 @@ fs.copyFileSync(path.join(repo, "server", "mcp", "browser-mcp.mjs"), path.join(o
 step("writing default data files");
 // Never ship personal repo paths: teammates start with no workspaces.
 fs.writeFileSync(
-  path.join(out, "qualitylab.config.json"),
+  path.join(out, "crux.config.json"),
   JSON.stringify({ repos: {}, agent: { permissionMode: "bypassPermissions" }, preview: { port: 8321 } }, null, 2) + "\n",
 );
-for (const f of ["qualitylab.descriptions.json", "qualitylab.features.json"]) {
+for (const f of ["crux.descriptions.json", "crux.features.json"]) {
   if (fs.existsSync(path.join(repo, f))) fs.copyFileSync(path.join(repo, f), path.join(out, f));
 }
 
@@ -85,4 +85,4 @@ execFileSync(path.join(out, "node"), ["--input-type=module", "-e", "await import
 });
 
 const size = execFileSync("du", ["-sh", out], { encoding: "utf8" }).split("\t")[0];
-console.log(`\x1b[32m✓\x1b[0m build/qualitylab ready (${size})`);
+console.log(`\x1b[32m✓\x1b[0m build/crux ready (${size})`);

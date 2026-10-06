@@ -1,4 +1,4 @@
-// QualityLab network recorder. Injected at document start into every in-app
+// Crux network recorder. Injected at document start into every in-app
 // browser page (and on demand into pages opened before it existed). Wraps
 // fetch and XMLHttpRequest and keeps the last 500 calls in
 // window.__qlNet; the Network panel polls changes with take(sinceVersion).

@@ -9,7 +9,7 @@ interface Tool {
   install: string;
 }
 
-/** Which command-line tools QualityLab found, with install hints. */
+/** Which command-line tools Crux found, with install hints. */
 export default function SetupChecklist() {
   const [tools, setTools] = useState<Tool[] | null>(null);
   const [copied, setCopied] = useState<string | null>(null);

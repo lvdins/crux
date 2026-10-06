@@ -33,7 +33,7 @@ const DEFAULT_BOOKMARKS: Bookmark[] = [
 
 function loadBookmarks(): Bookmark[] {
   try {
-    const saved = JSON.parse(localStorage.getItem("qualitylab.bookmarks") ?? "null");
+    const saved = JSON.parse(localStorage.getItem("crux.bookmarks") ?? "null");
     if (Array.isArray(saved)) return saved;
   } catch {
     /* corrupt */
@@ -95,8 +95,8 @@ export default function Browser({
   /** Open this URL: switch to a tab already showing it, else a new tab. */
   openRequest?: { url: string; nonce: number } | null;
 }) {
-  const tabsKey = `qualitylab.browserTabs.${wsKey}`;
-  const startUrl = defaultUrl ?? localStorage.getItem(`qualitylab.browserUrl.${wsKey}`) ?? DEFAULT_BOOKMARKS[0].url;
+  const tabsKey = `crux.browserTabs.${wsKey}`;
+  const startUrl = defaultUrl ?? localStorage.getItem(`crux.browserUrl.${wsKey}`) ?? DEFAULT_BOOKMARKS[0].url;
   const [tabs, setTabs] = useState<Tab[]>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(tabsKey) ?? "null");
@@ -128,12 +128,12 @@ export default function Browser({
   const [picked, setPicked] = useState<PickedElement | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [devtoolsOpen, setDevtoolsOpen] = useState(false);
-  const [netOpen, setNetOpen] = useState(() => localStorage.getItem("qualitylab.netOpen") === "1");
-  const [netHeight, setNetHeight] = useState(() => Number(localStorage.getItem("qualitylab.netHeight")) || 220);
+  const [netOpen, setNetOpen] = useState(() => localStorage.getItem("crux.netOpen") === "1");
+  const [netHeight, setNetHeight] = useState(() => Number(localStorage.getItem("crux.netHeight")) || 220);
   const [netDragging, setNetDragging] = useState(false);
   const toggleNet = () =>
     setNetOpen((o) => {
-      localStorage.setItem("qualitylab.netOpen", o ? "0" : "1");
+      localStorage.setItem("crux.netOpen", o ? "0" : "1");
       return !o;
     });
   const startNetResize = (e: React.PointerEvent) => {
@@ -147,7 +147,7 @@ export default function Browser({
       window.removeEventListener("pointerup", up);
       setNetDragging(false);
       setNetHeight((h) => {
-        localStorage.setItem("qualitylab.netHeight", String(Math.round(h)));
+        localStorage.setItem("crux.netHeight", String(Math.round(h)));
         return h;
       });
     };
@@ -155,10 +155,10 @@ export default function Browser({
     window.addEventListener("pointerup", up);
   };
   // Collapse the address bar + bookmarks for more page space (remembered).
-  const [chromeHidden, setChromeHidden] = useState(() => localStorage.getItem("qualitylab.browserChrome") === "hidden");
+  const [chromeHidden, setChromeHidden] = useState(() => localStorage.getItem("crux.browserChrome") === "hidden");
   const toggleChrome = () =>
     setChromeHidden((h) => {
-      localStorage.setItem("qualitylab.browserChrome", h ? "shown" : "hidden");
+      localStorage.setItem("crux.browserChrome", h ? "shown" : "hidden");
       return !h;
     });
   const slotRef = useRef<HTMLDivElement>(null);
@@ -174,7 +174,7 @@ export default function Browser({
     localStorage.setItem(tabsKey, JSON.stringify({ tabs, active: active.id }));
     // Let the sidebar list this browser's tabs (Jira shows them).
     window.dispatchEvent(new CustomEvent("ql:browser-tabs", { detail: { wsKey, tabs, active: active.id } }));
-    localStorage.setItem(`qualitylab.browserUrl.${wsKey}`, active.url);
+    localStorage.setItem(`crux.browserUrl.${wsKey}`, active.url);
     setActiveBrowserLabel(wsKey, label);
   }, [tabs, active.id, active.url, tabsKey, wsKey, label]);
 
@@ -400,7 +400,7 @@ export default function Browser({
       ? savedBookmarks.filter((b) => b.url !== active.url)
       : [...savedBookmarks, { name: shortTitle({ ...active, title: "" }), url: active.url }];
     setSavedBookmarks(next);
-    localStorage.setItem("qualitylab.bookmarks", JSON.stringify(next));
+    localStorage.setItem("crux.bookmarks", JSON.stringify(next));
   };
 
   return (
