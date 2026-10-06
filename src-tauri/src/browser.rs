@@ -31,20 +31,21 @@ pub async fn browser_show(
     y: f64,
     width: f64,
     height: f64,
+    viewport_height: Option<f64>,
 ) -> Result<(), String> {
     let (w, h) = (width.max(1.0), height.max(1.0));
     if let Some(view) = app.get_webview(&label) {
         view.set_position(LogicalPosition::new(x, y)).map_err(|e| e.to_string())?;
         view.set_size(LogicalSize::new(w, h)).map_err(|e| e.to_string())?;
         #[cfg(target_os = "macos")]
-        mac::place(&app, &view, x, y, w, h)?;
+        mac::place(&app, &view, x, y, w, h, viewport_height)?;
         view.show().map_err(|e| e.to_string())?;
         return Ok(());
     }
     create(&app, &label, &url, x, y, w, h)?;
     #[cfg(target_os = "macos")]
     if let Some(view) = app.get_webview(&label) {
-        mac::place(&app, &view, x, y, w, h)?;
+        mac::place(&app, &view, x, y, w, h, viewport_height)?;
     }
     Ok(())
 }
@@ -144,7 +145,15 @@ mod mac {
     /// coordinates. wry flips y against its parent's height, which on macOS
     /// can include the title bar, so the view lands too high. Instead,
     /// measure the main webview in window coordinates and convert.
-    pub fn place(app: &tauri::AppHandle, child: &tauri::Webview, x: f64, y: f64, w: f64, h: f64) -> Result<(), String> {
+    pub fn place(
+        app: &tauri::AppHandle,
+        child: &tauri::Webview,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        viewport_height: Option<f64>,
+    ) -> Result<(), String> {
         use tauri::Manager;
         let main = app.get_webview("main").ok_or("main webview missing")?;
         let (tx, rx) = channel::<NSRect>();
@@ -159,9 +168,13 @@ mod mac {
         child
             .with_webview(move |pv| unsafe {
                 let wk: &WKWebView = &*(pv.inner() as *const WKWebView);
-                // Window coordinates have their origin at the bottom-left.
+                // Window coordinates have their origin at the bottom-left. The
+                // main view can extend under the title bar with its page
+                // inset below it, so anchor on its bottom edge and the CSS
+                // viewport height rather than on its top edge.
+                let css_height = viewport_height.unwrap_or(main_rect.size.height);
                 let target = NSRect::new(
-                    NSPoint::new(main_rect.origin.x + x, main_rect.origin.y + main_rect.size.height - y - h),
+                    NSPoint::new(main_rect.origin.x + x, main_rect.origin.y + css_height - y - h),
                     NSSize::new(w, h),
                 );
                 if let Some(parent) = wk.superview() {

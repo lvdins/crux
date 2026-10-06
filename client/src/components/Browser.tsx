@@ -153,7 +153,15 @@ export default function Browser({
       void invoke("browser_hide", { label });
       return;
     }
-    void invoke("browser_show", { label, url: activeRef.current.url, x: r.left, y: r.top, width: r.width, height: r.height })
+    void invoke("browser_show", {
+      label,
+      url: activeRef.current.url,
+      x: r.left,
+      y: r.top,
+      width: r.width,
+      height: r.height,
+      viewportHeight: window.innerHeight,
+    })
       .then(() => {
         opened.current.add(label);
         setError("");
