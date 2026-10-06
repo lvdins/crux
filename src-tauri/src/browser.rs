@@ -36,10 +36,17 @@ pub async fn browser_show(
     if let Some(view) = app.get_webview(&label) {
         view.set_position(LogicalPosition::new(x, y)).map_err(|e| e.to_string())?;
         view.set_size(LogicalSize::new(w, h)).map_err(|e| e.to_string())?;
+        #[cfg(target_os = "macos")]
+        mac::place(&app, &view, x, y, w, h)?;
         view.show().map_err(|e| e.to_string())?;
         return Ok(());
     }
-    create(&app, &label, &url, x, y, w, h)
+    create(&app, &label, &url, x, y, w, h)?;
+    #[cfg(target_os = "macos")]
+    if let Some(view) = app.get_webview(&label) {
+        mac::place(&app, &view, x, y, w, h)?;
+    }
+    Ok(())
 }
 
 fn create(app: &AppHandle, label: &str, url: &str, x: f64, y: f64, w: f64, h: f64) -> Result<(), String> {
@@ -127,11 +134,42 @@ mod mac {
     use objc2::runtime::AnyObject;
     use objc2::MainThreadMarker;
     use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRep, NSImage};
-    use objc2_foundation::{NSDictionary, NSError, NSString};
+    use objc2_foundation::{NSDictionary, NSError, NSPoint, NSRect, NSSize, NSString};
     use objc2_web_kit::{WKContentWorld, WKWebView};
     use std::sync::mpsc::{channel, Receiver};
 
     type Reply = Result<String, String>;
+
+    /// Put a child view exactly over a box given in the main UI's CSS
+    /// coordinates. wry flips y against its parent's height, which on macOS
+    /// can include the title bar, so the view lands too high. Instead,
+    /// measure the main webview in window coordinates and convert.
+    pub fn place(app: &tauri::AppHandle, child: &tauri::Webview, x: f64, y: f64, w: f64, h: f64) -> Result<(), String> {
+        use tauri::Manager;
+        let main = app.get_webview("main").ok_or("main webview missing")?;
+        let (tx, rx) = channel::<NSRect>();
+        main.with_webview(move |pv| unsafe {
+            let wk: &WKWebView = &*(pv.inner() as *const WKWebView);
+            let _ = tx.send(wk.convertRect_toView(wk.bounds(), None));
+        })
+        .map_err(|e| e.to_string())?;
+        let main_rect = rx
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .map_err(|_| "timed out measuring the main view".to_string())?;
+        child
+            .with_webview(move |pv| unsafe {
+                let wk: &WKWebView = &*(pv.inner() as *const WKWebView);
+                // Window coordinates have their origin at the bottom-left.
+                let target = NSRect::new(
+                    NSPoint::new(main_rect.origin.x + x, main_rect.origin.y + main_rect.size.height - y - h),
+                    NSSize::new(w, h),
+                );
+                if let Some(parent) = wk.superview() {
+                    wk.setFrame(parent.convertRect_fromView(target, None));
+                }
+            })
+            .map_err(|e| e.to_string())
+    }
 
     pub fn run_js(view: &tauri::Webview, body: String, page_world: bool) -> Result<Receiver<Reply>, String> {
         let (tx, rx) = channel::<Reply>();
