@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { browserLabel } from "../agentBrowser";
 
 /**
  * Browser tab for the right panel. In the desktop app it docks a native
@@ -43,7 +44,7 @@ function normalise(input: string): string {
 }
 
 export default function Browser({ wsKey, visible }: { wsKey: string; visible: boolean }) {
-  const label = `browser-${wsKey.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+  const label = browserLabel(wsKey);
   const storeKey = `qualitylab.browserUrl.${wsKey}`;
   const [url, setUrl] = useState(() => localStorage.getItem(storeKey) ?? DEFAULT_BOOKMARKS[0].url);
   const [input, setInput] = useState(url);

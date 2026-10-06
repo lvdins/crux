@@ -1,6 +1,7 @@
 import pty, { type IPty } from "node-pty";
 import type { WebSocket } from "ws";
 import { config } from "./config.js";
+import { agentEnv, writeMcpConfig } from "./agent-setup.js";
 
 /**
  * PTYs are keyed by client-chosen terminal id (a workspace can hold several
@@ -52,12 +53,13 @@ export function attachTerm(
     // once init is done, then execs a normal interactive shell.
     const safeBoot = bootCmd && /^[\w ./-]+$/.test(bootCmd) ? bootCmd : undefined;
     const args = safeBoot ? ["-il", "-c", `${safeBoot}; exec ${shell} -il`] : ["-l"];
+    writeMcpConfig(repo); // workspace may have been added since startup
     const proc = pty.spawn(shell, args, {
       name: "xterm-256color",
       cols: cols || 100,
       rows: rows || 30,
       cwd: repoCfg.path,
-      env: { ...env, TERM: "xterm-256color" },
+      env: { ...env, ...agentEnv(repo, shell), TERM: "xterm-256color" },
     });
     const e: Entry = { pty: proc, buffer: "", subs: new Set() };
     proc.onData((data) => {

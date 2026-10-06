@@ -6,6 +6,7 @@ import Preview from "./components/Preview";
 import TestTree from "./components/TestTree";
 import SuiteCoverage from "./components/SuiteCoverage";
 import Browser from "./components/Browser";
+import { runAgentCommand, browserLabel } from "./agentBrowser";
 import FeatureMap from "./components/FeatureMap";
 import AddWorkspace from "./components/AddWorkspace";
 import ContextMenu, { MenuIcons } from "./components/ContextMenu";
@@ -65,6 +66,10 @@ export default function App() {
       localStorage.setItem("qualitylab.sideHidden", h ? "0" : "1");
       return !h;
     });
+  // Agent drove the browser of the workspace on screen: show it.
+  const revealBrowserRef = useRef<(ws: string) => void>(() => {});
+  const toggleSideRef = useRef(toggleSide);
+  toggleSideRef.current = toggleSide;
   const [adding, setAdding] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -134,13 +139,25 @@ export default function App() {
     const connect = () => {
       const ws = new WebSocket(WS_URL);
       wsRef.current = ws;
-      ws.onopen = () => setConnected(true);
+      ws.onopen = () => {
+        setConnected(true);
+        // The desktop window owns the native browser panes: offer to run
+        // agent browser commands for the server.
+        if ("__TAURI_INTERNALS__" in window) ws.send(JSON.stringify({ type: "browser:host" }));
+      };
       ws.onclose = () => {
         setConnected(false);
         if (!closed) retry = setTimeout(connect, 2000);
       };
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
+        if (msg.type === "browser:cmd") {
+          revealBrowserRef.current(msg.ws);
+          runAgentCommand(msg.ws, msg.op, msg.args ?? {})
+            .then((result) => ws.send(JSON.stringify({ type: "browser:result", id: msg.id, ok: true, result })))
+            .catch((err) => ws.send(JSON.stringify({ type: "browser:result", id: msg.id, ok: false, error: String(err?.message ?? err) })));
+          return;
+        }
         if (msg.type === "term:data") {
           termHandlers.current.get(msg.id)?.(msg.data);
           // Output in a workspace you're not looking at (an agent finishing,
@@ -180,6 +197,35 @@ export default function App() {
     const t = setTimeout(() => setToast(""), 1600);
     return () => clearTimeout(t);
   }, [toast]);
+
+  // ⌘S — toggle the sidebar. In the desktop app the native menu owns the
+  // shortcut (it works even with a terminal/browser pane focused) and tells
+  // us via an event; in a plain browser tab we catch the key ourselves.
+  useEffect(() => {
+    if ("__TAURI_INTERNALS__" in window) {
+      let unlisten: (() => void) | undefined;
+      let cancelled = false;
+      void import("@tauri-apps/api/event").then(({ listen }) =>
+        listen("menu:toggle-sidebar", () => toggleSideRef.current()).then((fn) => {
+          if (cancelled) fn();
+          else unlisten = fn;
+        }),
+      );
+      return () => {
+        cancelled = true;
+        unlisten?.();
+      };
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleSideRef.current();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
 
   // ⌘⇧⌫ — delete the active workspace (asks first).
   useEffect(() => {
@@ -329,7 +375,7 @@ export default function App() {
     if (!alreadyRemoved) await api(`/api/workspaces/${key}`, { method: "DELETE" });
     if ("__TAURI_INTERNALS__" in window) {
       const { invoke } = await import("@tauri-apps/api/core");
-      void invoke("browser_close", { label: `browser-${key.replace(/[^a-zA-Z0-9_-]/g, "_")}` }).catch(() => undefined);
+      void invoke("browser_close", { label: browserLabel(key) }).catch(() => undefined);
     }
     for (const t of tabs[key] ?? []) {
       send({ type: "term:kill", id: t.id });
@@ -426,6 +472,12 @@ export default function App() {
     ];
   };
 
+  revealBrowserRef.current = (ws: string) => {
+    if (ws !== viewRef.current) return;
+    if (rightHidden) hideRight(false);
+    if (panelTabs[ws] !== "browser") setPanelTab(ws, "browser");
+  };
+
   const hideRight = (hidden: boolean) => {
     setRightHidden(hidden);
     localStorage.setItem("qualitylab.rightHidden", hidden ? "1" : "0");
@@ -457,7 +509,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <button className="side-toggle" title={sideHidden ? "Show sidebar" : "Hide sidebar"} onClick={toggleSide}>
+        <button className="side-toggle" title={sideHidden ? "Show sidebar (⌘S)" : "Hide sidebar (⌘S)"} onClick={toggleSide}>
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
             <rect x="1.5" y="2.5" width="13" height="11" rx="2" />
             <path d="M6 2.5v11" />

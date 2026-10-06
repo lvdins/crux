@@ -10,6 +10,7 @@ import { config, addWorkspace, updateWorkspace, removeWorkspace, detectKind, exp
 import { attachTerm, termInput, termResize, killTerm, detachAll, killAllTerms, openLog } from "./term.js";
 import { startPreview, stopPreview, stopAllPreviews, previewStatus } from "./preview.js";
 import { buildTree, sharedEndpoints } from "./tree.js";
+import { installAgentSetup } from "./agent-setup.js";
 
 const PORT = 8787;
 let connectionsCache: { at: number; data: unknown } | null = null;
@@ -183,6 +184,32 @@ app.get("/api/connections", async (_req, res) => {
   res.json(connectionsCache.data);
 });
 
+/* ---------- agent browser bridge ----------
+ * MCP tool → POST here → the desktop UI (which owns the native browser
+ * panes) runs it → result comes back over the same WebSocket. */
+const browserHosts = new Set<WebSocket>();
+const pendingBrowser = new Map<string, { resolve: (v: any) => void; timer: ReturnType<typeof setTimeout> }>();
+let browserSeq = 0;
+
+app.post("/api/agent-browser/:ws", async (req, res) => {
+  const ws = req.params.ws;
+  if (!config.repos[ws]) return void res.status(404).json({ ok: false, error: `Unknown workspace "${ws}"` });
+  const host = [...browserHosts].pop();
+  if (!host || host.readyState !== WebSocket.OPEN) {
+    return void res.status(503).json({ ok: false, error: "The QualityLab desktop app isn't open — the browser lives in its window." });
+  }
+  const id = `b${++browserSeq}`;
+  const result = await new Promise<any>((resolve) => {
+    const timer = setTimeout(() => {
+      pendingBrowser.delete(id);
+      resolve({ ok: false, error: "Timed out waiting for the browser (60s)" });
+    }, 60_000);
+    pendingBrowser.set(id, { resolve, timer });
+    host.send(JSON.stringify({ type: "browser:cmd", id, ws, op: req.body?.op, args: req.body?.args ?? {} }));
+  });
+  res.status(result.ok ? 200 : 400).json(result);
+});
+
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: "/ws" });
 
@@ -216,6 +243,18 @@ wss.on("connection", (ws: WebSocket) => {
         case "term:kill":
           killTerm(String(msg.id));
           break;
+        case "browser:host":
+          browserHosts.add(ws);
+          break;
+        case "browser:result": {
+          const pending = pendingBrowser.get(String(msg.id));
+          if (pending) {
+            clearTimeout(pending.timer);
+            pendingBrowser.delete(String(msg.id));
+            pending.resolve({ ok: !!msg.ok, result: msg.result, error: msg.error });
+          }
+          break;
+        }
       }
     } catch (err) {
       if (ws.readyState === WebSocket.OPEN) {
@@ -223,8 +262,13 @@ wss.on("connection", (ws: WebSocket) => {
       }
     }
   });
-  ws.on("close", () => detachAll(ws));
+  ws.on("close", () => {
+    detachAll(ws);
+    browserHosts.delete(ws);
+  });
 });
+
+installAgentSetup();
 
 server.listen(PORT, () => {
   console.log(`QualityLab server on http://localhost:${PORT}`);

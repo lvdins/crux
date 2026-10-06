@@ -39,10 +39,14 @@ pub async fn browser_show(
         view.show().map_err(|e| e.to_string())?;
         return Ok(());
     }
+    create(&app, &label, &url, x, y, w, h)
+}
+
+fn create(app: &AppHandle, label: &str, url: &str, x: f64, y: f64, w: f64, h: f64) -> Result<(), String> {
     let window = app.get_window("main").ok_or("main window missing")?;
     let events = app.clone();
-    let event_label = label.clone();
-    let builder = WebviewBuilder::new(&label, WebviewUrl::External(parse(&url)?)).on_page_load(move |_view, payload| {
+    let event_label = label.to_string();
+    let builder = WebviewBuilder::new(label, WebviewUrl::External(parse(url)?)).on_page_load(move |_view, payload| {
         let _ = events.emit_to(
             "main",
             "browser:nav",
@@ -57,6 +61,138 @@ pub async fn browser_show(
         .add_child(builder, LogicalPosition::new(x, y), LogicalSize::new(w, h))
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Make sure a pane exists (for the agent) without showing it; the UI
+/// positions it when the Browser tab is visible. Returns true if created.
+#[tauri::command]
+pub async fn browser_ensure(app: AppHandle, label: String, url: String) -> Result<bool, String> {
+    if app.get_webview(&label).is_some() {
+        return Ok(false);
+    }
+    create(&app, &label, &url, 0.0, 0.0, 1280.0, 800.0)?;
+    if let Some(view) = app.get_webview(&label) {
+        view.hide().map_err(|e| e.to_string())?;
+    }
+    Ok(true)
+}
+
+/// Run an async function body in the page and return its (string) result.
+/// `page_world` = run alongside the page's own scripts (sees its globals);
+/// otherwise an isolated world that shares only the DOM.
+#[tauri::command]
+pub async fn browser_js(app: AppHandle, label: String, script: String, page_world: Option<bool>) -> Result<String, String> {
+    let view = app.get_webview(&label).ok_or("browser not open")?;
+    #[cfg(target_os = "macos")]
+    {
+        let rx = mac::run_js(&view, script, page_world.unwrap_or(false))?;
+        wait(rx, 45).await
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (view, script, page_world);
+        Err("agent browser control is only implemented on macOS".into())
+    }
+}
+
+/// PNG screenshot of the pane, base64-encoded.
+#[tauri::command]
+pub async fn browser_screenshot(app: AppHandle, label: String) -> Result<String, String> {
+    let view = app.get_webview(&label).ok_or("browser not open")?;
+    #[cfg(target_os = "macos")]
+    {
+        let rx = mac::snapshot(&view)?;
+        wait(rx, 20).await
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = view;
+        Err("screenshots are only implemented on macOS".into())
+    }
+}
+
+async fn wait(rx: std::sync::mpsc::Receiver<Result<String, String>>, secs: u64) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        rx.recv_timeout(std::time::Duration::from_secs(secs))
+            .unwrap_or_else(|_| Err("timed out waiting for the page".into()))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[cfg(target_os = "macos")]
+mod mac {
+    use base64::Engine;
+    use block2::RcBlock;
+    use objc2::runtime::AnyObject;
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRep, NSImage};
+    use objc2_foundation::{NSDictionary, NSError, NSString};
+    use objc2_web_kit::{WKContentWorld, WKWebView};
+    use std::sync::mpsc::{channel, Receiver};
+
+    type Reply = Result<String, String>;
+
+    pub fn run_js(view: &tauri::Webview, body: String, page_world: bool) -> Result<Receiver<Reply>, String> {
+        let (tx, rx) = channel::<Reply>();
+        view.with_webview(move |pv| unsafe {
+            let wk: &WKWebView = &*(pv.inner() as *const WKWebView);
+            let mtm = MainThreadMarker::new_unchecked();
+            let world = if page_world { WKContentWorld::pageWorld(mtm) } else { WKContentWorld::defaultClientWorld(mtm) };
+            let tx = tx.clone();
+            let done = RcBlock::new(move |result: *mut AnyObject, error: *mut NSError| {
+                let reply = if !error.is_null() {
+                    Err((*error).localizedDescription().to_string())
+                } else if result.is_null() {
+                    Ok("null".to_string())
+                } else {
+                    let obj = &*result;
+                    match obj.downcast_ref::<NSString>() {
+                        Some(s) => Ok(s.to_string()),
+                        None => Ok(format!("{obj:?}")),
+                    }
+                };
+                let _ = tx.send(reply);
+            });
+            wk.callAsyncJavaScript_arguments_inFrame_inContentWorld_completionHandler(
+                &NSString::from_str(&body),
+                None,
+                None,
+                &world,
+                Some(&done),
+            );
+        })
+        .map_err(|e| e.to_string())?;
+        Ok(rx)
+    }
+
+    pub fn snapshot(view: &tauri::Webview) -> Result<Receiver<Reply>, String> {
+        let (tx, rx) = channel::<Reply>();
+        view.with_webview(move |pv| unsafe {
+            let wk: &WKWebView = &*(pv.inner() as *const WKWebView);
+            let tx = tx.clone();
+            let done = RcBlock::new(move |image: *mut NSImage, error: *mut NSError| {
+                let reply = (|| -> Reply {
+                    if !error.is_null() {
+                        return Err((*error).localizedDescription().to_string());
+                    }
+                    if image.is_null() {
+                        return Err("empty snapshot".into());
+                    }
+                    let tiff = (*image).TIFFRepresentation().ok_or("no TIFF data")?;
+                    let rep = NSBitmapImageRep::imageRepWithData(&tiff).ok_or("bad bitmap")?;
+                    let png = rep
+                        .representationUsingType_properties(NSBitmapImageFileType::PNG, &NSDictionary::new())
+                        .ok_or("PNG encode failed")?;
+                    Ok(base64::engine::general_purpose::STANDARD.encode(png.to_vec()))
+                })();
+                let _ = tx.send(reply);
+            });
+            wk.takeSnapshotWithConfiguration_completionHandler(None, &done);
+        })
+        .map_err(|e| e.to_string())?;
+        Ok(rx)
+    }
 }
 
 #[tauri::command]
