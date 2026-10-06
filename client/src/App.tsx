@@ -170,24 +170,34 @@ export default function App() {
   const onSplitDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
     setDragging(true);
+    // Drag straight on the grid, once per frame, without re-rendering the
+    // app; React state is updated once on release.
+    const el = panesRef.current;
+    const rect = el?.getBoundingClientRect();
+    let pct = split;
+    let raf = 0;
+    const apply = () => {
+      raf = 0;
+      if (el) el.style.gridTemplateColumns = `${pct}fr 1px ${100 - pct}fr`;
+    };
     const move = (ev: PointerEvent) => {
-      const rect = panesRef.current?.getBoundingClientRect();
       if (!rect) return;
-      const pct = Math.min(75, Math.max(20, ((ev.clientX - rect.left) / rect.width) * 100));
-      setSplit(pct);
+      pct = Math.min(75, Math.max(20, ((ev.clientX - rect.left) / rect.width) * 100));
+      if (!raf) raf = requestAnimationFrame(apply);
     };
     const up = () => {
+      if (raf) cancelAnimationFrame(raf);
+      apply();
       setDragging(false);
-      setSplit((v) => {
-        localStorage.setItem("qualitylab.split", String(Math.round(v * 10) / 10));
-        return v;
-      });
+      setSplit(pct);
+      localStorage.setItem("qualitylab.split", String(Math.round(pct * 10) / 10));
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.dispatchEvent(new Event("resize"));
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
-  }, []);
+  }, [split]);
 
   useEffect(() => {
     api("/api/config")
@@ -1074,7 +1084,7 @@ export default function App() {
           <div
             className={`panes ${dragging ? "dragging" : ""}`}
             ref={panesRef}
-            style={{ gridTemplateColumns: panelHidden ? "1fr 0px 0fr" : `${split}fr 6px ${100 - split}fr` }}
+            style={{ gridTemplateColumns: panelHidden ? "1fr 0px 0fr" : `${split}fr 1px ${100 - split}fr` }}
             onTransitionEnd={(e) => {
               // Settle terminals and panels at the final size once the slide
               // finishes — mid-animation fits leave xterm garbled otherwise.
