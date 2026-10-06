@@ -244,7 +244,7 @@ function makeLabelDrawer(nodes: GNode[]) {
         ctx.stroke();
       } else {
         // Dark halo keeps text legible over links and stars.
-        ctx.strokeStyle = "rgba(5,5,5,0.92)";
+        ctx.strokeStyle = "rgba(18,19,23,0.92)";
         ctx.lineWidth = 4;
         ctx.strokeText(text, lx, ly + th / 2);
       }
@@ -368,7 +368,7 @@ export default function FeatureGraph({ data, onOpenFeature }: { data: FeatureMap
       ui.current.dirty = false;
       const { x, y, k, w, h, dpr } = view.current;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.fillStyle = "#050505";
+      ctx.fillStyle = "#121317";
       ctx.fillRect(0, 0, w, h);
       ctx.setTransform(dpr * k, 0, 0, dpr * k, dpr * (w / 2 + x), dpr * (h / 2 + y));
 
