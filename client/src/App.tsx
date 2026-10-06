@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import type { AppConfig, RepoInfo } from "./types";
 import { api, WS_URL } from "./net";
 import Term, { disposeTerm } from "./components/Term";
@@ -11,6 +11,7 @@ import FeatureMap from "./components/FeatureMap";
 import AddWorkspace from "./components/AddWorkspace";
 import SetupChecklist from "./components/SetupChecklist";
 import GitMenu, { type GitAction } from "./components/GitMenu";
+import { MAIN, MAX_PANES, insertAt, leafIds, removeLeaf, rootLayout, setSizesAt, sideAt, type DropSide, type PaneNode } from "./paneLayout";
 import JiraMenu, { loadJiraBoards, saveJiraBoards, nameForJiraUrl } from "./components/JiraMenu";
 import ContextMenu, { MenuIcons } from "./components/ContextMenu";
 import { WebIcon, ClaudeLogo, CodexLogo, JiraIcon } from "./components/icons";
@@ -25,6 +26,13 @@ const CHIP_COLORS: Record<string, string> = {
 };
 
 type View = string | "connections";
+
+/** Where a dragged agent would land: beside a pane, or as a tab. */
+interface Drop {
+  paneId: string;
+  side: DropSide | "center";
+  rect: DOMRect;
+}
 
 interface JiraTab {
   id: number;
@@ -88,7 +96,8 @@ export default function App() {
   const [dragging, setDragging] = useState(false);
   const [tabs, setTabs] = useState<Record<string, TermTab[]>>({});
   const [activeTab, setActiveTab] = useState<Record<string, string>>({});
-  const [splits, setSplits] = useState<Record<string, string[]>>({});
+  // Terminal pane layout per workspace (split tree; MAIN = tab-strip pane).
+  const [layouts, setLayouts] = useState<Record<string, PaneNode>>({});
   const [rightHidden, setRightHidden] = useState(() => localStorage.getItem("qualitylab.rightHidden") === "1");
   const [sideHidden, setSideHidden] = useState(() => localStorage.getItem("qualitylab.sideHidden") === "1");
   const toggleSide = () =>
@@ -130,7 +139,7 @@ export default function App() {
     }
   });
   const viewRef = useRef(view);
-  const [agentDrag, setAgentDrag] = useState<null | { cmd: "claude" | "codex"; x: number; y: number; zone: "tab" | "split" | null }>(null);
+  const [agentDrag, setAgentDrag] = useState<null | { cmd: "claude" | "codex"; x: number; y: number; drop: Drop | null }>(null);
   const panesRef = useRef<HTMLDivElement>(null);
   const termPaneRef = useRef<HTMLElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -331,7 +340,7 @@ export default function App() {
     (repo: string, id: string) => {
       send({ type: "term:kill", id });
       disposeTerm(id);
-      setSplits((prev) => ({ ...prev, [repo]: (prev[repo] ?? []).filter((s) => s !== id) }));
+      setLayouts((prev) => (prev[repo] ? { ...prev, [repo]: removeLeaf(prev[repo], id) } : prev));
       setTabs((prev) => {
         const remaining = (prev[repo] ?? []).filter((t) => t.id !== id);
         const next = { ...prev, [repo]: remaining };
@@ -379,12 +388,20 @@ export default function App() {
     [view, tabs, activeTab, send, addTab],
   );
 
-  const zoneAt = useCallback((clientX: number, clientY: number): "tab" | "split" | null => {
-    const rect = termPaneRef.current?.getBoundingClientRect();
-    if (!rect) return null;
-    if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return null;
-    return clientX > rect.right - rect.width * 0.32 ? "split" : "tab";
-  }, []);
+  const dropAt = useCallback(
+    (clientX: number, clientY: number): Drop | null => {
+      const pane = document
+        .elementsFromPoint(clientX, clientY)
+        .find((el): el is HTMLElement => el instanceof HTMLElement && !!el.dataset.paneId);
+      if (!pane) return null;
+      const rect = pane.getBoundingClientRect();
+      let side = sideAt(rect, clientX, clientY);
+      const panes = leafIds(layouts[view] ?? rootLayout()).length;
+      if (side !== "center" && panes >= MAX_PANES) side = "center";
+      return { paneId: pane.dataset.paneId!, side, rect };
+    },
+    [layouts, view],
+  );
 
   const startAgentDrag = useCallback(
     (cmd: "claude" | "codex") => (e: React.PointerEvent) => {
@@ -395,7 +412,7 @@ export default function App() {
       let started = false;
       const move = (ev: PointerEvent) => {
         if (!started && Math.hypot(ev.clientX - startX, ev.clientY - startY) > 6) started = true;
-        if (started) setAgentDrag({ cmd, x: ev.clientX, y: ev.clientY, zone: zoneAt(ev.clientX, ev.clientY) });
+        if (started) setAgentDrag({ cmd, x: ev.clientX, y: ev.clientY, drop: dropAt(ev.clientX, ev.clientY) });
       };
       const up = (ev: PointerEvent) => {
         window.removeEventListener("pointermove", move);
@@ -405,19 +422,19 @@ export default function App() {
           launchAgent(cmd); // plain click
           return;
         }
-        const zone = zoneAt(ev.clientX, ev.clientY);
-        const splitAllowed = (splits[view] ?? []).length < 2; // 3 slots max
-        if (zone === "tab" || (zone === "split" && !splitAllowed)) {
+        const drop = dropAt(ev.clientX, ev.clientY);
+        if (!drop) return;
+        if (drop.side === "center") {
           addTab(view, cmd, cmd, cmd);
-        } else if (zone === "split") {
-          const id = createTab(view, cmd, cmd, cmd);
-          setSplits((prev) => ({ ...prev, [view]: [...(prev[view] ?? []), id] }));
+          return;
         }
+        const id = createTab(view, cmd, cmd, cmd);
+        setLayouts((prev) => ({ ...prev, [view]: insertAt(prev[view] ?? rootLayout(), drop.paneId, drop.side as DropSide, id) }));
       };
       window.addEventListener("pointermove", move);
       window.addEventListener("pointerup", up);
     },
-    [view, zoneAt, launchAgent, addTab, createTab, splits],
+    [view, dropAt, launchAgent, addTab, createTab],
   );
 
   const onWorkspaceAdded = (key: string, repo: RepoInfo) => {
@@ -659,11 +676,82 @@ export default function App() {
   const panelTab = panelTabList.some(([k]) => k === panelTabs[view]) ? panelTabs[view] : panelTabList[0]?.[0];
   // Native browser views float above HTML: hide them under overlays.
   const overlayOpen = adding || !!menu || !!confirmDelete || !!agentDrag || dragging || !!jiraMenu || !!gitMenu;
-  const viewSplits = !isSpecialView ? splits[view] ?? [] : [];
-  const splitInfos = viewSplits
-    .map((id) => (tabs[view] ?? []).find((t) => t.id === id))
-    .filter(Boolean) as TermTab[];
-  const canSplit = viewSplits.length < 2;
+  const viewLayout = (!isSpecialView && layouts[view]) || rootLayout();
+  const viewSplits = leafIds(viewLayout).filter((id) => id !== MAIN);
+
+  // Drag a divider: resize the two panes either side of it.
+  const startPaneResize = (e: React.PointerEvent, path: number[], index: number, dir: "row" | "col", sizes: number[]) => {
+    e.preventDefault();
+    const container = (e.currentTarget as HTMLElement).parentElement;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    const total = sizes.reduce((a, b) => a + b, 0);
+    const span = dir === "row" ? rect.width : rect.height;
+    const start = dir === "row" ? e.clientX : e.clientY;
+    const pair = sizes[index] + sizes[index + 1];
+    const move = (ev: PointerEvent) => {
+      const delta = (((dir === "row" ? ev.clientX : ev.clientY) - start) / span) * total;
+      const a = Math.min(pair - pair * 0.12, Math.max(pair * 0.12, sizes[index] + delta));
+      const next = [...sizes];
+      next[index] = a;
+      next[index + 1] = pair - a;
+      setLayouts((prev) => ({ ...prev, [view]: setSizesAt(prev[view] ?? rootLayout(), path, next) }));
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.dispatchEvent(new Event("resize"));
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
+  const renderPane = (node: PaneNode, path: number[]): React.ReactNode => {
+    if (node.kind === "split") {
+      return (
+        <div className={`pane-split ${node.dir}`} key={path.join(".") || "root"}>
+          {node.children.map((child, i) => (
+            <Fragment key={child.kind === "leaf" ? child.id : `${path.join(".")}.${i}`}>
+              {i > 0 && (
+                <div
+                  className={`pane-divider ${node.dir}`}
+                  // Outer dividers stay grabbable where nested ones cross them.
+                  style={{ zIndex: 20 - path.length }}
+                  onPointerDown={(e) => startPaneResize(e, path, i - 1, node.dir, node.sizes)}
+                />
+              )}
+              <div className="pane-cell" style={{ flexGrow: node.sizes[i], flexBasis: 0 }}>
+                {renderPane(child, [...path, i])}
+              </div>
+            </Fragment>
+          ))}
+        </div>
+      );
+    }
+    if (node.id === MAIN) {
+      const t = (tabs[view] ?? []).find((x) => x.id === activeTab[view] && !viewSplits.includes(x.id));
+      return (
+        <div className="term-slot" data-pane-id={MAIN} key={MAIN}>
+          {t && <Term key={t.id} id={t.id} repo={view} bootCmd={t.bootCmd} connected={connected} send={send} subscribe={subscribe} />}
+        </div>
+      );
+    }
+    const t = (tabs[view] ?? []).find((x) => x.id === node.id);
+    if (!t) return null;
+    return (
+      <div className="term-slot split" data-pane-id={t.id} key={t.id}>
+        <div className="term-slot-head">
+          {t.agent === "claude" && <ClaudeLogo />}
+          {t.agent === "codex" && <CodexLogo />}
+          {t.title}
+          <button className="term-tab-close" title="Close this terminal" onClick={() => closeTab(view, t.id)}>
+            ×
+          </button>
+        </div>
+        <Term id={t.id} repo={view} bootCmd={t.bootCmd} connected={connected} send={send} subscribe={subscribe} />
+      </div>
+    );
+  };
 
   return (
     <div className="app">
@@ -967,46 +1055,9 @@ export default function App() {
                   </svg>
                 </button>
               </div>
-              <div className="term-slots">
-                {(tabs[view] ?? [])
-                  .filter((t) => t.id === activeTab[view] && !viewSplits.includes(t.id))
-                  .map((t) => (
-                    <div className="term-slot" key={t.id}>
-                      <Term id={t.id} repo={view} bootCmd={t.bootCmd} connected={connected} send={send} subscribe={subscribe} />
-                    </div>
-                  ))}
-                {splitInfos.map((t) => (
-                  <div className="term-slot-group" key={t.id}>
-                    <div className="term-split-divider" />
-                    <div className="term-slot split">
-                      <div className="term-slot-head">
-                        {t.agent === "claude" && <ClaudeLogo />}
-                        {t.agent === "codex" && <CodexLogo />}
-                        {t.title}
-                        <button
-                          className="term-tab-close"
-                          title="Close this terminal"
-                          onClick={() => closeTab(view, t.id)}
-                        >
-                          ×
-                        </button>
-                      </div>
-                      <Term id={t.id} repo={view} bootCmd={t.bootCmd} connected={connected} send={send} subscribe={subscribe} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {agentDrag && (
-                <div className="drop-zones">
-                  <div className={`drop-zone tab ${agentDrag.zone === "tab" || (agentDrag.zone === "split" && !canSplit) ? "over" : ""}`}>
-                    <span>Open as new tab</span>
-                  </div>
-                  {canSplit && (
-                    <div className={`drop-zone split ${agentDrag.zone === "split" ? "over" : ""}`}>
-                      <span>Split right</span>
-                    </div>
-                  )}
-                </div>
+              <div className="term-slots">{renderPane(viewLayout, [])}</div>
+              {agentDrag?.drop && termPaneRef.current && (
+                <DropPreview drop={agentDrag.drop} host={termPaneRef.current.getBoundingClientRect()} />
               )}
             </section>
             <div
@@ -1127,6 +1178,35 @@ export default function App() {
           {agentDrag.cmd === "claude" ? <ClaudeLogo /> : <CodexLogo />} {agentDrag.cmd}
         </div>
       )}
+    </div>
+  );
+}
+
+const SIDE_LABEL: Record<DropSide | "center", string> = {
+  left: "Split left",
+  right: "Split right",
+  top: "Split up",
+  bottom: "Split down",
+  center: "Open as new tab",
+};
+
+/** Highlights where a dragged agent will land, relative to the terminal area. */
+function DropPreview({ drop, host }: { drop: Drop; host: DOMRect }) {
+  const r = drop.rect;
+  const box = { left: r.left - host.left, top: r.top - host.top, width: r.width, height: r.height };
+  if (drop.side === "left") box.width /= 2;
+  if (drop.side === "right") {
+    box.left += r.width / 2;
+    box.width /= 2;
+  }
+  if (drop.side === "top") box.height /= 2;
+  if (drop.side === "bottom") {
+    box.top += r.height / 2;
+    box.height /= 2;
+  }
+  return (
+    <div className="drop-preview" style={box}>
+      <span>{SIDE_LABEL[drop.side]}</span>
     </div>
   );
 }
