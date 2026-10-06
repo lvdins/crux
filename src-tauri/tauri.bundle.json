@@ -5,7 +5,7 @@
   },
   "bundle": {
     "resources": {
-      "../build/qualitylab/": "qualitylab/"
+      "../build/qualitylab/": "ql-runtime/"
     },
     "macOS": {
       "minimumSystemVersion": "12.0"

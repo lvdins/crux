@@ -16,7 +16,7 @@ fn server_running() -> bool {
     TcpStream::connect_timeout(&"127.0.0.1:8787".parse().unwrap(), Duration::from_millis(300)).is_ok()
 }
 
-/// Packaged app: run the bundled Node + server from Resources/qualitylab.
+/// Packaged app: run the bundled Node + server from Resources/ql-runtime.
 /// Development: fall back to `npm run start -w server` in the repo.
 fn spawn_server(app: &tauri::App) -> Option<Child> {
     if server_running() {
@@ -27,7 +27,7 @@ fn spawn_server(app: &tauri::App) -> Option<Child> {
         .path()
         .resource_dir()
         .ok()
-        .map(|dir| dir.join("qualitylab"))
+        .map(|dir| dir.join("ql-runtime"))
         .filter(|root| root.join("node").exists() && root.join("server/dist/index.mjs").exists());
 
     let home = std::env::var("HOME").unwrap_or_else(|_| "/".into());
