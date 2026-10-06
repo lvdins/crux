@@ -172,6 +172,8 @@ export default function Browser({
   // Persist tabs; tell the agent bridge which view is the active one.
   useEffect(() => {
     localStorage.setItem(tabsKey, JSON.stringify({ tabs, active: active.id }));
+    // Let the sidebar list this browser's tabs (Jira shows them).
+    window.dispatchEvent(new CustomEvent("ql:browser-tabs", { detail: { wsKey, tabs, active: active.id } }));
     localStorage.setItem(`qualitylab.browserUrl.${wsKey}`, active.url);
     setActiveBrowserLabel(wsKey, label);
   }, [tabs, active.id, active.url, tabsKey, wsKey, label]);
@@ -306,6 +308,7 @@ export default function Browser({
     [],
   );
 
+  const closeTabRef = useRef<(id: number) => void>(() => {});
   const closeTab = (id: number) => {
     const l = labelFor(id);
     if (isTauri) void invoke("browser_close", { label: l }).catch(() => undefined);
@@ -321,6 +324,19 @@ export default function Browser({
     setTabs(rest);
     if (id === active.id) setActiveId(rest[Math.min(idx, rest.length - 1)].id);
   };
+  closeTabRef.current = closeTab;
+
+  // Sidebar asks to activate / close one of our tabs.
+  useEffect(() => {
+    const onCmd = (e: Event) => {
+      const d = (e as CustomEvent<{ wsKey: string; op: "activate" | "close"; id: number }>).detail;
+      if (d.wsKey !== wsKey) return;
+      if (d.op === "activate") setActiveId(d.id);
+      else closeTabRef.current(d.id);
+    };
+    window.addEventListener("ql:browser-cmd", onCmd);
+    return () => window.removeEventListener("ql:browser-cmd", onCmd);
+  }, [wsKey]);
 
   // External "open this" (Jira boards): reuse a tab already on that page.
   const lastNonce = useRef<number | null>(null);

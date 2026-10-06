@@ -10,7 +10,7 @@ import { runAgentCommand, browserLabel } from "./agentBrowser";
 import FeatureMap from "./components/FeatureMap";
 import AddWorkspace from "./components/AddWorkspace";
 import SetupChecklist from "./components/SetupChecklist";
-import JiraMenu, { loadJiraBoards, saveJiraBoards } from "./components/JiraMenu";
+import JiraMenu, { loadJiraBoards, saveJiraBoards, nameForJiraUrl } from "./components/JiraMenu";
 import ContextMenu, { MenuIcons } from "./components/ContextMenu";
 import { WebIcon, ClaudeLogo, CodexLogo, JiraIcon } from "./components/icons";
 
@@ -24,6 +24,23 @@ const CHIP_COLORS: Record<string, string> = {
 };
 
 type View = string | "connections";
+
+interface JiraTab {
+  id: number;
+  url: string;
+  title: string;
+}
+const JIRA_TABS_KEY = "qualitylab.browserTabs.jira";
+function readJiraTabs(): { tabs: JiraTab[]; active: number } {
+  try {
+    const saved = JSON.parse(localStorage.getItem(JIRA_TABS_KEY) ?? "null");
+    if (Array.isArray(saved?.tabs)) return { tabs: saved.tabs, active: saved.active ?? saved.tabs[0]?.id ?? 1 };
+  } catch {
+    /* corrupt */
+  }
+  return { tabs: [], active: 1 };
+}
+const jiraTabLabel = (id: number) => (id === 1 ? browserLabel("jira") : `${browserLabel("jira")}-t${id}`);
 
 /** Workspace colours offered in the right-click menu. */
 export const WORKSPACE_COLORS = ["#e5484d", "#f76b15", "#ffc53d", "#46a758", "#12a594", "#0090ff", "#5b5bd6", "#8e4ec6", "#d6409f"];
@@ -95,6 +112,9 @@ export default function App() {
   const [jiraMenu, setJiraMenu] = useState<DOMRect | null>(null);
   const [jiraBoards, setJiraBoards] = useState(loadJiraBoards);
   const [jiraOpen, setJiraOpen] = useState<{ url: string; nonce: number } | null>(null);
+  // Open Jira tabs, mirrored from the Jira browser (and localStorage when it isn't mounted).
+  const [jiraTabs, setJiraTabs] = useState<{ tabs: JiraTab[]; active: number }>(() => readJiraTabs());
+  const [jiraTabsHidden, setJiraTabsHidden] = useState(() => localStorage.getItem("qualitylab.jiraTabsHidden") === "1");
   const [menu, setMenu] = useState<null | { key: string; x: number; y: number }>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState("");
@@ -219,6 +239,15 @@ export default function App() {
     const t = setTimeout(() => setToast(""), 1600);
     return () => clearTimeout(t);
   }, [toast]);
+
+  useEffect(() => {
+    const onTabs = (e: Event) => {
+      const d = (e as CustomEvent<{ wsKey: string; tabs: JiraTab[]; active: number }>).detail;
+      if (d.wsKey === "jira") setJiraTabs({ tabs: d.tabs, active: d.active });
+    };
+    window.addEventListener("ql:browser-tabs", onTabs);
+    return () => window.removeEventListener("ql:browser-tabs", onTabs);
+  }, []);
 
   // ⌘S — toggle the sidebar; ⌘B — toggle the right panel. In the desktop app the native menu owns the
   // shortcut (it works even with a terminal/browser pane focused) and tells
@@ -527,6 +556,45 @@ export default function App() {
     if (viewRef.current && viewRef.current !== "connections" && viewRef.current !== "jira") hideRight(!rightHidden);
   };
 
+  const jiraTabName = (t: JiraTab) => {
+    if (t.title) return t.title.split(/ [-–|] /)[0] || t.title;
+    const board = jiraBoards.find((b) => b.url.replace(/\/+$/, "") === t.url.replace(/[?#].*$/, "").replace(/\/+$/, ""));
+    return board ? board.name : nameForJiraUrl(t.url);
+  };
+
+  const openJiraTab = (id: number) => {
+    if (view === "jira") {
+      window.dispatchEvent(new CustomEvent("ql:browser-cmd", { detail: { wsKey: "jira", op: "activate", id } }));
+    } else {
+      // Not mounted: pick the tab it will open on, then show Jira.
+      const saved = readJiraTabs();
+      localStorage.setItem(JIRA_TABS_KEY, JSON.stringify({ tabs: saved.tabs, active: id }));
+      setJiraTabs({ tabs: saved.tabs, active: id });
+      setView("jira");
+    }
+  };
+
+  const closeJiraTab = (id: number) => {
+    if (view === "jira") {
+      window.dispatchEvent(new CustomEvent("ql:browser-cmd", { detail: { wsKey: "jira", op: "close", id } }));
+      return;
+    }
+    const saved = readJiraTabs();
+    const tabs = saved.tabs.filter((t) => t.id !== id);
+    const active = saved.active === id ? tabs[0]?.id ?? 1 : saved.active;
+    localStorage.setItem(JIRA_TABS_KEY, JSON.stringify({ tabs, active }));
+    setJiraTabs({ tabs, active });
+    if ("__TAURI_INTERNALS__" in window) {
+      void import("@tauri-apps/api/core").then(({ invoke }) => invoke("browser_close", { label: jiraTabLabel(id) }).catch(() => undefined));
+    }
+  };
+
+  const toggleJiraTabs = () =>
+    setJiraTabsHidden((h) => {
+      localStorage.setItem("qualitylab.jiraTabsHidden", h ? "0" : "1");
+      return !h;
+    });
+
   const hideRight = (hidden: boolean) => {
     setRightHidden(hidden);
     localStorage.setItem("qualitylab.rightHidden", hidden ? "1" : "0");
@@ -702,7 +770,47 @@ export default function App() {
               >
                 <span className="avatar view-icon"><JiraIcon /></span>
                 <span className="side-label">Jira</span>
+                {jiraTabs.tabs.length > 0 && (
+                  <span
+                    className={`side-sub-toggle ${jiraTabsHidden ? "collapsed" : ""}`}
+                    role="button"
+                    title={jiraTabsHidden ? "Show open Jira tabs" : "Hide open Jira tabs"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleJiraTabs();
+                    }}
+                  >
+                    <small>{jiraTabs.tabs.length}</small>
+                    <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M2.5 3.75 5 6.25l2.5-2.5" />
+                    </svg>
+                  </span>
+                )}
               </button>
+              <div className={`side-sub ${jiraTabsHidden || jiraTabs.tabs.length === 0 ? "collapsed" : ""}`}>
+                <div className="side-sub-inner">
+                  {jiraTabs.tabs.map((t) => (
+                    <div
+                      key={t.id}
+                      className={`side-sub-item ${view === "jira" && jiraTabs.active === t.id ? "active" : ""}`}
+                      onClick={() => openJiraTab(t.id)}
+                    >
+                      <span className="side-sub-dot" />
+                      <span className="side-sub-label">{jiraTabName(t)}</span>
+                      <button
+                        className="side-remove"
+                        title="Close tab"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          closeJiraTab(t.id);
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
           <div className="side-footer">

@@ -1162,3 +1162,26 @@ button.primary:hover:not(:disabled) { background: var(--accent-ink); }
 .avatar.view-icon { color: var(--ink-soft); }
 .avatar.view-icon svg { width: 11px; height: 11px; }
 .side-item.active .avatar.view-icon { color: var(--ink); }
+
+/* open Jira tabs under the Jira row */
+.side-sub-toggle {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 4px; padding: 2px 5px; border-radius: 5px;
+  color: var(--ink-faint);
+}
+.side-sub-toggle small { font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.side-sub-toggle:hover { color: var(--ink); background: var(--raise); }
+.side-sub-toggle svg { transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1); }
+.side-sub-toggle.collapsed svg { transform: rotate(-90deg); }
+.side-sub { display: grid; grid-template-rows: 1fr; transition: grid-template-rows 0.3s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.2s ease; }
+.side-sub.collapsed { grid-template-rows: 0fr; opacity: 0; pointer-events: none; }
+.side-sub-inner { min-height: 0; overflow: hidden; }
+.side-sub-item {
+  position: relative; display: flex; align-items: center; gap: 8px; margin-left: 18px; padding: 4px 4px 4px 12px;
+  border-left: 1px solid var(--line); color: var(--ink-faint); font-size: 12.5px; cursor: default; border-radius: 0 6px 6px 0;
+}
+.side-sub-item:hover { color: var(--ink-soft); background: var(--surface-2); }
+.side-sub-item.active { color: var(--ink); background: var(--raise); }
+.side-sub-dot { width: 6px; height: 6px; border-radius: 2px; background: #4c9aff; flex-shrink: 0; opacity: 0.8; }
+.side-sub-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-sub-item .side-remove { margin-right: 0; }
+.side-sub-item:hover .side-remove { opacity: 1; }
