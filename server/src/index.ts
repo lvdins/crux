@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
 import { config, userConfigPath, addWorkspace, updateWorkspace, removeWorkspace, detectKind, expandHome } from "./config.js";
-import { attachTerm, termInput, termResize, killTerm, detachAll, killAllTerms, openLog } from "./term.js";
+import { attachTerm, termInput, termResize, killTerm, detachAll, killAllTerms, openLog, termProcess } from "./term.js";
 import { startPreview, stopPreview, stopAllPreviews, previewStatus } from "./preview.js";
 import { buildTree, sharedEndpoints } from "./tree.js";
 import { installAgentSetup } from "./agent-setup.js";
@@ -174,6 +174,10 @@ app.get("/api/fs/list", (req, res) => {
     });
   const kind = detectKind(dir);
   res.json({ path: dir, parent: path.dirname(dir) === dir ? null : path.dirname(dir), home: os.homedir(), kind, dirs });
+});
+
+app.get("/api/term/:id/process", (req, res) => {
+  res.json({ process: termProcess(req.params.id) });
 });
 
 app.get("/api/debug/opens", (_req, res) => {

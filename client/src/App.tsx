@@ -10,6 +10,7 @@ import { runAgentCommand, browserLabel } from "./agentBrowser";
 import FeatureMap from "./components/FeatureMap";
 import AddWorkspace from "./components/AddWorkspace";
 import SetupChecklist from "./components/SetupChecklist";
+import GitMenu, { type GitAction } from "./components/GitMenu";
 import JiraMenu, { loadJiraBoards, saveJiraBoards, nameForJiraUrl } from "./components/JiraMenu";
 import ContextMenu, { MenuIcons } from "./components/ContextMenu";
 import { WebIcon, ClaudeLogo, CodexLogo, JiraIcon } from "./components/icons";
@@ -110,6 +111,8 @@ export default function App() {
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [jiraMenu, setJiraMenu] = useState<DOMRect | null>(null);
+  const [gitMenu, setGitMenu] = useState<null | { anchor: DOMRect; mode: "agent" | "shell"; tabId: string }>(null);
+  const [branches, setBranches] = useState<Record<string, string | null>>({});
   const [jiraBoards, setJiraBoards] = useState(loadJiraBoards);
   const [jiraOpen, setJiraOpen] = useState<{ url: string; nonce: number } | null>(null);
   // Open Jira tabs, mirrored from the Jira browser (and localStorage when it isn't mounted).
@@ -595,6 +598,44 @@ export default function App() {
       return !h;
     });
 
+  const refreshBranch = useCallback((key: string) => {
+    api(`/api/workspaces/${key}/branch`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setBranches((b) => ({ ...b, [key]: d?.branch ?? null })))
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (view && view !== "connections" && view !== "jira") refreshBranch(view);
+  }, [view, refreshBranch]);
+
+  // Git button: is the active tab running an agent or a plain shell?
+  const openGitMenu = async (anchor: DOMRect) => {
+    const tabId = activeTab[view];
+    const tab = (tabs[view] ?? []).find((t) => t.id === tabId);
+    if (!tab) return;
+    let mode: "agent" | "shell" = tab.agent ? "agent" : "shell";
+    try {
+      const r = await api(`/api/term/${encodeURIComponent(tab.id)}/process`);
+      if (r.ok) {
+        const proc = String((await r.json()).process ?? "");
+        if (proc) mode = /claude|codex/i.test(proc) ? "agent" : "shell";
+      }
+    } catch {
+      /* older server: fall back to how the tab was opened */
+    }
+    refreshBranch(view);
+    setGitMenu({ anchor, mode, tabId: tab.id });
+  };
+
+  // Type the action into the terminal, then press Enter separately (TUIs
+  // like Claude Code treat text+CR in one burst as a paste).
+  const runGitAction = (action: GitAction, mode: "agent" | "shell", tabId: string) => {
+    const text = mode === "agent" ? action.agent : action.shell;
+    send({ type: "term:input", id: tabId, data: text });
+    if (mode === "agent" || !action.shellNoEnter) setTimeout(() => send({ type: "term:input", id: tabId, data: "\r" }), 150);
+  };
+
   const hideRight = (hidden: boolean) => {
     setRightHidden(hidden);
     localStorage.setItem("qualitylab.rightHidden", hidden ? "1" : "0");
@@ -617,7 +658,7 @@ export default function App() {
     : [];
   const panelTab = panelTabList.some(([k]) => k === panelTabs[view]) ? panelTabs[view] : panelTabList[0]?.[0];
   // Native browser views float above HTML: hide them under overlays.
-  const overlayOpen = adding || !!menu || !!confirmDelete || !!agentDrag || dragging || !!jiraMenu;
+  const overlayOpen = adding || !!menu || !!confirmDelete || !!agentDrag || dragging || !!jiraMenu || !!gitMenu;
   const viewSplits = !isSpecialView ? splits[view] ?? [] : [];
   const splitInfos = viewSplits
     .map((id) => (tabs[view] ?? []).find((t) => t.id === id))
@@ -904,6 +945,25 @@ export default function App() {
                 <button className="term-tab-add" title="New terminal" onClick={() => addTab(view)}>
                   +
                 </button>
+                <button
+                  className={`git-btn ${gitMenu ? "on" : ""}`}
+                  title="Git actions for the active terminal"
+                  onClick={(e) => {
+                    if (gitMenu) return setGitMenu(null);
+                    void openGitMenu(e.currentTarget.getBoundingClientRect());
+                  }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+                    <circle cx="4.5" cy="3.5" r="1.5" />
+                    <circle cx="4.5" cy="12.5" r="1.5" />
+                    <circle cx="11.5" cy="5" r="1.5" />
+                    <path d="M4.5 5v6M11.5 6.5c0 3-7 2-7 4.5" />
+                  </svg>
+                  <span className="git-btn-branch">{branches[view] ?? "Git"}</span>
+                  <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M2.5 3.75 5 6.25l2.5-2.5" />
+                  </svg>
+                </button>
               </div>
               <div className="term-slots">
                 {(tabs[view] ?? [])
@@ -1034,6 +1094,15 @@ export default function App() {
         </div>
       )}
       {toast && <div className="toast">{toast}</div>}
+      {gitMenu && (
+        <GitMenu
+          anchor={gitMenu.anchor}
+          mode={gitMenu.mode}
+          branch={branches[view] ?? null}
+          onPick={(a) => runGitAction(a, gitMenu.mode, gitMenu.tabId)}
+          onClose={() => setGitMenu(null)}
+        />
+      )}
       {jiraMenu && (
         <JiraMenu
           anchor={jiraMenu}

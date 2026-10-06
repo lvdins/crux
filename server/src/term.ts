@@ -81,6 +81,12 @@ export function attachTerm(
   }
 }
 
+/** Foreground program of a terminal (e.g. "zsh", "claude", "codex"). */
+export function termProcess(id: string): string | null {
+  const entry = terms.get(id);
+  return entry ? entry.pty.process : null;
+}
+
 export function termInput(id: string, data: string): void {
   terms.get(id)?.pty.write(data);
 }
