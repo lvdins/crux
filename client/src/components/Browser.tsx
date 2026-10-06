@@ -130,6 +130,7 @@ export default function Browser({
   const [devtoolsOpen, setDevtoolsOpen] = useState(false);
   const [netOpen, setNetOpen] = useState(() => localStorage.getItem("qualitylab.netOpen") === "1");
   const [netHeight, setNetHeight] = useState(() => Number(localStorage.getItem("qualitylab.netHeight")) || 220);
+  const [netDragging, setNetDragging] = useState(false);
   const toggleNet = () =>
     setNetOpen((o) => {
       localStorage.setItem("qualitylab.netOpen", o ? "0" : "1");
@@ -139,10 +140,12 @@ export default function Browser({
     e.preventDefault();
     const startY = e.clientY;
     const startH = netHeight;
+    setNetDragging(true);
     const move = (ev: PointerEvent) => setNetHeight(Math.min(window.innerHeight * 0.7, Math.max(110, startH + (startY - ev.clientY))));
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      setNetDragging(false);
       setNetHeight((h) => {
         localStorage.setItem("qualitylab.netHeight", String(Math.round(h)));
         return h;
@@ -485,8 +488,8 @@ export default function Browser({
       </div>
       <div className="browser-handle">
         <button onClick={toggleChrome} title={chromeHidden ? "Show address bar" : "Hide address bar"} className={chromeHidden ? "collapsed" : ""}>
-          <svg width="14" height="10" viewBox="0 0 14 10" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3.5 4.5 7 1.5l3.5 3M3.5 8.5 7 5.5l3.5 3" />
+          <svg width="12" height="8" viewBox="0 0 12 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 5.5 6 2.5l3 3" />
           </svg>
         </button>
       </div>
@@ -533,12 +536,13 @@ export default function Browser({
         {!isTauri && <iframe key={`${active.id}-${frameKey}`} src={active.url} title="Browser" />}
         {isTauri && !visible && <div className="browser-paused">Browser hidden while an overlay is open</div>}
       </div>
-      {netOpen && (
+      {/* Always mounted so opening / closing can slide; polls only when open. */}
+      <div className={`net-dock ${netOpen ? "open" : ""} ${netDragging ? "dragging" : ""}`} style={{ height: netOpen ? netHeight + 5 : 0 }}>
         <>
           <div className="net-resize" onPointerDown={startNetResize} title="Drag to resize" />
           <div className="net-wrap" style={{ height: netHeight }}>
             {isTauri ? (
-              <NetworkPanel label={label} active={visible} />
+              <NetworkPanel label={label} active={visible && netOpen} />
             ) : (
               <div className="net-empty">The network checker needs the desktop app.</div>
             )}
@@ -549,7 +553,7 @@ export default function Browser({
             )}
           </div>
         </>
-      )}
+      </div>
     </div>
   );
 }

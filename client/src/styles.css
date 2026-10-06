@@ -1119,3 +1119,12 @@ button.primary:hover:not(:disabled) { background: var(--accent-ink); }
   flex: 1; min-height: 0; margin: 0; padding: 8px 10px; overflow: auto; font-family: var(--mono); font-size: 11.5px;
   color: var(--ink); white-space: pre-wrap; word-break: break-word;
 }
+
+/* network dock slides open / closed */
+.net-dock {
+  flex-shrink: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-start;
+  transition: height 0.34s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.25s ease;
+  opacity: 0;
+}
+.net-dock.open { opacity: 1; }
+.net-dock.dragging { transition: none; }

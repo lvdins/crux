@@ -35,10 +35,16 @@ pub async fn browser_show(
 ) -> Result<(), String> {
     let (w, h) = (width.max(1.0), height.max(1.0));
     if let Some(view) = app.get_webview(&label) {
-        view.set_position(LogicalPosition::new(x, y)).map_err(|e| e.to_string())?;
-        view.set_size(LogicalSize::new(w, h)).map_err(|e| e.to_string())?;
+        // macOS: one fire-and-forget frame update per call (this runs every
+        // animation frame while panels slide); elsewhere use Tauri's API.
         #[cfg(target_os = "macos")]
         mac::place(&app, &view, x, y, w, h, viewport_height)?;
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = viewport_height;
+            view.set_position(LogicalPosition::new(x, y)).map_err(|e| e.to_string())?;
+            view.set_size(LogicalSize::new(w, h)).map_err(|e| e.to_string())?;
+        }
         view.show().map_err(|e| e.to_string())?;
         return Ok(());
     }
@@ -158,6 +164,34 @@ mod mac {
     /// coordinates. wry flips y against its parent's height, which on macOS
     /// can include the title bar, so the view lands too high. Instead,
     /// measure the main webview in window coordinates and convert.
+    // The main UI's WKWebView lives as long as the app; remember it so each
+    // placement is a single main-thread hop with no waiting.
+    static MAIN_WEBVIEW: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+    fn main_webview(app: &tauri::AppHandle) -> Result<usize, String> {
+        use std::sync::atomic::Ordering;
+        use tauri::Manager;
+        let cached = MAIN_WEBVIEW.load(Ordering::Relaxed);
+        if cached != 0 {
+            return Ok(cached);
+        }
+        let main = app.get_webview("main").ok_or("main webview missing")?;
+        let (tx, rx) = channel::<usize>();
+        main.with_webview(move |pv| {
+            let _ = tx.send(pv.inner() as usize);
+        })
+        .map_err(|e| e.to_string())?;
+        let ptr = rx
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .map_err(|_| "timed out finding the main view".to_string())?;
+        MAIN_WEBVIEW.store(ptr, Ordering::Relaxed);
+        Ok(ptr)
+    }
+
+    /// Put a child view exactly over a box given in the main UI's CSS
+    /// coordinates. wry flips y against its parent's height (which on macOS
+    /// can include the title bar), so measure the main webview in window
+    /// coordinates and convert instead.
     pub fn place(
         app: &tauri::AppHandle,
         child: &tauri::Webview,
@@ -167,19 +201,11 @@ mod mac {
         h: f64,
         viewport_height: Option<f64>,
     ) -> Result<(), String> {
-        use tauri::Manager;
-        let main = app.get_webview("main").ok_or("main webview missing")?;
-        let (tx, rx) = channel::<NSRect>();
-        main.with_webview(move |pv| unsafe {
-            let wk: &WKWebView = &*(pv.inner() as *const WKWebView);
-            let _ = tx.send(wk.convertRect_toView(wk.bounds(), None));
-        })
-        .map_err(|e| e.to_string())?;
-        let main_rect = rx
-            .recv_timeout(std::time::Duration::from_secs(2))
-            .map_err(|_| "timed out measuring the main view".to_string())?;
+        let main_ptr = main_webview(app)?;
         child
             .with_webview(move |pv| unsafe {
+                let main: &WKWebView = &*(main_ptr as *const WKWebView);
+                let main_rect = main.convertRect_toView(main.bounds(), None);
                 let wk: &WKWebView = &*(pv.inner() as *const WKWebView);
                 // Window coordinates have their origin at the bottom-left. The
                 // main view can extend under the title bar with its page
