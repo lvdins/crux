@@ -654,6 +654,9 @@ export default function App() {
                   {r.pinned && <span className="side-pin" title="Pinned">{MenuIcons.pin}</span>}
                   {unread.has(key) && <span className="unread-dot" title="New activity" />}
                 </button>
+                <button className="side-remove" title="Remove workspace (files stay on disk)" onClick={() => setConfirmRemove(key)}>
+                  ×
+                </button>
               </div>
             ),
           )}

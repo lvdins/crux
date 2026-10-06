@@ -1142,3 +1142,6 @@ button.primary:hover:not(:disabled) { background: var(--accent-ink); }
   background: linear-gradient(135deg, transparent 45%, var(--fail) 45%, var(--fail) 55%, transparent 55%), var(--surface-2);
 }
 .avatar { transition: background 0.2s ease, color 0.2s ease; }
+
+/* sidebar rows use the normal arrow cursor (no hand) */
+.sidebar .side-item, .sidebar .side-item-main { cursor: default; }
