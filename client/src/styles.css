@@ -1296,4 +1296,31 @@ button.primary:hover:not(:disabled) { background: var(--accent-ink); }
 .side-item > .ws-chat-toggle, .side-item > .side-add-chat, .side-item > .side-remove { display: none; }
 .side-item:hover > .ws-chat-toggle, .side-item:hover > .side-add-chat, .side-item:hover > .side-remove { display: inline-flex; align-items: center; justify-content: center; }
 .side-item > .ws-chat-toggle.collapsed { display: inline-flex; }
+/* small chat dialogs: name a new chat, confirm closing one */
+.chat-modal { width: min(380px, 100%); padding: 18px; gap: 16px; }
+.chat-modal-head { display: flex; align-items: center; gap: 12px; }
+.chat-modal-icon {
+  width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--surface-2); border: 1px solid var(--line); color: var(--ink-soft);
+}
+.chat-modal-icon svg { width: 16px; height: 16px; }
+.chat-modal-icon.claude { color: #d97757; background: rgba(217, 119, 87, 0.12); border-color: rgba(217, 119, 87, 0.3); }
+.chat-modal-icon.danger { color: #f0607a; background: rgba(240, 96, 122, 0.12); border-color: rgba(240, 96, 122, 0.3); }
+.chat-modal-title { font-weight: 600; font-size: 14px; color: var(--ink); overflow-wrap: anywhere; }
+.chat-modal-sub { font-size: 12px; color: var(--ink-faint); margin-top: 2px; }
+.chat-name-input {
+  width: 100%; box-sizing: border-box; background: var(--bg); border: 1px solid var(--line); color: var(--ink);
+  border-radius: 8px; padding: 9px 11px; font: inherit; font-size: 13.5px;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.chat-name-input::placeholder { color: var(--ink-faint); }
+.chat-name-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.chat-modal-foot { display: flex; align-items: center; gap: 8px; }
+.chat-modal-hint { flex: 1; font-size: 11px; color: var(--ink-faint); }
+.chat-modal-hint kbd {
+  font-family: var(--mono); font-size: 10.5px; padding: 0 4px; border-radius: 4px;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--ink-soft);
+}
+.modal.chat-modal .chat-modal-foot button { font-size: 12.5px; padding: 6px 13px; border-radius: 7px; }
 .brand-dev { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; color: var(--warn); border: 1px solid rgba(217, 160, 91, 0.45); border-radius: 5px; padding: 1px 5px; }

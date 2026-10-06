@@ -138,14 +138,12 @@ export default function App() {
   const [jiraMenu, setJiraMenu] = useState<DOMRect | null>(null);
   // "+" next to a workspace: pick Claude / Codex / terminal for a new chat.
   const [chatMenu, setChatMenu] = useState<null | { key: string; x: number; y: number }>(null);
-  // Workspaces whose chat list is folded in the sidebar (remembered).
-  const [chatsFolded, setChatsFolded] = useState<Set<string>>(() => {
-    try {
-      return new Set(JSON.parse(localStorage.getItem("crux.chatsFolded") ?? "[]"));
-    } catch {
-      return new Set();
-    }
-  });
+  // Name prompt shown before a new chat is created.
+  const [nameChat, setNameChat] = useState<null | { key: string; kind: "claude" | "codex" | "shell"; name: string }>(null);
+  // "Are you sure?" before a chat / terminal is closed.
+  const [confirmClose, setConfirmClose] = useState<null | { key: string; id: string; name: string }>(null);
+  // Workspaces whose chat list is unfolded in the sidebar; all start folded.
+  const [chatsOpen, setChatsOpen] = useState<Set<string>>(() => new Set());
   const [gitMenu, setGitMenu] = useState<null | { anchor: DOMRect; mode: "agent" | "shell"; tabId: string; target: string }>(null);
   const [branches, setBranches] = useState<Record<string, string | null>>({});
   // Last terminal the user clicked / typed in, per workspace (Git targets it).
@@ -720,12 +718,12 @@ export default function App() {
     if (mode === "agent" || !action.shellNoEnter) setTimeout(() => send({ type: "term:input", id: tabId, data: "\r" }), 150);
   };
 
-  const toggleChatsFolded = (key: string) =>
-    setChatsFolded((prev) => {
+  const setChatsShown = (key: string, shown: boolean) =>
+    setChatsOpen((prev) => {
+      if (prev.has(key) === shown) return prev;
       const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      localStorage.setItem("crux.chatsFolded", JSON.stringify([...next]));
+      if (shown) next.add(key);
+      else next.delete(key);
       return next;
     });
 
@@ -743,11 +741,20 @@ export default function App() {
     setFocusedTerm((prev) => ({ ...prev, [key]: id }));
   };
 
-  const newChat = (key: string, kind: "claude" | "codex" | "shell") => {
+  const newChat = (key: string, kind: "claude" | "codex" | "shell", name: string) => {
     setView(key);
-    if (chatsFolded.has(key)) toggleChatsFolded(key);
-    if (kind === "shell") addTab(key);
-    else addTab(key, kind, kind, kind);
+    setChatsShown(key, true);
+    const title = name.trim() || (kind === "shell" ? "shell" : kind);
+    if (kind === "shell") addTab(key, title);
+    else addTab(key, title, kind, kind);
+  };
+
+  // Suggested name: "claude", "claude 2", … whichever is free.
+  const askChatName = (key: string, kind: "claude" | "codex" | "shell") => {
+    const taken = new Set(chatNames(tabs[key] ?? []));
+    let name = kind;
+    for (let n = 2; taken.has(name); n++) name = `${kind} ${n}`;
+    setNameChat({ key, kind, name });
   };
 
   // "claude", "claude 2", … so repeated chats are tellable apart.
@@ -782,7 +789,7 @@ export default function App() {
     : [];
   const panelTab = panelTabList.some(([k]) => k === panelTabs[view]) ? panelTabs[view] : panelTabList[0]?.[0];
   // Native browser views float above HTML: hide them under overlays.
-  const overlayOpen = adding || !!menu || !!confirmDelete || !!agentDrag || dragging || !!jiraMenu || !!gitMenu || !!chatMenu;
+  const overlayOpen = adding || !!menu || !!confirmDelete || !!agentDrag || dragging || !!jiraMenu || !!gitMenu || !!chatMenu || !!nameChat || !!confirmClose;
   const viewLayout = (!isSpecialView && layouts[view]) || rootLayout();
   const viewSplits = splitTabIds(viewLayout);
 
@@ -868,7 +875,7 @@ export default function App() {
                   title="Close this terminal"
                   onClick={(e) => {
                     e.stopPropagation();
-                    closeTab(view, t.id);
+                    setConfirmClose({ key: view, id: t.id, name: t.title });
                   }}
                 >
                   ×
@@ -981,6 +988,9 @@ export default function App() {
                 <button
                   className="side-item-main"
                   onClick={() => {
+                    // Opens the workspace with its chats unfolded; clicking
+                    // the open workspace again folds / unfolds them.
+                    setChatsShown(key, view === key ? !chatsOpen.has(key) : true);
                     setView(key);
                                     setUnread((u) => {
                       if (!u.has(key)) return u;
@@ -999,10 +1009,10 @@ export default function App() {
                 </button>
                 {(tabs[key] ?? []).length > 0 && (
                   <span
-                    className={`side-sub-toggle ws-chat-toggle ${chatsFolded.has(key) ? "collapsed" : ""}`}
+                    className={`side-sub-toggle ws-chat-toggle ${chatsOpen.has(key) ? "" : "collapsed"}`}
                     role="button"
-                    title={chatsFolded.has(key) ? "Show chats" : "Hide chats"}
-                    onClick={() => toggleChatsFolded(key)}
+                    title={chatsOpen.has(key) ? "Hide chats" : "Show chats"}
+                    onClick={() => setChatsShown(key, !chatsOpen.has(key))}
                   >
                     <small>{(tabs[key] ?? []).length}</small>
                     <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -1024,7 +1034,7 @@ export default function App() {
                   ×
                 </button>
               </div>
-              <div className={`side-sub ws-chats ${chatsFolded.has(key) || !(tabs[key] ?? []).length ? "collapsed" : ""}`}>
+              <div className={`side-sub ws-chats ${!chatsOpen.has(key) || !(tabs[key] ?? []).length ? "collapsed" : ""}`}>
                 <div className="side-sub-inner">
                   {(() => {
                     const list = tabs[key] ?? [];
@@ -1046,7 +1056,7 @@ export default function App() {
                           title="Close chat"
                           onClick={(e) => {
                             e.stopPropagation();
-                            closeTab(key, t.id);
+                            setConfirmClose({ key, id: t.id, name: names[i] });
                           }}
                         >
                           ×
@@ -1218,7 +1228,7 @@ export default function App() {
                           title="Close terminal"
                           onClick={(e) => {
                             e.stopPropagation();
-                            closeTab(view, t.id);
+                            setConfirmClose({ key: view, id: t.id, name: t.title });
                           }}
                         >
                           ×
@@ -1349,12 +1359,86 @@ export default function App() {
           onClose={() => setChatMenu(null)}
           groups={[
             [
-              { label: "New Claude chat", icon: <ClaudeLogo />, onSelect: () => newChat(chatMenu.key, "claude") },
-              { label: "New Codex chat", icon: <CodexLogo />, onSelect: () => newChat(chatMenu.key, "codex") },
-              { label: "New terminal", icon: <TerminalIcon />, onSelect: () => newChat(chatMenu.key, "shell") },
+              { label: "New Claude chat", icon: <ClaudeLogo />, onSelect: () => askChatName(chatMenu.key, "claude") },
+              { label: "New Codex chat", icon: <CodexLogo />, onSelect: () => askChatName(chatMenu.key, "codex") },
+              { label: "New terminal", icon: <TerminalIcon />, onSelect: () => askChatName(chatMenu.key, "shell") },
             ],
           ]}
         />
+      )}
+      {nameChat && config.repos[nameChat.key] && (
+        <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && setNameChat(null)}>
+          <form
+            className="modal chat-modal"
+            role="dialog"
+            onSubmit={(e) => {
+              e.preventDefault();
+              newChat(nameChat.key, nameChat.kind, nameChat.name);
+              setNameChat(null);
+            }}
+          >
+            <div className="chat-modal-head">
+              <span className={`chat-modal-icon ${nameChat.kind}`}>
+                {nameChat.kind === "claude" ? <ClaudeLogo /> : nameChat.kind === "codex" ? <CodexLogo /> : <TerminalIcon />}
+              </span>
+              <div>
+                <div className="chat-modal-title">
+                  New {nameChat.kind === "shell" ? "terminal" : `${nameChat.kind === "claude" ? "Claude" : "Codex"} chat`}
+                </div>
+                <div className="chat-modal-sub">in {config.repos[nameChat.key].label}</div>
+              </div>
+            </div>
+            <input
+              className="chat-name-input"
+              value={nameChat.name}
+              placeholder="Name this chat"
+              spellCheck={false}
+              autoFocus
+              onFocus={(e) => e.currentTarget.select()}
+              onChange={(e) => setNameChat({ ...nameChat, name: e.target.value })}
+              onKeyDown={(e) => e.key === "Escape" && setNameChat(null)}
+            />
+            <div className="chat-modal-foot">
+              <span className="chat-modal-hint">
+                <kbd>↵</kbd> create · <kbd>esc</kbd> cancel
+              </span>
+              <button type="button" onClick={() => setNameChat(null)}>Cancel</button>
+              <button type="submit" className="primary">Create</button>
+            </div>
+          </form>
+        </div>
+      )}
+      {confirmClose && (
+        <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && setConfirmClose(null)}>
+          <div
+            className="modal chat-modal"
+            role="alertdialog"
+            onKeyDown={(e) => e.key === "Escape" && setConfirmClose(null)}
+          >
+            <div className="chat-modal-head">
+              <span className="chat-modal-icon danger">{MenuIcons.trash}</span>
+              <div>
+                <div className="chat-modal-title">Close “{confirmClose.name}”?</div>
+                <div className="chat-modal-sub">
+                  Its session{config.repos[confirmClose.key] ? ` in ${config.repos[confirmClose.key].label}` : ""} will be stopped.
+                </div>
+              </div>
+            </div>
+            <div className="chat-modal-foot">
+              <span className="chat-modal-hint" />
+              <button onClick={() => setConfirmClose(null)} autoFocus>Cancel</button>
+              <button
+                className="danger-solid"
+                onClick={() => {
+                  closeTab(confirmClose.key, confirmClose.id);
+                  setConfirmClose(null);
+                }}
+              >
+                Close chat
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {gitMenu && (
         <GitMenu
