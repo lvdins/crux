@@ -3,6 +3,7 @@ export interface RepoInfo {
   kind: string;
   path: string;
   pinned?: boolean;
+  color?: string;
 }
 
 export interface AppConfig {

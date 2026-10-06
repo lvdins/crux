@@ -25,6 +25,16 @@ const CHIP_COLORS: Record<string, string> = {
 
 type View = string | "connections";
 
+/** Workspace colours offered in the right-click menu. */
+export const WORKSPACE_COLORS = ["#e5484d", "#f76b15", "#ffc53d", "#46a758", "#12a594", "#0090ff", "#5b5bd6", "#8e4ec6", "#d6409f"];
+
+/** Coloured workspaces get a filled badge; others tint the letter by type. */
+function avatarStyle(r: { kind: string; color?: string }): React.CSSProperties {
+  if (!r.color) return { color: CHIP_COLORS[r.kind] ?? "var(--ink-soft)" };
+  const light = ["#ffc53d"].includes(r.color.toLowerCase());
+  return { background: r.color, borderColor: r.color, color: light ? "#1b1c20" : "#fff" };
+}
+
 interface TermTab {
   id: string;
   title: string;
@@ -430,8 +440,16 @@ export default function App() {
     setToast(`Copied ${what}`);
   };
 
-  const patchWs = (key: string, patch: Partial<RepoInfo>) => {
-    setConfig((c) => (c ? { ...c, repos: { ...c.repos, [key]: { ...c.repos[key], ...patch } } } : c));
+  // color: null clears the colour (the server drops the field).
+  const patchWs = (key: string, patch: Partial<Omit<RepoInfo, "color">> & { color?: string | null }) => {
+    setConfig((c) => {
+      if (!c) return c;
+      const { color, ...rest } = patch;
+      const next: RepoInfo = { ...c.repos[key], ...rest };
+      if (color === null) delete next.color;
+      else if (color !== undefined) next.color = color;
+      return { ...c, repos: { ...c.repos, [key]: next } };
+    });
     return api(`/api/workspaces/${key}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -589,7 +607,7 @@ export default function App() {
               </div>
             ) : renaming === key ? (
               <div key={key} className="side-item active renaming">
-                <span className="avatar" style={{ color: CHIP_COLORS[r.kind] ?? "var(--ink-soft)" }}>
+                <span className="avatar" style={avatarStyle(r)}>
                   {r.label[0]?.toUpperCase()}
                 </span>
                 <input
@@ -612,8 +630,6 @@ export default function App() {
               <div
                 key={key}
                 className={`side-item ${view === key ? "active" : ""}`}
-                title={`${r.path}\nDouble-click to rename`}
-                onDoubleClick={() => setRenaming(key)}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   setMenu({ key, x: e.clientX, y: e.clientY });
@@ -631,20 +647,12 @@ export default function App() {
                     });
                   }}
                 >
-                  <span className="avatar" style={{ color: CHIP_COLORS[r.kind] ?? "var(--ink-soft)" }}>
+                  <span className="avatar" style={avatarStyle(r)}>
                     {r.label[0]?.toUpperCase()}
                   </span>
                   <span className="side-label">{r.label}</span>
                   {r.pinned && <span className="side-pin" title="Pinned">{MenuIcons.pin}</span>}
                   {unread.has(key) && <span className="unread-dot" title="New activity" />}
-                </button>
-                <button className="side-remove side-rename-btn" title="Rename" onClick={() => setRenaming(key)}>
-                  <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <path d="M11 2.5l2.5 2.5L5.5 13H3v-2.5z" />
-                  </svg>
-                </button>
-                <button className="side-remove" title="Remove workspace (files stay on disk)" onClick={() => setConfirmRemove(key)}>
-                  ×
                 </button>
               </div>
             ),
@@ -844,7 +852,36 @@ export default function App() {
         )}
       </div>
       {menu && config.repos[menu.key] && (
-        <ContextMenu x={menu.x} y={menu.y} groups={menuGroups(menu.key)} onClose={() => setMenu(null)} />
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          groups={menuGroups(menu.key)}
+          onClose={() => setMenu(null)}
+          top={
+            <div className="ctx-swatches" role="group" aria-label="Workspace colour">
+              <button
+                className={`ctx-swatch none ${!config.repos[menu.key].color ? "on" : ""}`}
+                title="No colour"
+                onClick={() => {
+                  void patchWs(menu.key, { color: null });
+                  setMenu(null);
+                }}
+              />
+              {WORKSPACE_COLORS.map((c) => (
+                <button
+                  key={c}
+                  className={`ctx-swatch ${config.repos[menu.key].color === c ? "on" : ""}`}
+                  style={{ background: c }}
+                  title={c}
+                  onClick={() => {
+                    void patchWs(menu.key, { color: c });
+                    setMenu(null);
+                  }}
+                />
+              ))}
+            </div>
+          }
+        />
       )}
       {confirmDelete && config.repos[confirmDelete] && (
         <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && setConfirmDelete(null)}>

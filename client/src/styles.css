@@ -1128,3 +1128,17 @@ button.primary:hover:not(:disabled) { background: var(--accent-ink); }
 }
 .net-dock.open { opacity: 1; }
 .net-dock.dragging { transition: none; }
+
+/* workspace colour swatches (context menu) */
+.ctx-top { padding: 4px 6px 6px; }
+.ctx-swatches { display: flex; gap: 6px; flex-wrap: wrap; }
+.ctx-swatch {
+  width: 18px; height: 18px; border-radius: 50%; border: 2px solid transparent; padding: 0; cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12); transition: transform 0.12s ease;
+}
+.ctx-swatch:hover { transform: scale(1.15); }
+.ctx-swatch.on { border-color: var(--ink); }
+.ctx-swatch.none {
+  background: linear-gradient(135deg, transparent 45%, var(--fail) 45%, var(--fail) 55%, transparent 55%), var(--surface-2);
+}
+.avatar { transition: background 0.2s ease, color 0.2s ease; }

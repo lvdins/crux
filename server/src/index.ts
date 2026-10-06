@@ -38,7 +38,7 @@ app.use(express.static(clientDist));
 app.get("/api/config", (_req, res) => {
   res.json({
     repos: Object.fromEntries(
-      Object.entries(config.repos).map(([k, r]) => [k, { label: r.label, kind: r.kind, path: r.path, pinned: !!r.pinned }]),
+      Object.entries(config.repos).map(([k, r]) => [k, { label: r.label, kind: r.kind, path: r.path, pinned: !!r.pinned, color: r.color }]),
     ),
     user: os.userInfo().username,
   });

@@ -10,6 +10,7 @@ export interface RepoConfig {
   path: string;
   kind: RepoKind;
   pinned?: boolean;
+  color?: string;
 }
 
 export interface QualityLabConfig {
@@ -98,12 +99,17 @@ export function addWorkspace(input: { path: string; label?: string; kind?: RepoK
   return [key, config.repos[key]];
 }
 
-export function updateWorkspace(key: string, patch: { label?: string; kind?: RepoKind; pinned?: boolean }): RepoConfig {
+export function updateWorkspace(
+  key: string,
+  patch: { label?: string; kind?: RepoKind; pinned?: boolean; color?: string | null },
+): RepoConfig {
   const repo = config.repos[key];
   if (!repo) throw new Error("Unknown workspace");
   if (patch.label?.trim()) repo.label = patch.label.trim();
   if (patch.kind) repo.kind = patch.kind;
   if (typeof patch.pinned === "boolean") repo.pinned = patch.pinned;
+  if (patch.color === null || patch.color === "") delete repo.color;
+  else if (typeof patch.color === "string" && /^#[0-9a-f]{6}$/i.test(patch.color)) repo.color = patch.color;
   saveConfig();
   return repo;
 }

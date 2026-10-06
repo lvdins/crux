@@ -13,11 +13,14 @@ export default function ContextMenu({
   x,
   y,
   groups,
+  top,
   onClose,
 }: {
   x: number;
   y: number;
   groups: MenuItem[][];
+  /** Custom content above the items (e.g. colour swatches). */
+  top?: ReactNode;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -53,6 +56,7 @@ export default function ContextMenu({
 
   return (
     <div className="ctx-menu" ref={ref} style={pos} role="menu" onContextMenu={(e) => e.preventDefault()}>
+      {top && <div className="ctx-group ctx-top">{top}</div>}
       {groups.map((group, gi) => (
         <div key={gi} className="ctx-group">
           {group.map((item) => (
