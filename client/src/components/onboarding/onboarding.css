@@ -62,15 +62,24 @@
   60% { opacity: 1; }
   100% { opacity: 1; transform: translateY(0) scale(1); }
 }
+/* title + tagline share one modern display face; only weight differs */
+.intro-center { font-family: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif; }
 .intro-title {
-  margin: 8px 0 0; font-size: clamp(28px, 4.4vw, 46px); font-weight: 500; color: #f3f1ec; letter-spacing: 0.01em;
-  opacity: 0; animation: title 0.9s ease-out 2.15s forwards;
+  margin: 10px 0 0; font-size: clamp(34px, 5.2vw, 56px); font-weight: 600; letter-spacing: -0.035em; line-height: 1.05;
+  color: #f4f3ef; opacity: 0; animation: title 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) 2.15s forwards;
 }
-.intro-title b { font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #fff; }
-@keyframes title { from { opacity: 0; transform: translateY(10px); letter-spacing: 0.2em; filter: blur(6px); } to { opacity: 1; } }
-.intro-tagline { margin: 0; color: #a9abb2; font-size: 15px; opacity: 0; animation: fade 0.8s ease-out 2.7s forwards; }
+.intro-title b {
+  font-weight: 700; letter-spacing: -0.02em;
+  background: linear-gradient(180deg, #ffffff 30%, #9fe9c6); -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+@keyframes title { from { opacity: 0; transform: translateY(14px); filter: blur(8px); } to { opacity: 1; } }
+.intro-tagline {
+  margin: 0; font-size: clamp(16px, 1.8vw, 20px); font-weight: 400; letter-spacing: -0.01em; color: #9a9da5;
+  opacity: 0; animation: fade 0.8s ease-out 2.7s forwards;
+}
 .intro-skip {
-  position: absolute; bottom: 28px; left: 0; right: 0; text-align: center; font-size: 11.5px; letter-spacing: 0.06em;
+  position: absolute; bottom: 28px; left: 0; right: 0; text-align: center; font-size: 11.5px; letter-spacing: 0.02em;
+  font-family: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;
   color: #6e7178; opacity: 0; animation: fade 0.6s ease-out 3.3s forwards;
 }
 @keyframes fade { to { opacity: 1; } }

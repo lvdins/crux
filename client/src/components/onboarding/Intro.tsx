@@ -56,9 +56,9 @@ export default function Intro({ onDone }: { onDone: () => void }) {
       <div className="intro-center">
         <img src="/crux-mark.svg" alt="" className="intro-mark" />
         <h1 className="intro-title">
-          Welcome to <b>Crux</b>
+          Welcome to <b>CRUX</b>
         </h1>
-        <p className="intro-tagline">Your new favourite AI orchestrator</p>
+        <p className="intro-tagline">Where it all comes together.</p>
       </div>
       <div className="intro-skip">Press any key to continue</div>
     </div>
