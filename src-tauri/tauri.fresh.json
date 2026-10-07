@@ -7,6 +7,6 @@
     "devUrl": "http://localhost:5181"
   },
   "app": {
-    "windows": [{ "title": "Crux Fresh", "width": 1440, "height": 900, "dragDropEnabled": false }]
+    "windows": [{ "title": "Crux Fresh", "width": 1440, "height": 900, "dragDropEnabled": false, "titleBarStyle": "Overlay", "hiddenTitle": true, "trafficLightPosition": { "x": 16, "y": 22 } }]
   }
 }

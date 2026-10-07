@@ -12,6 +12,7 @@ import { startPreview, stopPreview, stopAllPreviews, previewStatus } from "./pre
 import { buildTree, sharedEndpoints } from "./tree.js";
 import { installAgentSetup } from "./agent-setup.js";
 import { latestRelease, installRelease, isNewer } from "./update.js";
+import { guardHttp, wsAllowed } from "./security.js";
 import { adoptLoginShellPath, checkTools, CRUX_HOME, PACKAGED, PORT, rootPath } from "./paths.js";
 
 adoptLoginShellPath();
@@ -19,17 +20,12 @@ adoptLoginShellPath();
 let connectionsCache: { at: number; data: unknown } | null = null;
 let featuresCache: { at: number; data: unknown } | null = null;
 const app = express();
-app.use(express.json());
 
-// The UI may load from vite (:5180) or from the Tauri shell (tauri://) —
-// both are foreign origins to this server, so allow them. Local tool only.
-app.use((_req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  next();
-});
+// Only the Crux UI (tauri://, vite dev, its own page) may call the API;
+// see security.ts. Runs before body parsing so refused requests cost nothing.
+app.use(guardHttp);
 app.options("*", (_req, res) => res.sendStatus(204));
+app.use(express.json());
 
 // Serve the built client when it exists, so the desktop app (and plain
 // http://localhost:8787) works without vite.
@@ -320,7 +316,7 @@ app.post("/api/agent-browser/:ws", async (req, res) => {
 });
 
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server, path: "/ws" });
+const wss = new WebSocketServer({ server, path: "/ws", verifyClient: (info: { req: http.IncomingMessage }) => wsAllowed(info.req) });
 
 wss.on("connection", (ws: WebSocket) => {
   ws.on("message", (raw) => {
@@ -379,8 +375,9 @@ wss.on("connection", (ws: WebSocket) => {
 
 installAgentSetup();
 
-server.listen(PORT, () => {
-  console.log(`Crux server on http://localhost:${PORT}`);
+// Loopback only: nothing else on the network can reach the terminals.
+server.listen(PORT, "127.0.0.1", () => {
+  console.log(`Crux server on http://127.0.0.1:${PORT}`);
 });
 
 function shutdown() {

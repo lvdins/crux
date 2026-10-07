@@ -1074,8 +1074,9 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="topbar">
-        <span className="brand">
+      {/* data-tauri-drag-region: the top bar moves the window (no title bar). */}
+      <header className="topbar" data-tauri-drag-region>
+        <span className="brand" data-tauri-drag-region>
           <img src="/crux-mark.svg" alt="" className="brand-mark" />
           <span className="brand-name">Crux</span>
           {import.meta.env.DEV && <span className="brand-dev" title="Development build (npm run app:dev)">DEV</span>}

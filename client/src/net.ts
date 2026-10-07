@@ -8,7 +8,8 @@ const sameOrigin =
   typeof location !== "undefined" && location.protocol.startsWith("http") && !import.meta.env.DEV;
 // `npm run app:dev` builds with VITE_CRUX_PORT=8788 so it talks to its own server.
 const PORT = import.meta.env.VITE_CRUX_PORT || "8787";
-export const API_BASE = sameOrigin ? location.origin : `http://localhost:${PORT}`;
+// 127.0.0.1, not localhost: the server listens on IPv4 loopback only.
+export const API_BASE = sameOrigin ? location.origin : `http://127.0.0.1:${PORT}`;
 export const WS_URL = `${API_BASE.replace(/^http/, "ws")}/ws`;
 
 export function api(path: string, init?: RequestInit): Promise<Response> {

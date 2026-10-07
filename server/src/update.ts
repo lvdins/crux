@@ -42,6 +42,9 @@ mkdir "$T/mnt"
 hdiutil attach -nobrowse -quiet -mountpoint "$T/mnt" "$DMG"
 ditto "$T/mnt/$(basename "$APP")" "$T/new.app"
 hdiutil detach -quiet "$T/mnt"
+# Refuse a damaged or modified download (its seal must still verify);
+# the installed app is left alone if this fails.
+codesign --verify --deep --strict "$T/new.app" || { echo "update refused: broken signature"; exit 1; }
 osascript -e "quit app \\"$(basename "$APP" .app)\\"" || true
 for i in $(seq 1 50); do pgrep -f "$APP/Contents/MacOS/" >/dev/null || break; sleep 0.2; done
 pkill -f "$APP/Contents/MacOS/" || true
