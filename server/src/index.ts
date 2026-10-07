@@ -5,12 +5,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
-import { config, userConfigPath, addWorkspace, updateWorkspace, removeWorkspace, detectKind, expandHome } from "./config.js";
+import { config, saveConfig, userConfigPath, addWorkspace, updateWorkspace, removeWorkspace, detectKind, expandHome } from "./config.js";
 import { attachTerm, termInput, termResize, killTerm, detachAll, killAllTerms, openLog, termProcess } from "./term.js";
 import { startPreview, stopPreview, stopAllPreviews, previewStatus } from "./preview.js";
 import { buildTree, sharedEndpoints } from "./tree.js";
 import { installAgentSetup } from "./agent-setup.js";
-import { adoptLoginShellPath, checkTools, PACKAGED, PORT, rootPath } from "./paths.js";
+import { latestRelease, installRelease, isNewer } from "./update.js";
+import { adoptLoginShellPath, checkTools, CRUX_HOME, PACKAGED, PORT, rootPath } from "./paths.js";
 
 adoptLoginShellPath();
 
@@ -40,7 +41,52 @@ app.get("/api/config", (_req, res) => {
       Object.entries(config.repos).map(([k, r]) => [k, { label: r.label, kind: r.kind, path: r.path, pinned: !!r.pinned, color: r.color }]),
     ),
     user: os.userInfo().username,
+    onboarded: !!config.onboarded,
+    userName: config.userName ?? "",
   });
+});
+
+// "New Crux version available" bubble (installed app only).
+app.get("/api/update", async (req, res) => {
+  const current = String(req.query.current ?? "");
+  const latest = PACKAGED && current ? await latestRelease() : null;
+  res.json({ latest, available: !!latest && isNewer(latest, current) });
+});
+app.post("/api/update/install", async (_req, res) => {
+  const latest = await latestRelease();
+  if (!latest) return void res.status(503).json({ error: "Couldn't reach GitHub (is gh logged in?)" });
+  try {
+    installRelease(latest);
+    res.json({ installing: latest });
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+// Files dropped onto a chat: saved here, and their path is typed into the
+// terminal (how Claude Code picks up images dragged into a terminal).
+app.post("/api/attachments", express.raw({ type: "*/*", limit: "100mb" }), (req, res) => {
+  const raw = path.basename(String(req.query.name ?? "file"));
+  const safe = raw.replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "").slice(-80) || "file";
+  const dir = path.join(CRUX_HOME, "attachments");
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `${new Date().toISOString().replace(/[:.]/g, "-")}-${safe}`);
+  fs.writeFileSync(file, req.body as Buffer);
+  res.json({ path: file });
+});
+
+app.post("/api/profile", (req, res) => {
+  const name = String(req.body?.name ?? "").trim().slice(0, 60);
+  if (!name) return void res.status(400).json({ error: "Name is required" });
+  config.userName = name;
+  saveConfig();
+  res.json({ userName: name });
+});
+
+app.post("/api/onboarded", (req, res) => {
+  config.onboarded = req.body?.done !== false;
+  saveConfig();
+  res.json({ onboarded: config.onboarded });
 });
 
 const descriptionsPath = rootPath("crux.descriptions.json");

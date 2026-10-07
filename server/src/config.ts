@@ -17,6 +17,10 @@ export interface CruxConfig {
   repos: Record<string, RepoConfig>;
   agent: { permissionMode: "acceptEdits" | "default" | "bypassPermissions" };
   preview: { port: number };
+  /** Set once the first-run intro and setup guide are finished or skipped. */
+  onboarded?: boolean;
+  /** What the user asked Crux to call them (first-run name step). */
+  userName?: string;
 }
 
 // Bundled defaults (the original Giraffe360 setup); used only to seed a
@@ -61,14 +65,16 @@ function loadConfig(): CruxConfig {
   if (user?.repos) {
     return { agent: { permissionMode: "bypassPermissions" }, preview: { port: 8321 }, ...user };
   }
+  // `npm run app:fresh`: start empty, exactly like a brand-new user.
+  const fresh = !!process.env.CRUX_FRESH;
   // A dev copy (separate CRUX_HOME) starts with the installed app's workspaces.
-  const installed = CRUX_HOME !== DEFAULT_HOME ? readJson(path.join(DEFAULT_HOME, "config.json")) : null;
+  const installed = !fresh && CRUX_HOME !== DEFAULT_HOME ? readJson(path.join(DEFAULT_HOME, "config.json")) : null;
   if (installed?.repos) {
     const copy = { agent: { permissionMode: "bypassPermissions" }, preview: { port: 8321 }, ...installed };
     saveConfig(copy);
     return copy;
   }
-  const defaults = readJson(defaultsPath) ?? {};
+  const defaults = fresh ? {} : readJson(defaultsPath) ?? {};
   const seeded: CruxConfig = {
     repos: Object.fromEntries(
       Object.entries((defaults.repos ?? {}) as Record<string, RepoConfig>).filter(([, r]) => fs.existsSync(r.path)),

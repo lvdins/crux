@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Crux Fresh",
+  "identifier": "com.giraffe360.crux.fresh",
+  "build": {
+    "beforeDevCommand": "npm run dev -w client -- --port 5181 --strictPort",
+    "devUrl": "http://localhost:5181"
+  },
+  "app": {
+    "windows": [{ "title": "Crux Fresh", "width": 1440, "height": 900, "dragDropEnabled": false }]
+  }
+}

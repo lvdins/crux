@@ -10,6 +10,11 @@ import { runAgentCommand, browserLabel } from "./agentBrowser";
 import FeatureMap from "./components/FeatureMap";
 import AddWorkspace from "./components/AddWorkspace";
 import SetupChecklist from "./components/SetupChecklist";
+import Intro from "./components/onboarding/Intro";
+import Welcome from "./components/onboarding/Welcome";
+import NameStep from "./components/onboarding/NameStep";
+import FirstSetup from "./components/onboarding/FirstSetup";
+import "./components/onboarding/onboarding.css";
 import GitMenu, { branchSwitchText, type GitAction } from "./components/GitMenu";
 import {
   MAIN,
@@ -140,6 +145,38 @@ export default function App() {
   const [chatMenu, setChatMenu] = useState<null | { key: string; x: number; y: number }>(null);
   // Name prompt shown before a new chat is created.
   const [nameChat, setNameChat] = useState<null | { key: string; kind: "claude" | "codex" | "shell"; name: string }>(null);
+  // First-run intro → welcome cards → guided setup (replayable from the ? button).
+  const [onboarding, setOnboarding] = useState<null | "intro" | "name" | "welcome" | "setup">(null);
+  // Installed app only: newer GitHub release → bubble above the sidebar footer.
+  const [appVersion, setAppVersion] = useState("0.1.0");
+  const [update, setUpdate] = useState<null | { latest: string; installing: boolean }>(null);
+  useEffect(() => {
+    if (import.meta.env.DEV || !("__TAURI_INTERNALS__" in window)) return;
+    let current = "";
+    const check = () =>
+      api(`/api/update?current=${current}`)
+        .then((r) => r.json())
+        .then((u: { latest: string | null; available: boolean }) =>
+          setUpdate((prev) => (prev?.installing ? prev : u.available && u.latest ? { latest: u.latest, installing: false } : null)),
+        )
+        .catch(() => undefined);
+    void import("@tauri-apps/api/app").then(async ({ getVersion }) => {
+      current = await getVersion();
+      setAppVersion(current);
+      void check();
+    });
+    const timer = setInterval(() => current && void check(), 6 * 60 * 60 * 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const installUpdate = async () => {
+    setUpdate((u) => (u ? { ...u, installing: true } : u));
+    const r = await api("/api/update/install", { method: "POST" }).catch(() => null);
+    if (!r?.ok) {
+      setUpdate((u) => (u ? { ...u, installing: false } : u));
+      const err = r ? ((await r.json().catch(() => ({}))) as { error?: string }).error : undefined;
+      setToast(err ?? "Update failed");
+    }
+  };
   // "Are you sure?" before a chat / terminal is closed.
   const [confirmClose, setConfirmClose] = useState<null | { key: string; id: string; name: string }>(null);
   // Workspaces whose chat list is unfolded in the sidebar; all start folded.
@@ -212,6 +249,7 @@ export default function App() {
       .then((r) => r.json())
       .then((c: AppConfig) => {
         setConfig(c);
+        if (!c.onboarded) setOnboarding("intro");
         const keys = Object.keys(c.repos);
         const last = localStorage.getItem("crux.view");
         setView(last && (last === "connections" || last === "jira" || keys.includes(last)) ? last : keys[0] ?? "");
@@ -749,6 +787,25 @@ export default function App() {
     else addTab(key, title, kind, kind);
   };
 
+  const afterIntro = useCallback(() => setOnboarding("name"), []);
+  const saveName = (name: string) => {
+    setConfig((c) => (c ? { ...c, userName: name } : c));
+    setOnboarding("welcome");
+    void api("/api/profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+  };
+  const finishOnboarding = () => {
+    setOnboarding(null);
+    void api("/api/onboarded", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ done: true }),
+    });
+  };
+
   // Suggested name: "claude", "claude 2", … whichever is free.
   const askChatName = (key: string, kind: "claude" | "codex" | "shell") => {
     const taken = new Set(chatNames(tabs[key] ?? []));
@@ -789,7 +846,7 @@ export default function App() {
     : [];
   const panelTab = panelTabList.some(([k]) => k === panelTabs[view]) ? panelTabs[view] : panelTabList[0]?.[0];
   // Native browser views float above HTML: hide them under overlays.
-  const overlayOpen = adding || !!menu || !!confirmDelete || !!agentDrag || dragging || !!jiraMenu || !!gitMenu || !!chatMenu || !!nameChat || !!confirmClose;
+  const overlayOpen = adding || !!menu || !!confirmDelete || !!agentDrag || dragging || !!jiraMenu || !!gitMenu || !!chatMenu || !!nameChat || !!confirmClose || !!onboarding;
   const viewLayout = (!isSpecialView && layouts[view]) || rootLayout();
   const viewSplits = splitTabIds(viewLayout);
 
@@ -931,6 +988,9 @@ export default function App() {
             <CodexLogo /> Codex
           </button>
         </div>
+        <button className="help-btn" title="Replay intro & setup guide" onClick={() => setOnboarding("intro")}>
+          ?
+        </button>
         <span className={`conn ${connected ? "on" : "off"}`}>{connected ? "connected" : "offline"}</span>
       </header>
       <div className="body">
@@ -1149,8 +1209,19 @@ export default function App() {
               </div>
             </div>
           </div>
+          {update && (
+            <button
+              className={`update-bubble ${update.installing ? "busy" : ""}`}
+              disabled={update.installing}
+              title={`Install Crux ${update.latest.replace(/^v/, "")} and restart`}
+              onClick={installUpdate}
+            >
+              {update.installing ? "Updating… Crux will restart" : "New Crux version available"}
+            </button>
+          )}
           <div className="side-footer">
-            <span className="avatar">{(config.user ?? "?")[0].toUpperCase()}</span> {config.user} · Crux 0.1
+            <span className="avatar">{(config.userName || config.user || "?")[0].toUpperCase()}</span>{" "}
+            {config.userName || config.user} · Crux {appVersion}
           </div>
         </nav>
         {!repo && !isSpecialView ? (
@@ -1472,6 +1543,21 @@ export default function App() {
             setJiraOpen({ url, nonce: Date.now() });
           }}
           onClose={() => setJiraMenu(null)}
+        />
+      )}
+      {onboarding === "intro" && <Intro onDone={afterIntro} />}
+      {onboarding === "name" && <NameStep initial={config?.userName ?? ""} onDone={saveName} />}
+      {onboarding === "welcome" && <Welcome name={config?.userName ?? ""} onNext={() => setOnboarding("setup")} onSkip={finishOnboarding} />}
+      {onboarding === "setup" && config && (
+        <FirstSetup
+          name={config.userName ?? ""}
+          repos={config.repos}
+          onAddWorkspace={() => setAdding(true)}
+          onStartChat={(key, kind, name) => {
+            newChat(key, kind, name);
+            finishOnboarding();
+          }}
+          onFinish={finishOnboarding}
         />
       )}
       {adding && <AddWorkspace onClose={() => setAdding(false)} onAdded={onWorkspaceAdded} />}

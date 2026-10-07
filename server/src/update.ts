@@ -1,0 +1,61 @@
+import { execFile, spawn } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import { CRUX_HOME, ROOT } from "./paths.js";
+
+/** Releases (with the .dmg attached) are published here; read with the user's `gh` login. */
+const REPO = "lvdins/crux";
+
+const parse = (v: string) => v.replace(/^v/, "").split(".").map((n) => parseInt(n, 10) || 0);
+export function isNewer(latest: string, current: string): boolean {
+  const a = parse(latest);
+  const b = parse(current);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0);
+  }
+  return false;
+}
+
+/** Latest release tag, or null when gh is missing, logged out or offline. */
+export function latestRelease(): Promise<string | null> {
+  return new Promise((resolve) => {
+    execFile("gh", ["release", "view", "-R", REPO, "--json", "tagName", "-q", ".tagName"], { timeout: 15000 }, (err, out) =>
+      resolve(err ? null : out.trim() || null),
+    );
+  });
+}
+
+/**
+ * Download the release's .dmg, quit Crux, swap the app bundle, relaunch.
+ * Runs as a detached script so it survives Crux (and this server) quitting.
+ */
+export function installRelease(tag: string): void {
+  // Packaged server lives in <App>.app/Contents/Resources/ql-runtime.
+  const app = path.resolve(ROOT, "../../..");
+  if (!app.endsWith(".app")) throw new Error("Not running from an installed Crux.app");
+  const log = path.join(CRUX_HOME, "update.log");
+  const script = `set -e
+T=$(mktemp -d -t crux-update)
+gh release download "$TAG" -R "$REPO" -p '*.dmg' -D "$T"
+DMG=$(ls "$T"/*.dmg | head -1)
+mkdir "$T/mnt"
+hdiutil attach -nobrowse -quiet -mountpoint "$T/mnt" "$DMG"
+ditto "$T/mnt/$(basename "$APP")" "$T/new.app"
+hdiutil detach -quiet "$T/mnt"
+osascript -e "quit app \\"$(basename "$APP" .app)\\"" || true
+for i in $(seq 1 50); do pgrep -f "$APP/Contents/MacOS/" >/dev/null || break; sleep 0.2; done
+pkill -f "$APP/Contents/MacOS/" || true
+rm -rf "$APP"
+ditto "$T/new.app" "$APP"
+xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
+open "$APP"
+rm -rf "$T"
+`;
+  fs.mkdirSync(CRUX_HOME, { recursive: true });
+  const out = fs.openSync(log, "w");
+  spawn("/bin/bash", ["-c", script], {
+    detached: true,
+    stdio: ["ignore", out, out],
+    env: { ...process.env, TAG: tag, REPO, APP: app },
+  }).unref();
+}

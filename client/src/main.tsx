@@ -1,3 +1,4 @@
+import "./fresh"; // app:fresh wipes saved settings first
 import "./migrate"; // before anything reads saved settings
 import React from "react";
 import ReactDOM from "react-dom/client";

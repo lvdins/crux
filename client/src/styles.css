@@ -1323,4 +1323,28 @@ button.primary:hover:not(:disabled) { background: var(--accent-ink); }
   border: 1px solid var(--line); background: var(--surface-2); color: var(--ink-soft);
 }
 .modal.chat-modal .chat-modal-foot button { font-size: 12.5px; padding: 6px 13px; border-radius: 7px; }
+/* "New Crux version available" pill above the sidebar footer */
+.update-bubble {
+  margin: auto 8px 6px; padding: 8px 12px; border-radius: 999px; cursor: pointer;
+  background: rgba(62, 207, 142, 0.12); border: 1px solid rgba(62, 207, 142, 0.35); color: var(--ink);
+  font: inherit; font-size: 12.5px; font-weight: 600; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  box-shadow: 0 0 0 0 rgba(62, 207, 142, 0.35); animation: update-in 0.4s cubic-bezier(0.32, 0.72, 0, 1), update-pulse 2.4s ease-out 0.5s 3;
+  transition: background 0.15s, border-color 0.15s;
+}
+.update-bubble:hover:not(:disabled) { background: rgba(62, 207, 142, 0.2); border-color: var(--accent); }
+.update-bubble.busy { cursor: default; color: var(--ink-soft); animation: none; }
+.update-bubble + .side-footer { margin-top: 0; }
+@keyframes update-in { from { opacity: 0; transform: translateY(8px); } }
+@keyframes update-pulse { 70% { box-shadow: 0 0 0 7px rgba(62, 207, 142, 0); } 100% { box-shadow: 0 0 0 0 rgba(62, 207, 142, 0); } }
+
+/* drop screenshots / photos onto a chat */
+.term { position: relative; }
+.term-drop {
+  position: absolute; inset: 6px; z-index: 5; border-radius: 10px; pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  border: 1.5px dashed var(--accent); background: rgba(27, 28, 32, 0.82); color: var(--accent);
+  font-size: 13px; font-weight: 600; backdrop-filter: blur(2px); animation: fade-in 0.12s ease-out;
+}
+.term-drop.saving { border-style: solid; color: var(--ink-soft); }
 .brand-dev { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; color: var(--warn); border: 1px solid rgba(217, 160, 91, 0.45); border-radius: 5px; padding: 1px 5px; }
+.term-drop.failed { border-style: solid; border-color: var(--fail); color: var(--fail); }

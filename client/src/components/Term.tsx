@@ -1,4 +1,5 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
+import { api } from "../net";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
@@ -183,5 +184,79 @@ export default function Term({
     };
   }, [id, repo, bootCmd, connected, send, subscribe]);
 
-  return <div className="term" ref={containerRef} />;
+  // Drop screenshots / photos (any file) onto the chat: the server saves them
+  // and their paths are pasted in, which is how Claude Code attaches images.
+  const [drop, setDrop] = useState<null | "over" | "saving" | "failed">(null);
+  const depth = useRef(0);
+  const hasFiles = (e: DragEvent) => e.dataTransfer.types.includes("Files");
+
+  const attach = async (files: File[]) => {
+    setDrop("saving");
+    try {
+      const paths = await Promise.all(
+        files.map(async (f) => {
+          const r = await api(`/api/attachments?name=${encodeURIComponent(f.name || "image.png")}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/octet-stream" },
+            body: f,
+          });
+          if (!r.ok) throw new Error(`attach failed: ${r.status}`);
+          return ((await r.json()) as { path: string }).path;
+        }),
+      );
+      const term = cache.get(id)?.term;
+      if (term) {
+        term.paste(paths.map((p) => p.replace(/([^\w/.-])/g, "\\$1")).join(" ") + " ");
+        term.focus();
+      }
+      setDrop(null);
+    } catch {
+      setDrop("failed");
+      setTimeout(() => setDrop(null), 2500);
+    }
+  };
+
+  return (
+    <div
+      className="term"
+      ref={containerRef}
+      onDragEnter={(e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        depth.current++;
+        setDrop("over");
+      }}
+      onDragOver={(e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+      }}
+      onDragLeave={(e) => {
+        if (!hasFiles(e)) return;
+        if (--depth.current <= 0) {
+          depth.current = 0;
+          setDrop(null);
+        }
+      }}
+      onDrop={(e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        depth.current = 0;
+        const files = [...e.dataTransfer.files];
+        if (files.length) void attach(files);
+        else setDrop(null);
+      }}
+    >
+      {drop && (
+        <div className={`term-drop ${drop}`}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="4" width="18" height="16" rx="3" />
+            <circle cx="9" cy="10" r="1.8" />
+            <path d="m21 16-5-5-8 9" />
+          </svg>
+          <span>{drop === "saving" ? "Attaching…" : drop === "failed" ? "Couldn't attach — restart Crux and try again" : "Drop to attach to this chat"}</span>
+        </div>
+      )}
+    </div>
+  );
 }

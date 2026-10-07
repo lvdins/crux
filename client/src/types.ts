@@ -9,6 +9,8 @@ export interface RepoInfo {
 export interface AppConfig {
   repos: Record<string, RepoInfo>;
   user?: string;
+  onboarded?: boolean;
+  userName?: string;
 }
 
 export interface TestCase {

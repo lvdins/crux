@@ -1,7 +1,7 @@
 {
   "name": "crux",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "workspaces": [
     "server",
     "client"
@@ -11,7 +11,8 @@
     "dev": "concurrently -n server,client -c green,cyan \"npm run dev -w server\" \"npm run dev -w client\"",
     "dev:server": "npm run dev -w server",
     "dev:client": "npm run dev -w client",
-    "app:dev": "CRUX_PORT=8788 VITE_CRUX_PORT=8788 CRUX_HOME=$HOME/.crux-dev tauri dev --config src-tauri/tauri.dev.json",
+    "app:dev": "lsof -ti tcp:8788 | xargs kill 2>/dev/null; CRUX_PORT=8788 VITE_CRUX_PORT=8788 CRUX_HOME=$HOME/.crux-dev tauri dev --config src-tauri/tauri.dev.json",
+    "app:fresh": "lsof -ti tcp:8789 | xargs kill 2>/dev/null; rm -rf ~/Library/WebKit/com.giraffe360.crux.fresh ~/Library/Caches/com.giraffe360.crux.fresh; CRUX_FRESH=1 VITE_CRUX_FRESH=1 CRUX_HOME=$(mktemp -d -t crux-fresh) CRUX_PORT=8789 VITE_CRUX_PORT=8789 tauri dev --config src-tauri/tauri.fresh.json",
     "app:build": "tauri build --config src-tauri/tauri.bundle.json",
     "tauri": "tauri",
     "bundle:server": "node scripts/bundle-server.mjs"

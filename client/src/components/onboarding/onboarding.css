@@ -1,0 +1,185 @@
+/* ---------- intro: spotlights, rising logos, "Welcome to Crux" ---------- */
+.intro {
+  position: fixed; inset: 0; z-index: 100; overflow: hidden; cursor: pointer;
+  background: radial-gradient(ellipse at 50% 115%, #15171c 0%, #08090b 55%, #040405 100%);
+  animation: intro-in 0.5s ease-out;
+}
+.intro.leaving { animation: intro-out 0.42s ease-in forwards; }
+@keyframes intro-in { from { opacity: 0; } }
+@keyframes intro-out { to { opacity: 0; transform: scale(1.04); } }
+
+/* light cones anchored at the lower corners, sweeping in toward the centre */
+.intro-beam {
+  position: absolute; bottom: -12vh; width: 46vw; height: 125vh; pointer-events: none;
+  background: linear-gradient(to top, rgba(255, 246, 220, 0.42), rgba(255, 246, 220, 0.12) 45%, transparent 85%);
+  clip-path: polygon(46% 100%, 54% 100%, 100% 0, 0 0);
+  filter: blur(18px); mix-blend-mode: screen; opacity: 0;
+  transform-origin: 50% 100%;
+}
+.intro-beam.left { left: -12vw; --from: -62deg; --to: 31deg; --sway: 26deg; animation: beam 4.6s cubic-bezier(0.3, 0.7, 0.2, 1) 0.1s forwards; }
+.intro-beam.right { right: -12vw; --from: 62deg; --to: -31deg; --sway: -26deg; animation: beam 4.6s cubic-bezier(0.3, 0.7, 0.2, 1) 0.25s forwards; }
+@keyframes beam {
+  0% { opacity: 0; transform: rotate(var(--from)); }
+  30% { opacity: 1; transform: rotate(var(--to)); }
+  62% { transform: rotate(var(--sway)); }
+  100% { opacity: 0.85; transform: rotate(var(--to)); }
+}
+/* pool of light where the beams meet */
+.intro-floor {
+  position: absolute; left: 50%; top: 50%; width: 520px; height: 520px; margin: -260px 0 0 -260px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(62, 207, 142, 0.22), rgba(255, 240, 210, 0.08) 40%, transparent 70%);
+  opacity: 0; animation: floor 1.4s ease-out 1.3s forwards;
+}
+@keyframes floor { to { opacity: 1; } }
+
+/* tool logos drifting up and fading */
+.intro-flyer {
+  position: absolute; bottom: -60px; width: 46px; height: 46px; margin-left: -23px; border-radius: 12px;
+  display: grid; place-items: center; color: #e9e6df;
+  background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 0 24px rgba(255, 240, 210, 0.12); backdrop-filter: blur(4px);
+  opacity: 0; animation: fly 2.6s cubic-bezier(0.25, 0.6, 0.3, 1) forwards;
+}
+.intro-flyer svg { width: 22px; height: 22px; }
+@keyframes fly {
+  0% { opacity: 0; transform: translateY(0) rotate(0) scale(0.8); }
+  20% { opacity: 1; }
+  70% { opacity: 0.9; }
+  100% { opacity: 0; transform: translateY(-105vh) rotate(var(--tilt)) scale(1.05); }
+}
+
+.intro-center {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; text-align: center; pointer-events: none; padding: 0 16px;
+}
+.intro-mark {
+  width: 116px; height: 116px; opacity: 0;
+  filter: drop-shadow(0 0 28px rgba(62, 207, 142, 0.45)) drop-shadow(0 0 70px rgba(255, 240, 210, 0.2));
+  animation: mark 1.25s cubic-bezier(0.2, 1.3, 0.35, 1) 1.15s forwards;
+}
+@keyframes mark {
+  0% { opacity: 0; transform: translateY(48vh) scale(0.55); }
+  60% { opacity: 1; }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.intro-title {
+  margin: 8px 0 0; font-size: clamp(28px, 4.4vw, 46px); font-weight: 500; color: #f3f1ec; letter-spacing: 0.01em;
+  opacity: 0; animation: title 0.9s ease-out 2.15s forwards;
+}
+.intro-title b { font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #fff; }
+@keyframes title { from { opacity: 0; transform: translateY(10px); letter-spacing: 0.2em; filter: blur(6px); } to { opacity: 1; } }
+.intro-tagline { margin: 0; color: #a9abb2; font-size: 15px; opacity: 0; animation: fade 0.8s ease-out 2.7s forwards; }
+.intro-skip {
+  position: absolute; bottom: 28px; left: 0; right: 0; text-align: center; font-size: 11.5px; letter-spacing: 0.06em;
+  color: #6e7178; opacity: 0; animation: fade 0.6s ease-out 3.3s forwards;
+}
+@keyframes fade { to { opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .intro-beam, .intro-flyer { display: none; }
+  .intro-mark, .intro-title, .intro-tagline, .intro-skip, .intro-floor { animation: fade 0.5s ease-out forwards; }
+}
+
+/* ---------- shared card for the welcome guide and first setup ---------- */
+.onb-backdrop {
+  position: fixed; inset: 0; z-index: 45; display: flex; align-items: center; justify-content: center; padding: 16px;
+  background: radial-gradient(ellipse at 50% 40%, rgba(22, 24, 29, 0.9), rgba(5, 5, 7, 0.96));
+  animation: fade-in 0.3s ease-out;
+}
+.onb-card {
+  width: min(560px, 100%); background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6); animation: modal-in 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.onb-card button {
+  background: var(--raise); border: 1px solid var(--line); color: var(--ink); font: inherit; font-size: 13px;
+  border-radius: 8px; padding: 7px 14px; cursor: pointer;
+}
+.onb-card button:hover:not(:disabled) { border-color: var(--ink-faint); }
+.onb-card button:disabled { opacity: 0.45; cursor: default; }
+.onb-card button.primary { background: var(--accent); border-color: var(--accent); color: #06140d; font-weight: 600; }
+.onb-card button.primary:hover:not(:disabled) { background: var(--accent-ink); }
+.onb-card button.onb-link { background: none; border-color: transparent; color: var(--ink-faint); padding-left: 4px; padding-right: 4px; }
+.onb-card button.onb-link:hover { color: var(--ink); border-color: transparent; }
+.onb-foot { display: flex; align-items: center; gap: 8px; }
+.onb-spacer { flex: 1; }
+
+/* name step */
+.onb-card.name-step {
+  width: min(400px, 100%); padding: 32px 28px 26px; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center;
+}
+.name-mark { width: 52px; height: 52px; filter: drop-shadow(0 0 18px rgba(62, 207, 142, 0.35)); }
+.name-step h2 { margin: 8px 0 0; font-size: 20px; color: var(--ink); }
+.name-step p { margin: 0 0 8px; color: var(--ink-soft); font-size: 13px; }
+.name-step .name-input { text-align: center; font-size: 16px; padding: 11px 12px; }
+.onb-card.name-step button.primary { width: 100%; margin-top: 6px; padding: 9px 14px; }
+
+/* welcome cards */
+.wel-hello { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; color: var(--accent); }
+.onb-card.welcome { padding: 28px 28px 20px; }
+.wel-stage { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; min-height: 230px; animation: wel-in 0.35s ease-out; }
+@keyframes wel-in { from { opacity: 0; transform: translateX(14px); } }
+.wel-stage h2 { margin: 14px 0 0; font-size: 20px; color: var(--ink); }
+.wel-stage p { margin: 0; max-width: 34em; color: var(--ink-soft); font-size: 13.5px; line-height: 1.55; }
+.wel-art { height: 96px; display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; }
+.wel-ws {
+  width: 50px; height: 50px; border-radius: 13px; display: grid; place-items: center;
+  color: #111; font-weight: 800; font-size: 20px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.wel-art.stack .wel-ws:nth-child(2) { transform: translateY(-10px); }
+.wel-chip {
+  display: inline-flex; align-items: center; gap: 7px; padding: 8px 12px; border-radius: 999px;
+  background: var(--surface-2); border: 1px solid var(--line); color: var(--ink); font-size: 12.5px;
+}
+.wel-chip svg { width: 14px; height: 14px; }
+.onb-card.welcome .onb-foot { margin-top: 18px; }
+.onb-dots { flex: 1; display: flex; gap: 6px; }
+.onb-card .onb-dots button { width: 7px; height: 7px; padding: 0; border-radius: 50%; border: none; background: var(--line); }
+.onb-card .onb-dots button.on { width: 20px; border-radius: 4px; background: var(--accent); }
+
+/* first setup: steps on the left, content on the right */
+.onb-card.setup { width: min(760px, 100%); display: grid; grid-template-columns: 200px 1fr; min-height: 440px; overflow: hidden; }
+.fs-steps { background: var(--bg); border-right: 1px solid var(--line); padding: 20px 12px; display: flex; flex-direction: column; gap: 4px; }
+.fs-steps-title { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); padding: 0 8px 10px; }
+.onb-card .fs-step {
+  display: flex; align-items: center; gap: 10px; text-align: left; background: none; border-color: transparent; color: var(--ink-soft); padding: 7px 8px;
+}
+.onb-card .fs-step.on { background: var(--surface-2); color: var(--ink); }
+.fs-step-num {
+  width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0;
+  font-size: 11px; font-weight: 700; border: 1px solid var(--line); color: var(--ink-faint);
+}
+.fs-step.on .fs-step-num { border-color: var(--accent); color: var(--accent); }
+.fs-step.done .fs-step-num { background: var(--accent); border-color: var(--accent); color: #06140d; }
+.fs-main { padding: 24px 24px 18px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.fs-main h2 { margin: 0; font-size: 18px; color: var(--ink); }
+.fs-main > p { margin: 0; color: var(--ink-soft); font-size: 13px; line-height: 1.5; }
+.fs-main > button { align-self: flex-start; }
+.fs-main .onb-foot { margin-top: auto; padding-top: 14px; }
+.fs-ws-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.fs-ws-list li {
+  display: flex; align-items: baseline; gap: 8px; padding: 8px 10px; border-radius: 8px;
+  background: var(--bg); border: 1px solid var(--line); color: var(--ink); font-size: 13px;
+}
+.fs-ws-list small { margin-left: auto; color: var(--ink-faint); font-family: var(--mono); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.fs-ws-ok { color: var(--accent); }
+.fs-field { display: flex; flex-direction: column; gap: 5px; font-size: 11.5px; color: var(--ink-faint); }
+.fs-field select {
+  background: var(--bg); border: 1px solid var(--line); color: var(--ink); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 13px;
+}
+.fs-kinds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.onb-card .fs-kind { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 14px 8px; background: var(--bg); }
+.onb-card .fs-kind svg { width: 20px; height: 20px; }
+.onb-card .fs-kind.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+@media (max-width: 620px) {
+  .onb-card.setup { grid-template-columns: 1fr; }
+  .fs-steps { flex-direction: row; border-right: none; border-bottom: 1px solid var(--line); overflow-x: auto; }
+  .fs-steps-title { display: none; }
+}
+
+/* replay button in the top bar */
+.help-btn {
+  width: 24px; height: 24px; border-radius: 50%; display: inline-grid; place-items: center; cursor: pointer;
+  background: none; border: 1px solid var(--line); color: var(--ink-faint); font: inherit; font-size: 12px; font-weight: 700;
+}
+.help-btn:hover { color: var(--ink); border-color: var(--ink-faint); }
