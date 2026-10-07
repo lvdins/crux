@@ -86,7 +86,12 @@ export default function Browser({
   defaultUrl,
   bookmarks: fixedBookmarks,
   openRequest,
+  network = true,
+  picker = true,
 }: {
+  /** Settings: show the network-calls dock / the element picker. */
+  network?: boolean;
+  picker?: boolean;
   wsKey: string;
   visible: boolean;
   defaultUrl?: string;
@@ -129,6 +134,8 @@ export default function Browser({
   const [copied, setCopied] = useState<string | null>(null);
   const [devtoolsOpen, setDevtoolsOpen] = useState(false);
   const [netOpen, setNetOpen] = useState(() => localStorage.getItem("crux.netOpen") === "1");
+  // Settings can switch the network dock off entirely.
+  const showNet = network && netOpen;
   const [netHeight, setNetHeight] = useState(() => Number(localStorage.getItem("crux.netHeight")) || 220);
   const [netDragging, setNetDragging] = useState(false);
   const toggleNet = () =>
@@ -465,6 +472,7 @@ export default function Browser({
             onChange={(e) => setInput(e.target.value)}
           />
         </form>
+        {picker && (
         <button
           title={picking ? "Cancel inspecting (Esc)" : "Inspect an element: pick it on the page to get Playwright locators"}
           onClick={() => void togglePicker()}
@@ -476,6 +484,8 @@ export default function Browser({
             <circle cx="8" cy="8" r="1.6" />
           </svg>
         </button>
+        )}
+        {network && (
         <button
           title={netOpen ? "Hide network calls" : "Show network calls (fetch / XHR)"}
           onClick={toggleNet}
@@ -485,6 +495,7 @@ export default function Browser({
             <path d="M5 2.5v9M2.5 9 5 11.5 7.5 9M11 13.5v-9M8.5 7 11 4.5 13.5 7" />
           </svg>
         </button>
+        )}
         {!fixedBookmarks && (
           <button title={isBookmarked ? "Remove bookmark" : "Bookmark this page"} onClick={toggleBookmark} className={isBookmarked ? "on" : ""}>
             {isBookmarked ? "★" : "☆"}
@@ -553,12 +564,12 @@ export default function Browser({
         {isTauri && !visible && <div className="browser-paused">Browser hidden while an overlay is open</div>}
       </div>
       {/* Always mounted so opening / closing can slide; polls only when open. */}
-      <div className={`net-dock ${netOpen ? "open" : ""} ${netDragging ? "dragging" : ""}`} style={{ height: netOpen ? netHeight + 5 : 0 }}>
+      <div className={`net-dock ${showNet ? "open" : ""} ${netDragging ? "dragging" : ""}`} style={{ height: showNet ? netHeight + 5 : 0 }}>
         <>
           <div className="net-resize" onPointerDown={startNetResize} title="Drag to resize" />
           <div className="net-wrap" style={{ height: netHeight }}>
             {isTauri ? (
-              <NetworkPanel label={label} active={visible && netOpen} />
+              <NetworkPanel label={label} active={visible && showNet} />
             ) : (
               <div className="net-empty">The network checker needs the desktop app.</div>
             )}

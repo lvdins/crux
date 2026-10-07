@@ -21,6 +21,29 @@ export interface CruxConfig {
   onboarded?: boolean;
   /** What the user asked Crux to call them (first-run name step). */
   userName?: string;
+  settings?: Partial<Settings>;
+}
+
+/** Which parts of Crux are on. A mode is a preset; each toggle can differ. */
+export interface Settings {
+  mode: "qa" | "regular";
+  browser: boolean;
+  network: boolean;
+  picker: boolean;
+  qaPanels: boolean;
+  connections: boolean;
+  jira: boolean;
+}
+
+export const MODE_PRESETS: Record<Settings["mode"], Settings> = {
+  qa: { mode: "qa", browser: true, network: true, picker: true, qaPanels: true, connections: true, jira: true },
+  regular: { mode: "regular", browser: false, network: false, picker: false, qaPanels: false, connections: false, jira: false },
+};
+
+/** Saved settings over the mode's preset (existing users default to QA). */
+export function currentSettings(): Settings {
+  const saved = config.settings ?? {};
+  return { ...MODE_PRESETS[saved.mode ?? "qa"], ...saved };
 }
 
 // Bundled defaults (the original Giraffe360 setup); used only to seed a

@@ -11,6 +11,7 @@ export interface AppConfig {
   user?: string;
   onboarded?: boolean;
   userName?: string;
+  settings?: Settings;
 }
 
 export interface TestCase {
@@ -38,3 +39,18 @@ export interface TreeResponse {
   shared: { endpoint: string; repos: Record<string, string[]> }[];
   descriptions?: Record<string, Record<string, string>>;
 }
+
+/** Which parts of Crux are on (Settings). A mode is a preset of toggles. */
+export interface Settings {
+  mode: "qa" | "regular";
+  browser: boolean;
+  network: boolean;
+  picker: boolean;
+  qaPanels: boolean;
+  connections: boolean;
+  jira: boolean;
+}
+
+export const QA_SETTINGS: Settings = {
+  mode: "qa", browser: true, network: true, picker: true, qaPanels: true, connections: true, jira: true,
+};

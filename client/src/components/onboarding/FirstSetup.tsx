@@ -2,11 +2,17 @@ import { useState } from "react";
 import SetupChecklist from "../SetupChecklist";
 import { useModalKeys } from "../../useModalKeys";
 import { ClaudeLogo, CodexLogo, TerminalIcon } from "../icons";
-import type { RepoInfo } from "../../types";
+import { ApiIcon, BrowserTestIcon, DocIcon } from "../icons";
+import type { RepoInfo, Settings } from "../../types";
 
 type Kind = "claude" | "codex" | "shell";
 
-const STEPS = ["Check tools", "Add a workspace", "Start a chat"];
+// QA mode asks for these three folders, each with its kind preselected.
+const QA_SLOTS = [
+  { kind: "mkdocs", title: "QA Docs", hint: "Your MkDocs documentation folder", icon: <DocIcon /> },
+  { kind: "playwright", title: "E2E tests", hint: "Playwright end-to-end tests", icon: <BrowserTestIcon /> },
+  { kind: "pytest", title: "API tests", hint: "pytest API tests", icon: <ApiIcon /> },
+];
 
 /**
  * Guided first setup: tools check, first workspace (opens the normal Add
@@ -14,14 +20,17 @@ const STEPS = ["Check tools", "Add a workspace", "Start a chat"];
  */
 export default function FirstSetup({
   name: userName,
+  mode,
   repos,
   onAddWorkspace,
   onStartChat,
   onFinish,
 }: {
   name: string;
+  mode: Settings["mode"];
   repos: Record<string, RepoInfo>;
-  onAddWorkspace: () => void;
+  /** Opens Add workspace, optionally for one QA slot's kind. */
+  onAddWorkspace: (kind?: string, title?: string) => void;
   onStartChat: (key: string, kind: Kind, name: string) => void;
   onFinish: () => void;
 }) {
@@ -32,9 +41,15 @@ export default function FirstSetup({
   const [name, setName] = useState("");
   // Newest workspace by default, so the one just added is picked.
   const target = keys.includes(ws) ? ws : keys[keys.length - 1] ?? "";
+  const qa = mode === "qa";
+  const STEPS = ["Check tools", qa ? "Add QA folders" : "Add a folder", "Start a chat"];
+  const slotRepo = (kind: string) => keys.find((k) => repos[k].kind === kind);
+  const filled = QA_SLOTS.filter((sl) => slotRepo(sl.kind)).length;
+  // QA needs all three folders (or "continue without the rest" once one is in).
+  const canContinue = step !== 1 || (qa ? filled === QA_SLOTS.length : keys.length > 0);
 
   const next = () => {
-    if (step === 1 && keys.length === 0) return;
+    if (!canContinue) return;
     if (step < 2) setStep(step + 1);
     else if (keys.length) onStartChat(target, kind, name);
     else onFinish();
@@ -49,7 +64,7 @@ export default function FirstSetup({
           {STEPS.map((s, n) => (
             <button
               key={s}
-              className={`fs-step ${n === step ? "on" : ""} ${n < step || (n === 1 && keys.length > 0) ? "done" : ""}`}
+              className={`fs-step ${n === step ? "on" : ""} ${n < step ? "done" : ""}`}
               onClick={() => setStep(n)}
             >
               <span className="fs-step-num">{n < step ? "✓" : n + 1}</span>
@@ -65,10 +80,40 @@ export default function FirstSetup({
               <SetupChecklist />
             </>
           )}
-          {step === 1 && (
+          {step === 1 && qa && (
             <>
-              <h2>Add your first workspace</h2>
-              <p>Pick a repo folder: docs, Playwright, pytest, or any code repo. It stays where it is.</p>
+              <h2>Add your QA folders</h2>
+              <p>Point Crux at your docs, E2E and API test folders. They stay where they are; nothing is copied.</p>
+              <div className="fs-slots">
+                {QA_SLOTS.map((sl) => {
+                  const k = slotRepo(sl.kind);
+                  return (
+                    <div key={sl.kind} className={`fs-slot ${k ? "done" : ""}`}>
+                      <span className="fs-slot-icon">{sl.icon}</span>
+                      <span className="fs-slot-text">
+                        <b>{sl.title}</b>
+                        <small>{k ? repos[k].path : sl.hint}</small>
+                      </span>
+                      {k ? (
+                        <span className="fs-ws-ok">✓</span>
+                      ) : (
+                        <button onClick={() => onAddWorkspace(sl.kind, `Add ${sl.title} folder`)}>Choose folder</button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              {filled > 0 && filled < QA_SLOTS.length && (
+                <button className="onb-link fs-skip-rest" onClick={() => setStep(2)}>
+                  Continue without the rest →
+                </button>
+              )}
+            </>
+          )}
+          {step === 1 && !qa && (
+            <>
+              <h2>Add your first folder</h2>
+              <p>Pick any folder you want agents to work in. It stays where it is.</p>
               {keys.length > 0 && (
                 <ul className="fs-ws-list">
                   {keys.map((k) => (
@@ -79,8 +124,8 @@ export default function FirstSetup({
                   ))}
                 </ul>
               )}
-              <button className={keys.length ? "" : "primary"} onClick={onAddWorkspace}>
-                + {keys.length ? "Add another" : "Add workspace"}
+              <button className={keys.length ? "" : "primary"} onClick={() => onAddWorkspace()}>
+                + {keys.length ? "Add another" : "Add folder"}
               </button>
             </>
           )}
@@ -131,7 +176,7 @@ export default function FirstSetup({
             <span className="onb-spacer" />
             {step > 0 && <button onClick={() => setStep(step - 1)}>Back</button>}
             {step < 2 ? (
-              <button className="primary" disabled={step === 1 && keys.length === 0} onClick={() => setStep(step + 1)}>
+              <button className="primary" disabled={!canContinue} onClick={() => setStep(step + 1)}>
                 Continue
               </button>
             ) : (

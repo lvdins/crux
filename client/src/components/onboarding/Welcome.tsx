@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useModalKeys } from "../../useModalKeys";
-import { ClaudeLogo, CodexLogo, DocIcon, BrowserTestIcon, ApiIcon, TerminalIcon } from "../icons";
+import { ClaudeLogo, CodexLogo, DocIcon, BrowserTestIcon, ApiIcon, TerminalIcon, WebIcon } from "../icons";
 
 const CARDS: { art: ReactNode; title: string; body: string }[] = [
   {
@@ -39,9 +39,32 @@ const CARDS: { art: ReactNode; title: string; body: string }[] = [
 ];
 
 /** Three short cards explaining Crux. Arrow keys work too. */
-export default function Welcome({ name, onNext, onSkip }: { name: string; onNext: () => void; onSkip: () => void }) {
+// Regular mode: no QA panels, so the third card is about the agents' browser.
+const REGULAR_LAST = {
+  art: (
+    <div className="wel-art chips">
+      <span className="wel-chip"><WebIcon /> Hidden browser</span>
+      <span className="wel-chip"><ClaudeLogo /> Agents</span>
+    </div>
+  ),
+  title: "Agents can open and check pages",
+  body: "Claude and Codex drive a browser in the background through MCP. Turn on the browser panel in Settings to watch it.",
+};
+
+export default function Welcome({
+  name,
+  mode = "qa",
+  onNext,
+  onSkip,
+}: {
+  name: string;
+  mode?: "qa" | "regular";
+  onNext: () => void;
+  onSkip: () => void;
+}) {
+  const cards = mode === "regular" ? [CARDS[0], CARDS[1], REGULAR_LAST] : CARDS;
   const [i, setI] = useState(0);
-  const last = i === CARDS.length - 1;
+  const last = i === cards.length - 1;
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -54,7 +77,7 @@ export default function Welcome({ name, onNext, onSkip }: { name: string; onNext
 
   useModalKeys(true, { onEnter: () => (last ? onNext() : setI(i + 1)), onEscape: onSkip });
 
-  const card = CARDS[i];
+  const card = cards[i];
   return (
     <div className="onb-backdrop">
       <div className="onb-card welcome" role="dialog" aria-label="Welcome to Crux">
@@ -66,7 +89,7 @@ export default function Welcome({ name, onNext, onSkip }: { name: string; onNext
         </div>
         <div className="onb-foot">
           <div className="onb-dots">
-            {CARDS.map((_, n) => (
+            {cards.map((_, n) => (
               <button key={n} className={n === i ? "on" : ""} aria-label={`Card ${n + 1}`} onClick={() => setI(n)} />
             ))}
           </div>

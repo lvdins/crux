@@ -183,3 +183,32 @@
   background: none; border: 1px solid var(--line); color: var(--ink-faint); font: inherit; font-size: 12px; font-weight: 700;
 }
 .help-btn:hover { color: var(--ink); border-color: var(--ink-faint); }
+
+/* mode step: QA Tool vs Regular */
+.onb-card.mode-step { width: min(600px, 100%); padding: 28px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; }
+.mode-step h2 { margin: 0; font-size: 20px; color: var(--ink); }
+.mode-step > p { margin: 0 0 10px; color: var(--ink-soft); font-size: 13px; }
+.mode-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; }
+.onb-card .mode-card {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px; text-align: left; padding: 16px; background: var(--bg); border-radius: 12px;
+}
+.mode-card b { font-size: 15px; color: var(--ink); }
+.mode-card > span:last-child { font-size: 12.5px; color: var(--ink-soft); line-height: 1.5; }
+.mode-icons { display: flex; gap: 6px; color: var(--ink-soft); margin-bottom: 4px; }
+.mode-icons svg { width: 18px; height: 18px; }
+.onb-card .mode-card.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.onb-card .mode-card.on .mode-icons { color: var(--accent); }
+.onb-card button.mode-go { margin-top: 14px; min-width: 160px; }
+@media (max-width: 560px) { .mode-cards { grid-template-columns: 1fr; } }
+
+/* QA folder slots in first setup */
+.fs-slots { display: flex; flex-direction: column; gap: 8px; }
+.fs-slot { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); }
+.fs-slot.done { border-color: rgba(62, 207, 142, 0.4); }
+.fs-slot-icon { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; background: var(--surface-2); color: var(--ink-soft); flex-shrink: 0; }
+.fs-slot.done .fs-slot-icon { color: var(--accent); }
+.fs-slot-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.fs-slot-text b { font-size: 13px; color: var(--ink); }
+.fs-slot-text small { font-size: 11.5px; color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fs-slot.done .fs-slot-text small { font-family: var(--mono); }
+.onb-card button.fs-skip-rest { align-self: flex-start; }

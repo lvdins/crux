@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import type { AppConfig, RepoInfo } from "./types";
+import { QA_SETTINGS, type AppConfig, type RepoInfo, type Settings } from "./types";
 import { api, WS_URL } from "./net";
 import Term, { disposeTerm } from "./components/Term";
 import Preview from "./components/Preview";
@@ -13,7 +13,10 @@ import SetupChecklist from "./components/SetupChecklist";
 import Intro from "./components/onboarding/Intro";
 import Welcome from "./components/onboarding/Welcome";
 import NameStep from "./components/onboarding/NameStep";
+import ModeStep from "./components/onboarding/ModeStep";
 import { useModalKeys } from "./useModalKeys";
+import SettingsModal from "./components/SettingsModal";
+import "./components/settings.css";
 import FirstSetup from "./components/onboarding/FirstSetup";
 import "./components/onboarding/onboarding.css";
 import GitMenu, { branchSwitchText, type GitAction } from "./components/GitMenu";
@@ -115,7 +118,27 @@ function loadSession(): SavedSession | null {
 
 export default function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
+  const settings = config?.settings ?? QA_SETTINGS;
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // { mode } applies that mode's preset; other keys flip single toggles.
+  const saveSettings = (patch: Partial<Settings>) => {
+    setConfig((c) => (c ? { ...c, settings: { ...(c.settings ?? QA_SETTINGS), ...patch } } : c));
+    void api("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    })
+      .then((r) => r.json())
+      .then((s: Settings) => setConfig((c) => (c ? { ...c, settings: s } : c)))
+      .catch(() => undefined);
+  };
   const [view, setView] = useState<View>("");
+  // A view switched off in Settings: leave it.
+  useEffect(() => {
+    if ((view === "connections" && !settings.connections) || (view === "jira" && !settings.jira)) {
+      setView(Object.keys(config?.repos ?? {})[0] ?? "");
+    }
+  }, [view, settings.connections, settings.jira, config]);
   // Right-panel tab per workspace: tree / coverage / preview / browser.
   const [panelTabs, setPanelTabs] = useState<Record<string, string>>(() => {
     try {
@@ -169,6 +192,8 @@ export default function App() {
   const toggleRightRef = useRef<() => void>(() => {});
   toggleSideRef.current = toggleSide;
   const [adding, setAdding] = useState(false);
+  // QA setup slots open Add workspace for one kind ("QA Docs" → mkdocs).
+  const [addPreset, setAddPreset] = useState<null | { kind: string; title: string }>(null);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [jiraMenu, setJiraMenu] = useState<DOMRect | null>(null);
@@ -177,7 +202,7 @@ export default function App() {
   // Name prompt shown before a new chat is created.
   const [nameChat, setNameChat] = useState<null | { key: string; kind: "claude" | "codex" | "shell"; name: string }>(null);
   // First-run intro → welcome cards → guided setup (replayable from the ? button).
-  const [onboarding, setOnboarding] = useState<null | "intro" | "name" | "welcome" | "setup">(null);
+  const [onboarding, setOnboarding] = useState<null | "intro" | "name" | "mode" | "welcome" | "setup">(null);
   // Installed app only: newer GitHub release → bubble above the sidebar footer.
   const [appVersion, setAppVersion] = useState("0.1.0");
   const [update, setUpdate] = useState<null | { latest: string; installing: boolean }>(null);
@@ -702,7 +727,8 @@ export default function App() {
   };
 
   revealBrowserRef.current = (ws: string) => {
-    if (ws !== viewRef.current) return;
+    // Browser panel off in Settings: agents use the hidden browser instead.
+    if (ws !== viewRef.current || !settings.browser) return;
     if (rightHidden) hideRight(false);
     if (panelTabs[ws] !== "browser") setPanelTab(ws, "browser");
   };
@@ -841,7 +867,7 @@ export default function App() {
   const afterIntro = useCallback(() => setOnboarding("name"), []);
   const saveName = (name: string) => {
     setConfig((c) => (c ? { ...c, userName: name } : c));
-    setOnboarding("welcome");
+    setOnboarding("mode");
     void api("/api/profile", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -918,19 +944,25 @@ export default function App() {
   const isSpecialView = view === "connections" || view === "jira";
   const repo = !isSpecialView ? config.repos[view] : undefined;
   const isTestRepo = repo && (repo.kind === "playwright" || repo.kind === "pytest");
-  // Every workspace has a panel now — at minimum the browser.
-  const hasPanel = !!repo;
-  const panelHidden = rightHidden || !hasPanel;
+  // Right panel tabs, as allowed by Settings (QA panels, browser).
   const panelTabList: [string, string][] = repo
-    ? repo.kind === "mkdocs"
-      ? [["preview", "Doc preview"], ["browser", "Browser"]]
-      : isTestRepo
-        ? [["tree", "Tests"], ["coverage", "Coverage"], ["browser", "Browser"]]
-        : [["browser", "Browser"]]
+    ? [
+        ...((settings.qaPanels
+          ? repo.kind === "mkdocs"
+            ? [["preview", "Doc preview"]]
+            : isTestRepo
+              ? [["tree", "Tests"], ["coverage", "Coverage"]]
+              : []
+          : []) as [string, string][]),
+        ...((settings.browser ? [["browser", "Browser"]] : []) as [string, string][]),
+      ]
     : [];
+  // Nothing to show on the right → chats take the full width.
+  const hasPanel = panelTabList.length > 0;
+  const panelHidden = rightHidden || !hasPanel;
   const panelTab = panelTabList.some(([k]) => k === panelTabs[view]) ? panelTabs[view] : panelTabList[0]?.[0];
   // Native browser views float above HTML: hide them under overlays.
-  const overlayOpen = adding || !!menu || !!confirmDelete || !!agentDrag || dragging || !!jiraMenu || !!gitMenu || !!chatMenu || !!nameChat || !!confirmClose || !!onboarding || !!chatCtx;
+  const overlayOpen = adding || !!menu || !!confirmDelete || !!agentDrag || dragging || !!jiraMenu || !!gitMenu || !!chatMenu || !!nameChat || !!confirmClose || !!onboarding || !!chatCtx || settingsOpen;
   const viewLayout = (!isSpecialView && layouts[view]) || rootLayout();
   const viewSplits = splitTabIds(viewLayout);
 
@@ -1072,9 +1104,6 @@ export default function App() {
             <CodexLogo /> Codex
           </button>
         </div>
-        <button className="help-btn" title="Replay intro & setup guide" onClick={() => setOnboarding("intro")}>
-          ?
-        </button>
         <span className={`conn ${connected ? "on" : "off"}`}>{connected ? "connected" : "offline"}</span>
       </header>
       <div className="body">
@@ -1245,6 +1274,8 @@ export default function App() {
               <span className="side-label">Add a repo folder</span>
             </button>
           )}
+          {(settings.connections || settings.jira) && (
+          <>
           <button
             className={`side-section side-section-toggle ${viewsHidden ? "collapsed" : ""}`}
             onClick={toggleViews}
@@ -1257,6 +1288,7 @@ export default function App() {
           </button>
           <div className={`side-views ${viewsHidden ? "collapsed" : ""}`}>
             <div className="side-views-inner">
+              {settings.connections && (
               <button
                 className={`side-item view-item ${view === "connections" ? "active" : ""}`}
                 onClick={() => setView("connections")}
@@ -1265,6 +1297,9 @@ export default function App() {
                 <span className="avatar view-icon"><WebIcon /></span>
                 <span className="side-label">Connections</span>
               </button>
+              )}
+              {settings.jira && (
+              <>
               <button
                 className={`side-item view-item ${view === "jira" ? "active" : ""} ${jiraMenu ? "menu-open" : ""}`}
                 data-menu-anchor="jira"
@@ -1317,8 +1352,12 @@ export default function App() {
                   ))}
                 </div>
               </div>
+              </>
+              )}
             </div>
           </div>
+          </>
+          )}
           {update && (
             <button
               className={`update-bubble ${update.installing ? "busy" : ""}`}
@@ -1333,22 +1372,37 @@ export default function App() {
           <div className="side-footer">
             <span className="avatar">{(config.userName || config.user || "?")[0].toUpperCase()}</span>{" "}
             {config.userName || config.user} · Crux {appVersion}
+            <button className="settings-btn" title="Settings" onClick={() => setSettingsOpen(true)}>
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M6.8 1.8h2.4l.4 1.7 1.3.7 1.6-.6 1.2 2.1-1.3 1.1v1.4l1.3 1.1-1.2 2.1-1.6-.6-1.3.7-.4 1.7H6.8l-.4-1.7-1.3-.7-1.6.6-1.2-2.1 1.3-1.1V7.3L2.3 6.2l1.2-2.1 1.6.6 1.3-.7z" />
+                <circle cx="8" cy="8" r="2" />
+              </svg>
+            </button>
           </div>
         </nav>
         {!repo && !isSpecialView ? (
           <section className="full-pane empty-state">
-            <h2>Add your QA repos</h2>
-            <p>
-              Point Crux at the folders you already have: product docs, Playwright E2E, pytest API, the dashboard
-              and backend repos. Each folder's type is detected and gets the right panel: docs preview, test tree and
-              coverage, or just terminals and a browser.
-            </p>
+            {settings.mode === "qa" ? (
+              <>
+                <h2>Add your QA repos</h2>
+                <p>
+                  Point Crux at the folders you already have: product docs, Playwright E2E, pytest API, the dashboard
+                  and backend repos. Each folder's type is detected and gets the right panel: docs preview, test tree and
+                  coverage, or just terminals and a browser.
+                </p>
+              </>
+            ) : (
+              <>
+                <h2>Add a folder</h2>
+                <p>Pick any folder you want Claude, Codex or a terminal to work in. It stays where it is; nothing is copied.</p>
+              </>
+            )}
             <button className="primary" onClick={() => setAdding(true)}>
               + Add workspace
             </button>
             <ol className="empty-steps">
               <li>Add each repo folder with <b>+</b> (they stay where they are; nothing is copied)</li>
-              <li>Add the dashboard and backend repos too to unlock <b>Connections</b></li>
+              {settings.connections && <li>Add the dashboard and backend repos too to unlock <b>Connections</b></li>}
               <li>Open a terminal, click <b>Claude</b> or <b>Codex</b>, and work</li>
             </ol>
             <SetupChecklist />
@@ -1372,6 +1426,8 @@ export default function App() {
               <Browser
                 wsKey="jira"
                 visible={!overlayOpen}
+                network={settings.network}
+                picker={settings.picker}
                 defaultUrl={jiraBoards[0]?.url ?? jiraOpen?.url}
                 bookmarks={jiraBoards}
                 openRequest={jiraOpen}
@@ -1469,7 +1525,15 @@ export default function App() {
                     {panelTab === "coverage" && (
                       <SuiteCoverage key={view} suite={repo.kind === "pytest" ? "api" : "e2e"} repoKey={view} />
                     )}
-                    {panelTab === "browser" && <Browser key={view} wsKey={view} visible={!panelHidden && !overlayOpen} />}
+                    {panelTab === "browser" && (
+                      <Browser
+                        key={view}
+                        wsKey={view}
+                        visible={!panelHidden && !overlayOpen}
+                        network={settings.network}
+                        picker={settings.picker}
+                      />
+                    )}
                   </>
                 )}
               </section>
@@ -1546,6 +1610,17 @@ export default function App() {
               { label: "New terminal", icon: <TerminalIcon />, onSelect: () => askChatName(chatMenu.key, "shell") },
             ],
           ]}
+        />
+      )}
+      {settingsOpen && (
+        <SettingsModal
+          settings={settings}
+          onChange={saveSettings}
+          onClose={() => setSettingsOpen(false)}
+          onReplayIntro={() => {
+            setSettingsOpen(false);
+            setOnboarding("intro");
+          }}
         />
       )}
       {chatCtx && (() => {
@@ -1679,12 +1754,25 @@ export default function App() {
       )}
       {onboarding === "intro" && <Intro onDone={afterIntro} />}
       {onboarding === "name" && <NameStep initial={config?.userName ?? ""} onDone={saveName} />}
-      {onboarding === "welcome" && <Welcome name={config?.userName ?? ""} onNext={() => setOnboarding("setup")} onSkip={finishOnboarding} />}
+      {onboarding === "mode" && (
+        <ModeStep
+          initial={config?.settings?.mode ?? "qa"}
+          onDone={(mode) => {
+            if (mode !== settings.mode) saveSettings({ mode });
+            setOnboarding("welcome");
+          }}
+        />
+      )}
+      {onboarding === "welcome" && <Welcome name={config?.userName ?? ""} mode={settings.mode} onNext={() => setOnboarding("setup")} onSkip={finishOnboarding} />}
       {onboarding === "setup" && config && (
         <FirstSetup
           name={config.userName ?? ""}
           repos={config.repos}
-          onAddWorkspace={() => setAdding(true)}
+          mode={settings.mode}
+          onAddWorkspace={(kind, title) => {
+            setAddPreset(kind ? { kind, title: title ?? "Add workspace" } : null);
+            setAdding(true);
+          }}
           onStartChat={(key, kind, name) => {
             newChat(key, kind, name);
             finishOnboarding();
@@ -1692,7 +1780,20 @@ export default function App() {
           onFinish={finishOnboarding}
         />
       )}
-      {adding && <AddWorkspace onClose={() => setAdding(false)} onAdded={onWorkspaceAdded} />}
+      {adding && (
+        <AddWorkspace
+          kind={addPreset?.kind}
+          title={addPreset?.title}
+          onClose={() => {
+            setAdding(false);
+            setAddPreset(null);
+          }}
+          onAdded={(key, repo) => {
+            setAddPreset(null);
+            onWorkspaceAdded(key, repo);
+          }}
+        />
+      )}
       {agentDrag && (
         <div className="drag-ghost" style={{ left: agentDrag.x, top: agentDrag.y }}>
           {agentDrag.cmd === "claude" ? <ClaudeLogo /> : <CodexLogo />} {agentDrag.cmd}

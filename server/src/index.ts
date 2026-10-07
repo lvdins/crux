@@ -5,6 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
+import { currentSettings, MODE_PRESETS, type Settings } from "./config.js";
 import { config, saveConfig, userConfigPath, addWorkspace, updateWorkspace, removeWorkspace, detectKind, expandHome } from "./config.js";
 import { attachTerm, termInput, termResize, killTerm, detachAll, killAllTerms, openLog, termProcess } from "./term.js";
 import { startPreview, stopPreview, stopAllPreviews, previewStatus } from "./preview.js";
@@ -43,6 +44,7 @@ app.get("/api/config", (_req, res) => {
     user: os.userInfo().username,
     onboarded: !!config.onboarded,
     userName: config.userName ?? "",
+    settings: currentSettings(),
   });
 });
 
@@ -73,6 +75,19 @@ app.post("/api/attachments", express.raw({ type: "*/*", limit: "100mb" }), (req,
   const file = path.join(dir, `${new Date().toISOString().replace(/[:.]/g, "-")}-${safe}`);
   fs.writeFileSync(file, req.body as Buffer);
   res.json({ path: file });
+});
+
+// Settings: { mode } applies that preset; other keys set single toggles.
+app.patch("/api/settings", (req, res) => {
+  const body = (req.body ?? {}) as Partial<Settings>;
+  let next = currentSettings();
+  if (body.mode === "qa" || body.mode === "regular") next = { ...MODE_PRESETS[body.mode] };
+  for (const k of ["browser", "network", "picker", "qaPanels", "connections", "jira"] as const) {
+    if (typeof body[k] === "boolean") next[k] = body[k];
+  }
+  config.settings = next;
+  saveConfig();
+  res.json(next);
 });
 
 app.post("/api/profile", (req, res) => {

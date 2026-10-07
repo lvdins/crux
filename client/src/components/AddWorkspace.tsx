@@ -32,7 +32,12 @@ interface Listing {
 export default function AddWorkspace({
   onClose,
   onAdded,
+  kind: wantedKind,
+  title = "Add workspace",
 }: {
+  /** Preselect this kind (QA setup slots: mkdocs / playwright / pytest). */
+  kind?: string;
+  title?: string;
   onClose: () => void;
   onAdded: (key: string, repo: RepoInfo) => void;
 }) {
@@ -40,7 +45,7 @@ export default function AddWorkspace({
   const [typed, setTyped] = useState("");
   const [error, setError] = useState("");
   const [label, setLabel] = useState("");
-  const [kind, setKind] = useState("generic");
+  const [kind, setKind] = useState(wantedKind ?? "generic");
   const [saving, setSaving] = useState(false);
 
   const open = useCallback((target?: string) => {
@@ -54,11 +59,11 @@ export default function AddWorkspace({
       .then((l) => {
         setListing(l);
         setTyped(l.path);
-        setKind(l.kind);
+        setKind(wantedKind ?? l.kind);
         setLabel(l.path.split("/").filter(Boolean).pop() ?? "");
       })
       .catch((err) => setError(String(err.message ?? err)));
-  }, []);
+  }, [wantedKind]);
 
   useEffect(() => open(), [open]);
 
@@ -91,7 +96,7 @@ export default function AddWorkspace({
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal" role="dialog" aria-label="Add workspace">
         <div className="modal-head">
-          <span>Add workspace</span>
+          <span>{title}</span>
           <button className="modal-x" onClick={onClose} title="Close">×</button>
         </div>
 
