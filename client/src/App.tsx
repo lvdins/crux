@@ -887,6 +887,32 @@ export default function App() {
     localStorage.setItem("crux.rightHidden", hidden ? "1" : "0");
   };
 
+  // Enter confirms / Esc cancels in every dialog.
+  useModalKeys(!!confirmClose, {
+    onEnter: () => {
+      if (!confirmClose) return;
+      closeTab(confirmClose.key, confirmClose.id);
+      setConfirmClose(null);
+    },
+    onEscape: () => setConfirmClose(null),
+  });
+  useModalKeys(!!confirmDelete, {
+    onEnter: () => confirmDelete && void trashWs(confirmDelete),
+    onEscape: () => setConfirmDelete(null),
+  });
+  useModalKeys(!!confirmRemove, {
+    onEnter: () => confirmRemove && void removeWs(confirmRemove),
+    onEscape: () => setConfirmRemove(null),
+  });
+  useModalKeys(!!nameChat, {
+    onEnter: () => {
+      if (!nameChat) return;
+      newChat(nameChat.key, nameChat.kind, nameChat.name);
+      setNameChat(null);
+    },
+    onEscape: () => setNameChat(null),
+  });
+
   if (!config) return <div className="loading">Loading Crux…</div>;
 
   const isSpecialView = view === "connections" || view === "jira";
@@ -1013,32 +1039,6 @@ export default function App() {
       </div>
     );
   };
-
-  // Enter confirms / Esc cancels in every dialog.
-  useModalKeys(!!confirmClose, {
-    onEnter: () => {
-      if (!confirmClose) return;
-      closeTab(confirmClose.key, confirmClose.id);
-      setConfirmClose(null);
-    },
-    onEscape: () => setConfirmClose(null),
-  });
-  useModalKeys(!!confirmDelete, {
-    onEnter: () => confirmDelete && void trashWs(confirmDelete),
-    onEscape: () => setConfirmDelete(null),
-  });
-  useModalKeys(!!confirmRemove, {
-    onEnter: () => confirmRemove && void removeWs(confirmRemove),
-    onEscape: () => setConfirmRemove(null),
-  });
-  useModalKeys(!!nameChat, {
-    onEnter: () => {
-      if (!nameChat) return;
-      newChat(nameChat.key, nameChat.kind, nameChat.name);
-      setNameChat(null);
-    },
-    onEscape: () => setNameChat(null),
-  });
 
   return (
     <div className="app">

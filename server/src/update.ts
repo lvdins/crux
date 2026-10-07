@@ -45,10 +45,12 @@ hdiutil detach -quiet "$T/mnt"
 osascript -e "quit app \\"$(basename "$APP" .app)\\"" || true
 for i in $(seq 1 50); do pgrep -f "$APP/Contents/MacOS/" >/dev/null || break; sleep 0.2; done
 pkill -f "$APP/Contents/MacOS/" || true
+for i in $(seq 1 25); do pgrep -f "$APP/Contents/" >/dev/null || break; sleep 0.2; done
 rm -rf "$APP"
 ditto "$T/new.app" "$APP"
 xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
-open "$APP"
+# Launch Services can refuse (-609) right after the swap: retry.
+for i in 1 2 3 4 5 6; do open "$APP" && break; sleep 1; done
 rm -rf "$T"
 `;
   fs.mkdirSync(CRUX_HOME, { recursive: true });
