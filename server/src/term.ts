@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import pty, { type IPty } from "node-pty";
 import type { WebSocket } from "ws";
 import { config } from "./config.js";
@@ -51,7 +54,7 @@ export function attachTerm(
     // into an interactive shell races fancy prompt init (p10k discards
     // typed-ahead input). `-il -c` sources zshrc (PATH), runs the command
     // once init is done, then execs a normal interactive shell.
-    const safeBoot = bootCmd && /^[\w ./-]+$/.test(bootCmd) ? bootCmd : undefined;
+    const safeBoot = bootCmd && /^[\w ./-]+$/.test(bootCmd) ? resumeIfSaved(bootCmd) : undefined;
     const args = safeBoot ? ["-il", "-c", `${safeBoot}; exec ${shell} -il`] : ["-l"];
     writeMcpConfig(repo); // workspace may have been added since startup
     const proc = pty.spawn(shell, args, {
@@ -79,6 +82,24 @@ export function attachTerm(
   if (fresh && entry.buffer) {
     send(ws, { type: "term:data", id, data: entry.buffer });
   }
+}
+
+/**
+ * Claude chats start as `claude --session-id <uuid>`. When that conversation
+ * already exists (Crux restarted), reopen it with `--resume` instead.
+ */
+function resumeIfSaved(cmd: string): string {
+  const m = /^claude --session-id ([0-9a-f-]{36})$/.exec(cmd);
+  if (!m) return cmd;
+  const projects = path.join(os.homedir(), ".claude", "projects");
+  try {
+    for (const dir of fs.readdirSync(projects)) {
+      if (fs.existsSync(path.join(projects, dir, `${m[1]}.jsonl`))) return `claude --resume ${m[1]}`;
+    }
+  } catch {
+    /* no ~/.claude yet */
+  }
+  return cmd;
 }
 
 /** Foreground program of a terminal (e.g. "zsh", "claude", "codex"). */

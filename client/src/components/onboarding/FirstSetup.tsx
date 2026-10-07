@@ -1,5 +1,6 @@
 import { useState } from "react";
 import SetupChecklist from "../SetupChecklist";
+import { useModalKeys } from "../../useModalKeys";
 import { ClaudeLogo, CodexLogo, TerminalIcon } from "../icons";
 import type { RepoInfo } from "../../types";
 
@@ -31,6 +32,14 @@ export default function FirstSetup({
   const [name, setName] = useState("");
   // Newest workspace by default, so the one just added is picked.
   const target = keys.includes(ws) ? ws : keys[keys.length - 1] ?? "";
+
+  const next = () => {
+    if (step === 1 && keys.length === 0) return;
+    if (step < 2) setStep(step + 1);
+    else if (keys.length) onStartChat(target, kind, name);
+    else onFinish();
+  };
+  useModalKeys(true, { onEnter: next, onEscape: onFinish });
 
   return (
     <div className="onb-backdrop">
@@ -111,7 +120,6 @@ export default function FirstSetup({
                       placeholder={kind}
                       spellCheck={false}
                       onChange={(e) => setName(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && onStartChat(target, kind, name)}
                     />
                   </label>
                 </>

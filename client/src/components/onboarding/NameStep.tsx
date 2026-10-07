@@ -1,9 +1,11 @@
 import { useState } from "react";
+import { useModalKeys } from "../../useModalKeys";
 
 /** "Let's start with your name" — required before the welcome cards. */
 export default function NameStep({ initial, onDone }: { initial: string; onDone: (name: string) => void }) {
   const [name, setName] = useState(initial);
   const ok = name.trim().length > 0;
+  useModalKeys(true, { onEnter: () => ok && onDone(name.trim()) });
 
   return (
     <div className="onb-backdrop">

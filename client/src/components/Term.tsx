@@ -103,6 +103,13 @@ export default function Term({
       term.open(el);
       // Registered once for the terminal's lifetime — survives re-mounts.
       term.onData((data) => send({ type: "term:input", id, data }));
+      // Shift+Enter = new line, not send: Ctrl+J is the newline key Claude
+      // Code and Codex both accept in any terminal.
+      term.attachCustomKeyEventHandler((e) => {
+        if (e.key !== "Enter" || !e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return true;
+        if (e.type === "keydown") send({ type: "term:input", id, data: "\n" });
+        return false;
+      });
       cached = { term, fit, el };
       cache.set(id, cached);
     }

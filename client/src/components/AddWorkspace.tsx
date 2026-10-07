@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useModalKeys } from "../useModalKeys";
 import { api } from "../net";
 import type { RepoInfo } from "../types";
 
@@ -61,11 +62,8 @@ export default function AddWorkspace({
 
   useEffect(() => open(), [open]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  // Esc closes; Enter stays with the path field (Go).
+  useModalKeys(true, { onEscape: onClose });
 
   const add = async () => {
     if (!listing) return;

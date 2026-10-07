@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { useModalKeys } from "../../useModalKeys";
 import { ClaudeLogo, CodexLogo, DocIcon, BrowserTestIcon, ApiIcon, TerminalIcon } from "../icons";
 
 const CARDS: { art: ReactNode; title: string; body: string }[] = [
@@ -50,6 +51,8 @@ export default function Welcome({ name, onNext, onSkip }: { name: string; onNext
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, [i, last, onNext]);
+
+  useModalKeys(true, { onEnter: () => (last ? onNext() : setI(i + 1)), onEscape: onSkip });
 
   const card = CARDS[i];
   return (

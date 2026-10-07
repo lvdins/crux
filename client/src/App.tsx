@@ -13,6 +13,7 @@ import SetupChecklist from "./components/SetupChecklist";
 import Intro from "./components/onboarding/Intro";
 import Welcome from "./components/onboarding/Welcome";
 import NameStep from "./components/onboarding/NameStep";
+import { useModalKeys } from "./useModalKeys";
 import FirstSetup from "./components/onboarding/FirstSetup";
 import "./components/onboarding/onboarding.css";
 import GitMenu, { branchSwitchText, type GitAction } from "./components/GitMenu";
@@ -92,6 +93,26 @@ interface TermTab {
 let tabSeq = 1;
 const newTabId = (repo: string) => `${repo}:${tabSeq++}:${Date.now() % 100000}`;
 
+// Claude chats get their own session id, so after a restart the server can
+// reopen them with `claude --resume <id>` instead of an empty chat.
+const agentBoot = (cmd: string) => (cmd === "claude" ? `claude --session-id ${crypto.randomUUID()}` : cmd);
+
+// Open chats (names, kinds, splits) are remembered across restarts.
+const SESSION_KEY = "crux.session";
+interface SavedSession {
+  tabs: Record<string, TermTab[]>;
+  activeTab: Record<string, string>;
+  layouts: Record<string, PaneNode>;
+}
+function loadSession(): SavedSession | null {
+  try {
+    const s = JSON.parse(localStorage.getItem(SESSION_KEY) ?? "null");
+    return s?.tabs ? s : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [view, setView] = useState<View>("");
@@ -119,6 +140,16 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<Record<string, string>>({});
   // Terminal pane layout per workspace (split tree; MAIN = tab-strip pane).
   const [layouts, setLayouts] = useState<Record<string, PaneNode>>({});
+  // Save open chats once the saved ones are restored (not the empty start).
+  const sessionReady = useRef(false);
+  useEffect(() => {
+    if (!sessionReady.current) return;
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify({ tabs, activeTab, layouts } satisfies SavedSession));
+    } catch {
+      /* storage full or blocked: chats just won't be remembered */
+    }
+  }, [tabs, activeTab, layouts]);
   const [rightHidden, setRightHidden] = useState(() => localStorage.getItem("crux.rightHidden") === "1");
   const [sideHidden, setSideHidden] = useState(() => localStorage.getItem("crux.sideHidden") === "1");
   const toggleSide = () =>
@@ -258,13 +289,30 @@ export default function App() {
         setView(last && (last === "connections" || last === "jira" || keys.includes(last)) ? last : keys[0] ?? "");
         const initialTabs: Record<string, TermTab[]> = {};
         const initialActive: Record<string, string> = {};
+        const initialLayouts: Record<string, PaneNode> = {};
+        const saved = loadSession();
         for (const key of Object.keys(c.repos)) {
-          const id = newTabId(key);
-          initialTabs[key] = [{ id, title: "shell" }];
-          initialActive[key] = id;
+          const prev = saved?.tabs[key]?.filter((t) => t.id && t.title);
+          if (prev?.length) {
+            // Reopen last session's chats. Codex can't be told which session
+            // to reopen, so it shows its "resume" picker.
+            initialTabs[key] = prev.map((t) => (t.agent === "codex" ? { ...t, bootCmd: "codex resume" } : t));
+            const ids = new Set(prev.map((t) => t.id));
+            initialActive[key] = ids.has(saved!.activeTab[key]) ? saved!.activeTab[key] : prev[0].id;
+            const layout = saved!.layouts[key];
+            if (layout && splitTabIds(layout).every((id) => ids.has(id))) initialLayouts[key] = layout;
+            // Keep new tab ids from colliding with restored ones.
+            for (const t of prev) tabSeq = Math.max(tabSeq, (Number(t.id.split(":").at(-2)) || 0) + 1);
+          } else {
+            const id = newTabId(key);
+            initialTabs[key] = [{ id, title: "shell" }];
+            initialActive[key] = id;
+          }
         }
         setTabs(initialTabs);
         setActiveTab(initialActive);
+        setLayouts(initialLayouts);
+        sessionReady.current = true;
       });
   }, []);
 
@@ -457,13 +505,13 @@ export default function App() {
         setTabs((prev) => ({
           ...prev,
           [view]: (prev[view] ?? []).map((t) =>
-            t.id === active.id ? { id, title: cmd, agent: cmd, bootCmd: cmd } : t,
+            t.id === active.id ? { id, title: cmd, agent: cmd, bootCmd: agentBoot(cmd) } : t,
           ),
         }));
         setActiveTab((prev) => ({ ...prev, [view]: id }));
       } else {
         // Active tab already hosts an agent: open the new one in its own tab.
-        addTab(view, cmd, cmd, cmd);
+        addTab(view, cmd, cmd, agentBoot(cmd));
       }
     },
     [view, tabs, activeTab, send, addTab],
@@ -507,15 +555,15 @@ export default function App() {
         if (!drop) return;
         if (drop.side === "center") {
           if (drop.paneId === MAIN) {
-            addTab(view, cmd, cmd, cmd);
+            addTab(view, cmd, cmd, agentBoot(cmd));
           } else {
             // Middle of a split pane: becomes a tab in that pane.
-            const id = createTab(view, cmd, cmd, cmd);
+            const id = createTab(view, cmd, cmd, agentBoot(cmd));
             setLayouts((prev) => ({ ...prev, [view]: addTabToPane(prev[view] ?? rootLayout(), drop.paneId, id) }));
           }
           return;
         }
-        const id = createTab(view, cmd, cmd, cmd);
+        const id = createTab(view, cmd, cmd, agentBoot(cmd));
         setLayouts((prev) => ({ ...prev, [view]: insertAt(prev[view] ?? rootLayout(), drop.paneId, drop.side as DropSide, id) }));
       };
       window.addEventListener("pointermove", move);
@@ -787,7 +835,7 @@ export default function App() {
     setChatsShown(key, true);
     const title = name.trim() || (kind === "shell" ? "shell" : kind);
     if (kind === "shell") addTab(key, title);
-    else addTab(key, title, kind, kind);
+    else addTab(key, title, kind, agentBoot(kind));
   };
 
   const afterIntro = useCallback(() => setOnboarding("name"), []);
@@ -965,6 +1013,32 @@ export default function App() {
       </div>
     );
   };
+
+  // Enter confirms / Esc cancels in every dialog.
+  useModalKeys(!!confirmClose, {
+    onEnter: () => {
+      if (!confirmClose) return;
+      closeTab(confirmClose.key, confirmClose.id);
+      setConfirmClose(null);
+    },
+    onEscape: () => setConfirmClose(null),
+  });
+  useModalKeys(!!confirmDelete, {
+    onEnter: () => confirmDelete && void trashWs(confirmDelete),
+    onEscape: () => setConfirmDelete(null),
+  });
+  useModalKeys(!!confirmRemove, {
+    onEnter: () => confirmRemove && void removeWs(confirmRemove),
+    onEscape: () => setConfirmRemove(null),
+  });
+  useModalKeys(!!nameChat, {
+    onEnter: () => {
+      if (!nameChat) return;
+      newChat(nameChat.key, nameChat.kind, nameChat.name);
+      setNameChat(null);
+    },
+    onEscape: () => setNameChat(null),
+  });
 
   return (
     <div className="app">
@@ -1249,10 +1323,11 @@ export default function App() {
             <button
               className={`update-bubble ${update.installing ? "busy" : ""}`}
               disabled={update.installing}
-              title={`Install Crux ${update.latest.replace(/^v/, "")} and restart`}
+              title={update.installing ? "Downloading the update. Crux restarts by itself." : `New Crux version available: install ${update.latest.replace(/^v/, "")} and restart`}
               onClick={installUpdate}
             >
-              {update.installing ? "Updating… Crux will restart" : "New Crux version available"}
+              {update.installing ? <span className="update-spin" /> : <span className="update-dot" />}
+              {update.installing ? "Updating…" : `Update to ${update.latest.replace(/^v/, "")}`}
             </button>
           )}
           <div className="side-footer">
@@ -1526,7 +1601,6 @@ export default function App() {
               autoFocus
               onFocus={(e) => e.currentTarget.select()}
               onChange={(e) => setNameChat({ ...nameChat, name: e.target.value })}
-              onKeyDown={(e) => e.key === "Escape" && setNameChat(null)}
             />
             <div className="chat-modal-foot">
               <span className="chat-modal-hint">
@@ -1543,7 +1617,6 @@ export default function App() {
           <div
             className="modal chat-modal"
             role="alertdialog"
-            onKeyDown={(e) => e.key === "Escape" && setConfirmClose(null)}
           >
             <div className="chat-modal-head">
               <span className="chat-modal-icon danger">{MenuIcons.trash}</span>
