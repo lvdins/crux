@@ -1348,3 +1348,4 @@ button.primary:hover:not(:disabled) { background: var(--accent-ink); }
 .term-drop.saving { border-style: solid; color: var(--ink-soft); }
 .brand-dev { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; color: var(--warn); border: 1px solid rgba(217, 160, 91, 0.45); border-radius: 5px; padding: 1px 5px; }
 .term-drop.failed { border-style: solid; border-color: var(--fail); color: var(--fail); }
+.ws-chat-rename { font-size: 12px; padding: 1px 5px; }

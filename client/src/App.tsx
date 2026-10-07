@@ -177,6 +177,9 @@ export default function App() {
       setToast(err ?? "Update failed");
     }
   };
+  // Right-click menu on a chat in the sidebar, and the chat being renamed.
+  const [chatCtx, setChatCtx] = useState<null | { key: string; id: string; name: string; x: number; y: number }>(null);
+  const [renamingChat, setRenamingChat] = useState<string | null>(null);
   // "Are you sure?" before a chat / terminal is closed.
   const [confirmClose, setConfirmClose] = useState<null | { key: string; id: string; name: string }>(null);
   // Workspaces whose chat list is unfolded in the sidebar; all start folded.
@@ -806,6 +809,13 @@ export default function App() {
     });
   };
 
+  const renameChat = (key: string, id: string, title: string) => {
+    setRenamingChat(null);
+    const next = title.trim();
+    if (!next) return;
+    setTabs((prev) => ({ ...prev, [key]: (prev[key] ?? []).map((t) => (t.id === id ? { ...t, title: next } : t)) }));
+  };
+
   // Suggested name: "claude", "claude 2", … whichever is free.
   const askChatName = (key: string, kind: "claude" | "codex" | "shell") => {
     const taken = new Set(chatNames(tabs[key] ?? []));
@@ -846,7 +856,7 @@ export default function App() {
     : [];
   const panelTab = panelTabList.some(([k]) => k === panelTabs[view]) ? panelTabs[view] : panelTabList[0]?.[0];
   // Native browser views float above HTML: hide them under overlays.
-  const overlayOpen = adding || !!menu || !!confirmDelete || !!agentDrag || dragging || !!jiraMenu || !!gitMenu || !!chatMenu || !!nameChat || !!confirmClose || !!onboarding;
+  const overlayOpen = adding || !!menu || !!confirmDelete || !!agentDrag || dragging || !!jiraMenu || !!gitMenu || !!chatMenu || !!nameChat || !!confirmClose || !!onboarding || !!chatCtx;
   const viewLayout = (!isSpecialView && layouts[view]) || rootLayout();
   const viewSplits = splitTabIds(viewLayout);
 
@@ -1048,11 +1058,11 @@ export default function App() {
                 <button
                   className="side-item-main"
                   onClick={() => {
-                    // Opens the workspace with its chats unfolded; clicking
-                    // the open workspace again folds / unfolds them.
-                    setChatsShown(key, view === key ? !chatsOpen.has(key) : true);
+                    // The whole row up to + opens the workspace and folds /
+                    // unfolds its chats.
+                    setChatsShown(key, !chatsOpen.has(key));
                     setView(key);
-                                    setUnread((u) => {
+                    setUnread((u) => {
                       if (!u.has(key)) return u;
                       const n = new Set(u);
                       n.delete(key);
@@ -1072,7 +1082,10 @@ export default function App() {
                     className={`side-sub-toggle ws-chat-toggle ${chatsOpen.has(key) ? "" : "collapsed"}`}
                     role="button"
                     title={chatsOpen.has(key) ? "Hide chats" : "Show chats"}
-                    onClick={() => setChatsShown(key, !chatsOpen.has(key))}
+                    onClick={() => {
+                      setChatsShown(key, !chatsOpen.has(key));
+                      setView(key);
+                    }}
                   >
                     <small>{(tabs[key] ?? []).length}</small>
                     <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -1105,12 +1118,35 @@ export default function App() {
                         key={t.id}
                         className={`side-sub-item ws-chat ${view === key && current === t.id ? "active" : ""}`}
                         onClick={() => openChat(key, t.id)}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setChatCtx({ key, id: t.id, name: names[i], x: e.clientX, y: e.clientY });
+                        }}
                         title={names[i]}
                       >
                         <span className="ws-chat-icon">
                           {t.agent === "claude" ? <ClaudeLogo /> : t.agent === "codex" ? <CodexLogo /> : <TerminalIcon />}
                         </span>
-                        <span className="side-sub-label">{names[i]}</span>
+                        {renamingChat === t.id ? (
+                          <input
+                            className="side-rename ws-chat-rename"
+                            defaultValue={t.title}
+                            autoFocus
+                            onClick={(e) => e.stopPropagation()}
+                            onFocus={(e) => e.currentTarget.select()}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") e.currentTarget.blur();
+                              if (e.key === "Escape") {
+                                e.currentTarget.value = t.title;
+                                e.currentTarget.blur();
+                              }
+                            }}
+                            onBlur={(e) => renameChat(key, t.id, e.currentTarget.value)}
+                          />
+                        ) : (
+                          <span className="side-sub-label">{names[i]}</span>
+                        )}
                         <button
                           className="side-remove"
                           title="Close chat"
@@ -1437,6 +1473,29 @@ export default function App() {
           ]}
         />
       )}
+      {chatCtx && (() => {
+        const t = (tabs[chatCtx.key] ?? []).find((x) => x.id === chatCtx.id);
+        if (!t) return null;
+        const kind = t.agent === "claude" || t.agent === "codex" ? t.agent : "shell";
+        const label = kind === "shell" ? "terminal" : `${kind === "claude" ? "Claude" : "Codex"} chat`;
+        return (
+          <ContextMenu
+            x={chatCtx.x}
+            y={chatCtx.y}
+            onClose={() => setChatCtx(null)}
+            groups={[
+              [
+                { label: "Open", icon: kind === "claude" ? <ClaudeLogo /> : kind === "codex" ? <CodexLogo /> : <TerminalIcon />, onSelect: () => openChat(chatCtx.key, t.id) },
+                { label: "Rename", icon: MenuIcons.rename, onSelect: () => setRenamingChat(t.id) },
+                { label: `New ${label} here`, icon: MenuIcons.copy, onSelect: () => askChatName(chatCtx.key, kind) },
+              ],
+              [
+                { label: "Close chat", icon: MenuIcons.trash, danger: true, onSelect: () => setConfirmClose({ key: chatCtx.key, id: t.id, name: chatCtx.name }) },
+              ],
+            ]}
+          />
+        );
+      })()}
       {nameChat && config.repos[nameChat.key] && (
         <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && setNameChat(null)}>
           <form
