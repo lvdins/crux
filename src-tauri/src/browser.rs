@@ -376,3 +376,28 @@ pub async fn browser_close(app: AppHandle, label: String) -> Result<(), String> 
     }
     Ok(())
 }
+
+/// Keep browser logins across restarts and updates. WebKit drops session
+/// cookies (no expiry) when the app quits, and many sites (the dashboard
+/// among them) log in with one. Every few seconds, give any session cookie a
+/// 30-day expiry so WebKit stores it on disk like a normal cookie.
+pub fn keep_logins(app: AppHandle) {
+    use tauri::webview::cookie::{time::{Duration, OffsetDateTime}, Expiration};
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_secs(10));
+        // All browser panes share one cookie store; any of them will do.
+        let Some(view) = app.webviews().into_iter().find(|(l, _)| l.starts_with("browser-")).map(|(_, v)| v) else {
+            continue;
+        };
+        let Ok(cookies) = view.cookies() else { continue };
+        for cookie in cookies {
+            let session = matches!(cookie.expires(), None | Some(Expiration::Session)) && cookie.max_age().is_none();
+            if !session {
+                continue;
+            }
+            let mut kept = cookie.into_owned();
+            kept.set_expires(OffsetDateTime::now_utc() + Duration::days(30));
+            let _ = view.set_cookie(kept);
+        }
+    });
+}

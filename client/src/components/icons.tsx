@@ -84,12 +84,11 @@ export function iconFor(kind: string) {
 }
 
 /** Generic ticket-board mark (not the Atlassian logo). */
-export function JiraIcon() {
+export function GlobeIcon() {
   return (
-    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round">
-      <rect x="2" y="2.5" width="12" height="11" rx="2" />
-      <path d="M6 2.5v11M10 2.5v11" />
-      <path d="M3.8 5.5h1M7.7 5.5h1M11.6 5.5h1M3.8 8h1M7.7 8h1" strokeLinecap="round" />
+    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+      <circle cx="8" cy="8" r="6" />
+      <path d="M2 8h12M8 2c1.8 1.7 2.6 3.7 2.6 6S9.8 12.3 8 14C6.2 12.3 5.4 10.3 5.4 8S6.2 3.7 8 2z" />
     </svg>
   );
 }

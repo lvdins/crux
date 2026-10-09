@@ -11,7 +11,7 @@ const TOGGLES: { key: Exclude<keyof Settings, "mode">; label: string; hint: stri
   { key: "picker", label: "Element picker", hint: "Pick an element on the page to get Playwright locators.", needsBrowser: true },
   { key: "qaPanels", label: "QA panels", hint: "Doc preview for MkDocs folders, Tests and Coverage for Playwright / pytest." },
   { key: "connections", label: "Connections view", hint: "Map of features across frontend, backend and test repos." },
-  { key: "jira", label: "Jira view", hint: "Your Jira boards inside Crux." },
+  { key: "jira", label: "Browser view", hint: "A full browser for any website, next to your workspaces." },
 ];
 
 const MODES: { mode: Settings["mode"]; title: string; body: string }[] = [

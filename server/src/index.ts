@@ -13,6 +13,7 @@ import { buildTree, sharedEndpoints } from "./tree.js";
 import { installAgentSetup } from "./agent-setup.js";
 import { latestRelease, installRelease, isNewer } from "./update.js";
 import { guardHttp, wsAllowed } from "./security.js";
+import { pipelinesFor } from "./pipelines.js";
 import { adoptLoginShellPath, checkTools, CRUX_HOME, PACKAGED, PORT, rootPath } from "./paths.js";
 
 adoptLoginShellPath();
@@ -42,6 +43,17 @@ app.get("/api/config", (_req, res) => {
     userName: config.userName ?? "",
     settings: currentSettings(),
   });
+});
+
+// Scheduled CI runs (morning / evening testers) for the Pipelines tab.
+app.get("/api/pipelines/:key", async (req, res) => {
+  const repo = config.repos[req.params.key];
+  if (!repo) return void res.status(404).json({ error: "Unknown workspace" });
+  try {
+    res.json(await pipelinesFor(repo.path, req.query.refresh === "1"));
+  } catch (err) {
+    res.status(502).json({ error: (err as Error).message });
+  }
 });
 
 // "New Crux version available" bubble (installed app only).

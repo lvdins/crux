@@ -25,6 +25,11 @@ const fontReady = Promise.all([
   document.fonts?.load('700 12.5px "QL Nerd"'),
 ]).catch(() => undefined);
 
+/** Put the keyboard in a terminal (e.g. after adding an image to its input). */
+export function focusTerm(id: string): void {
+  cache.get(id)?.term.focus();
+}
+
 export function disposeTerm(id: string): void {
   const cached = cache.get(id);
   if (cached) {

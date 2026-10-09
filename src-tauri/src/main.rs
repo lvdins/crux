@@ -87,11 +87,16 @@ fn install_menu(app: &mut tauri::App) -> tauri::Result<()> {
     let toggle_right = MenuItemBuilder::with_id("toggle-right", "Toggle Right Panel")
         .accelerator("CmdOrCtrl+B")
         .build(app)?;
+    // ⌘⇧C: mark an issue in the browser pane for the agent to explore.
+    let report = MenuItemBuilder::with_id("report-issue", "Mark Issue in Browser")
+        .accelerator("CmdOrCtrl+Shift+C")
+        .build(app)?;
     let menu = Menu::default(app.handle())?;
     let mut placed = false;
     for item in menu.items()? {
         if let MenuItemKind::Submenu(sub) = item {
             if sub.text()? == "View" {
+                sub.prepend(&report)?;
                 sub.prepend(&toggle_right)?;
                 sub.prepend(&toggle)?;
                 placed = true;
@@ -99,7 +104,7 @@ fn install_menu(app: &mut tauri::App) -> tauri::Result<()> {
         }
     }
     if !placed {
-        menu.append(&SubmenuBuilder::new(app, "View").item(&toggle).item(&toggle_right).build()?)?;
+        menu.append(&SubmenuBuilder::new(app, "View").item(&toggle).item(&toggle_right).item(&report).build()?)?;
     }
     app.set_menu(menu)?;
     Ok(())
@@ -111,6 +116,7 @@ fn main() {
 
     tauri::Builder::default()
         .setup(move |app| {
+            browser::keep_logins(app.handle().clone());
             *server_for_setup.lock().unwrap() = spawn_server(app);
             install_menu(app)?;
             Ok(())
@@ -122,6 +128,9 @@ fn main() {
                 }
                 "toggle-right" => {
                     let _ = app.emit_to("main", "menu:toggle-right", ());
+                }
+                "report-issue" => {
+                    let _ = app.emit_to("main", "menu:report-issue", ());
                 }
                 _ => {}
             }

@@ -13,7 +13,7 @@ export const DEFAULT_BROWSER_URL = "https://dashboard.g360lab.com/";
 export function setActiveBrowserLabel(ws: string, label: string): void {
   localStorage.setItem(`crux.browserActive.${ws}`, label);
 }
-const activeBrowserLabel = (ws: string) => localStorage.getItem(`crux.browserActive.${ws}`) ?? browserLabel(ws);
+export const activeBrowserLabel = (ws: string) => localStorage.getItem(`crux.browserActive.${ws}`) ?? browserLabel(ws);
 
 export interface AgentResult {
   text: string;

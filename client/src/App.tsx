@@ -1,12 +1,15 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { QA_SETTINGS, type AppConfig, type RepoInfo, type Settings } from "./types";
 import { api, WS_URL } from "./net";
-import Term, { disposeTerm } from "./components/Term";
+import Term, { disposeTerm, focusTerm } from "./components/Term";
 import Preview from "./components/Preview";
 import TestTree from "./components/TestTree";
 import SuiteCoverage from "./components/SuiteCoverage";
 import Browser from "./components/Browser";
-import { runAgentCommand, browserLabel } from "./agentBrowser";
+import { runAgentCommand, browserLabel, activeBrowserLabel } from "./agentBrowser";
+import { CANCEL_REPORT_SCRIPT, REPORT_SCRIPT, cropShot, type MarkedIssue } from "./reportIssue";
+import ChatPicker from "./components/ChatPicker";
+import PipelinesPanel, { overallTone, type PipelineInfo } from "./components/PipelinesPanel";
 import FeatureMap from "./components/FeatureMap";
 import AddWorkspace from "./components/AddWorkspace";
 import SetupChecklist from "./components/SetupChecklist";
@@ -37,9 +40,8 @@ import {
   type DropSide,
   type PaneNode,
 } from "./paneLayout";
-import JiraMenu, { loadJiraBoards, saveJiraBoards, nameForJiraUrl } from "./components/JiraMenu";
 import ContextMenu, { MenuIcons } from "./components/ContextMenu";
-import { WebIcon, ClaudeLogo, CodexLogo, JiraIcon, TerminalIcon } from "./components/icons";
+import { WebIcon, ClaudeLogo, CodexLogo, GlobeIcon, TerminalIcon } from "./components/icons";
 
 const CHIP_COLORS: Record<string, string> = {
   mkdocs: "#d9a05b",
@@ -175,8 +177,16 @@ export default function App() {
   const [chatTitles, setChatTitles] = useState<Record<string, string>>({});
   const chatsOf = (ws: string) => Object.keys(tabs).filter((k) => wsOf(k) === ws);
   const chatTitle = (chat: string) => chatTitles[chat] ?? tabs[chat]?.[0]?.title ?? "chat";
-  // The chat on screen for the current workspace.
+  // The chat on screen for the current workspace ("" = it has none yet).
   const ck = activeChat[view] && tabs[activeChat[view]] ? activeChat[view] : chatsOf(view)[0] ?? "";
+  // The chat new terminals go into: the one on screen, or a new one.
+  const chatForNew = () => {
+    if (ck) return ck;
+    const chat = newChatKey(view);
+    setActiveChat((prev) => ({ ...prev, [view]: chat }));
+    setChatsOpen((prev) => new Set(prev).add(view));
+    return chat;
+  };
   // Save open chats once the saved ones are restored (not the empty start).
   const sessionReady = useRef(false);
   useEffect(() => {
@@ -207,13 +217,42 @@ export default function App() {
     });
   const toggleSideRef = useRef(toggleSide);
   const toggleRightRef = useRef<() => void>(() => {});
+  // ⌘⇧C (app menu, so it works while the page has focus): mark an issue.
+  const reportIssueRef = useRef<() => void>(() => {});
+  const markingRef = useRef(false);
+  // Scheduled-pipeline health per E2E / API workspace (sidebar dot).
+  const [pipeTone, setPipeTone] = useState<Record<string, "ok" | "bad" | "run">>({});
+  const pipeWorkspaces = Object.entries(config?.repos ?? {})
+    .filter(([, r]) => settings.qaPanels && (r.kind === "playwright" || r.kind === "pytest"))
+    .map(([k]) => k)
+    .join(",");
+  useEffect(() => {
+    if (!pipeWorkspaces) return setPipeTone({});
+    const poll = () =>
+      pipeWorkspaces.split(",").forEach((ws) =>
+        api(`/api/pipelines/${ws}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((info: PipelineInfo | null) => {
+            const tone = overallTone(info);
+            setPipeTone((prev) => {
+              const { [ws]: _old, ...rest } = prev;
+              return tone ? { ...rest, [ws]: tone } : rest;
+            });
+          })
+          .catch(() => undefined),
+      );
+    poll();
+    const timer = setInterval(poll, 10 * 60_000);
+    return () => clearInterval(timer);
+  }, [pipeWorkspaces]);
+  // Marked in the Browser view: the user picks which workspace chat gets it.
+  const [shotPick, setShotPick] = useState<null | { path: string; preview: string }>(null);
   toggleSideRef.current = toggleSide;
   const [adding, setAdding] = useState(false);
   // QA setup slots open Add workspace for one kind ("QA Docs" → mkdocs).
   const [addPreset, setAddPreset] = useState<null | { kind: string; title: string }>(null);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
-  const [jiraMenu, setJiraMenu] = useState<DOMRect | null>(null);
   // "+" next to a workspace: pick Claude / Codex / terminal for a new chat.
   const [chatMenu, setChatMenu] = useState<null | { key: string; x: number; y: number }>(null);
   // Name prompt shown before a new chat is created.
@@ -267,8 +306,6 @@ export default function App() {
     const ws = id.split(":")[0];
     setFocusedTerm((prev) => (prev[ws] === id ? prev : { ...prev, [ws]: id }));
   }, []);
-  const [jiraBoards, setJiraBoards] = useState(loadJiraBoards);
-  const [jiraOpen, setJiraOpen] = useState<{ url: string; nonce: number } | null>(null);
   // Open Jira tabs, mirrored from the Jira browser (and localStorage when it isn't mounted).
   const [jiraTabs, setJiraTabs] = useState<{ tabs: JiraTab[]; active: number }>(() => readJiraTabs());
   const [jiraTabsHidden, setJiraTabsHidden] = useState(() => localStorage.getItem("crux.jiraTabsHidden") === "1");
@@ -343,6 +380,9 @@ export default function App() {
           for (const k of keys) {
             const prev = saved!.tabs[k]?.filter((t) => t.id && t.title);
             if (!prev?.length) continue;
+            // Older versions opened a "shell" in every workspace by themselves;
+            // a chat that is still just that one untouched shell is dropped.
+            if (prev.length === 1 && !prev[0].agent && prev[0].title === "shell" && !saved!.chatTitles?.[k]) continue;
             const chat = k === ws ? `${ws}::1` : k;
             // Reopen last session's chats. Codex can't be told which session
             // to reopen, so it shows its "resume" picker.
@@ -355,16 +395,10 @@ export default function App() {
             // Keep new tab ids from colliding with restored ones.
             for (const t of prev) tabSeq = Math.max(tabSeq, (Number(t.id.split(":").at(-2)) || 0) + 1);
           }
+          // No chats is fine: the user starts one when they want it.
           const mine = Object.keys(initialTabs).filter((k) => wsOf(k) === ws);
-          if (!mine.length) {
-            const chat = `${ws}::1`;
-            const id = newTabId(chat);
-            initialTabs[chat] = [{ id, title: "shell" }];
-            initialActive[chat] = id;
-            mine.push(chat);
-          }
           const last = saved?.activeChat?.[ws];
-          initialChat[ws] = last && mine.includes(last) ? last : mine[0];
+          if (mine.length) initialChat[ws] = last && mine.includes(last) ? last : mine[0];
         }
         setTabs(initialTabs);
         setActiveTab(initialActive);
@@ -460,6 +494,7 @@ export default function App() {
         Promise.all([
           listen("menu:toggle-sidebar", () => toggleSideRef.current()),
           listen("menu:toggle-right", () => toggleRightRef.current()),
+          listen("menu:report-issue", () => reportIssueRef.current()),
         ]).then((fns) => {
           if (cancelled) fns.forEach((fn) => fn());
           else unlisten = () => fns.forEach((fn) => fn());
@@ -540,18 +575,16 @@ export default function App() {
         if (remaining.length === 0) {
           const ws = wsOf(repo);
           const siblings = Object.keys(prev).filter((k) => k !== repo && wsOf(k) === ws);
-          if (siblings.length) {
-            // Last tab of this chat: the chat goes, another one is shown.
-            delete next[repo];
-            setLayouts(({ [repo]: _l, ...rest }) => rest);
-            setChatTitles(({ [repo]: _t, ...rest }) => rest);
-            setActiveChat((a) => (a[ws] === repo ? { ...a, [ws]: siblings[siblings.length - 1] } : a));
-          } else {
-            // Never leave a workspace without a terminal.
-            const freshId = newTabId(repo);
-            next[repo] = [{ id: freshId, title: "shell" }];
-            setActiveTab((act) => ({ ...act, [repo]: freshId }));
-          }
+          // Last tab of this chat: the chat goes (another one is shown, if any).
+          delete next[repo];
+          setLayouts(({ [repo]: _l, ...rest }) => rest);
+          setChatTitles(({ [repo]: _t, ...rest }) => rest);
+          setActiveChat((a) => {
+            if (a[ws] !== repo) return a;
+            if (siblings.length) return { ...a, [ws]: siblings[siblings.length - 1] };
+            const { [ws]: _gone, ...rest } = a;
+            return rest;
+          });
         }
         return next;
       });
@@ -579,8 +612,8 @@ export default function App() {
         }));
         setActiveTab((prev) => ({ ...prev, [ck]: id }));
       } else {
-        // Active tab already hosts an agent: open the new one in its own tab.
-        addTab(ck, cmd, cmd, agentBoot(cmd));
+        // Active tab already hosts an agent (or there's no chat yet): own tab.
+        addTab(chatForNew(), cmd, cmd, agentBoot(cmd));
       }
     },
     [view, ck, tabs, activeTab, send, addTab],
@@ -624,7 +657,7 @@ export default function App() {
         if (!drop) return;
         if (drop.side === "center") {
           if (drop.paneId === MAIN) {
-            addTab(ck, cmd, cmd, agentBoot(cmd));
+            addTab(chatForNew(), cmd, cmd, agentBoot(cmd));
           } else {
             // Middle of a split pane: becomes a tab in that pane.
             const id = createTab(ck, cmd, cmd, agentBoot(cmd));
@@ -643,11 +676,6 @@ export default function App() {
 
   const onWorkspaceAdded = (key: string, repo: RepoInfo) => {
     setConfig((c) => (c ? { ...c, repos: { ...c.repos, [key]: repo } } : c));
-    const chat = `${key}::1`;
-    const id = newTabId(chat);
-    setTabs((prev) => ({ ...prev, [chat]: [{ id, title: "shell" }] }));
-    setActiveTab((prev) => ({ ...prev, [chat]: id }));
-    setActiveChat((prev) => ({ ...prev, [key]: chat }));
     setView(key);
     setAdding(false);
   };
@@ -781,14 +809,135 @@ export default function App() {
     if (panelTabs[ws] !== "browser") setPanelTab(ws, "browser");
   };
 
+  reportIssueRef.current = async () => {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    const ws = viewRef.current;
+    const jira = ws === "jira";
+    if (!jira && (!ws || ws === "connections" || !config?.repos[ws])) return setToast("Open a workspace or Jira first");
+    if (!jira && !settings.browser) return setToast("Turn on the browser panel in Settings to mark issues");
+    const { invoke } = await import("@tauri-apps/api/core");
+    const label = activeBrowserLabel(ws);
+    // Pressed again while marking: cancel.
+    if (markingRef.current) {
+      void invoke("browser_js", { label, script: CANCEL_REPORT_SCRIPT }).catch(() => undefined);
+      return;
+    }
+    if (!jira) {
+      if (rightHidden) hideRight(false);
+      if (panelTabs[ws] !== "browser") setPanelTab(ws, "browser");
+    }
+    const chat = ck;
+    markingRef.current = true;
+    try {
+      await new Promise((res) => setTimeout(res, 350)); // let the browser pane show
+      const raw = await invoke<string>("browser_js", { label, script: REPORT_SCRIPT, timeoutSecs: 600 });
+      const issue = JSON.parse(raw) as MarkedIssue | null;
+      if (!issue) return;
+      const shot = await cropShot(await invoke<string>("browser_screenshot", { label }), issue);
+      const path = await saveShot(shot);
+      if (jira) setShotPick({ path, preview: URL.createObjectURL(shot) });
+      else await pasteImage({ chat }, path);
+    } catch (err) {
+      setToast(`Couldn't mark the page: ${String(err)}`);
+    } finally {
+      markingRef.current = false;
+    }
+  };
+
+  // The agent the issue goes to: the focused agent in the chat, else any agent
+  // in it; null → a new Claude tab is started for it.
+  const agentTarget = (chat: string) => {
+    const list = tabs[chat] ?? [];
+    return (
+      list.find((t) => t.agent && t.id === focusedTerm[wsOf(chat)]) ??
+      list.find((t) => t.agent && t.id === activeTab[chat]) ??
+      list.find((t) => t.agent) ??
+      null
+    );
+  };
+
+  const saveShot = async (shot: Blob) => {
+    const r = await api("/api/attachments?name=issue.png", {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: shot,
+    });
+    if (!r.ok) throw new Error(`saving the screenshot failed (${r.status})`);
+    return ((await r.json()) as { path: string }).path;
+  };
+
+  // Just the marked screenshot goes into the agent's input (Claude shows it as
+  // [Image #1]); nothing is sent, so the user types the question. Target: a
+  // chat, or a new Claude chat in a workspace.
+  const pasteImage = (to: { chat: string } | { newIn: string }, path: string) => deliverToAgent(to, `${path} `, false);
+
+  // Put text into an agent's input in a chat (starting Claude there if it
+  // has none); `submit` presses Enter too.
+  const deliverToAgent = async (to: { chat: string } | { newIn: string }, text: string, submit: boolean) => {
+    let chat: string;
+    let id: string | undefined;
+    if ("newIn" in to) {
+      chat = newChatKey(to.newIn);
+      id = addTab(chat, "claude", "claude", agentBoot("claude"));
+      setChatTitles((prev) => ({ ...prev, [chat]: "claude" }));
+      setChatsShown(to.newIn, true);
+    } else {
+      chat = to.chat;
+      id = agentTarget(chat)?.id;
+    }
+    openChat(chat);
+    if (!id || "newIn" in to) {
+      id ??= addTab(chat, "claude", "claude", agentBoot("claude"));
+      // Give Claude Code time to start before pasting.
+      for (let i = 0; i < 20; i++) {
+        await new Promise((res) => setTimeout(res, 500));
+        try {
+          const p = await api(`/api/term/${encodeURIComponent(id)}/process`);
+          if (p.ok && /claude/i.test(String((await p.json()).process ?? ""))) break;
+        } catch {
+          /* keep waiting */
+        }
+      }
+      await new Promise((res) => setTimeout(res, 2500));
+    }
+    send({ type: "term:input", id, data: `\x1b[200~${text}\x1b[201~` });
+    const target = id;
+    if (submit) setTimeout(() => send({ type: "term:input", id: target, data: "\r" }), 400);
+    setToast(submit ? "Asked the agent" : "Added to the chat");
+    setActiveTab((prev) => ({ ...prev, [chat]: id! }));
+    setTimeout(() => focusTerm(target), 150);
+  };
+
+  const notePipelines = useCallback((info: PipelineInfo | null) => {
+    const ws = viewRef.current;
+    const tone = overallTone(info);
+    setPipeTone((prev) => {
+      if (prev[ws] === tone) return prev;
+      const { [ws]: _old, ...rest } = prev;
+      return tone ? { ...rest, [ws]: tone } : rest;
+    });
+  }, []);
+
+  // Pipelines "Check errors": the run's details go to the workspace's agent
+  // (current chat, else a new Claude chat) and are sent.
+  const checkPipeline = (prompt: string) => {
+    const ws = viewRef.current;
+    const to = ck && wsOf(ck) === ws ? { chat: ck } : { newIn: ws };
+    void deliverToAgent(to, prompt, true).catch((err) => setToast(String(err)));
+  };
+
   toggleRightRef.current = () => {
     if (viewRef.current && viewRef.current !== "connections" && viewRef.current !== "jira") hideRight(!rightHidden);
   };
 
+  // Browser view tab name: page title (before " - Site"), else the host.
   const jiraTabName = (t: JiraTab) => {
     if (t.title) return t.title.split(/ [-–|] /)[0] || t.title;
-    const board = jiraBoards.find((b) => b.url.replace(/\/+$/, "") === t.url.replace(/[?#].*$/, "").replace(/\/+$/, ""));
-    return board ? board.name : nameForJiraUrl(t.url);
+    try {
+      return new URL(t.url).hostname.replace(/^www\./, "");
+    } catch {
+      return t.url;
+    }
   };
 
   const openJiraTab = (id: number) => {
@@ -919,15 +1068,13 @@ export default function App() {
     const siblings = chatsOf(ws).filter((k) => k !== chat);
     setLayouts(({ [chat]: _l, ...rest }) => rest);
     setChatTitles(({ [chat]: _t, ...rest }) => rest);
-    if (siblings.length) {
-      setTabs(({ [chat]: _gone, ...rest }) => rest);
-      setActiveChat((a) => (a[ws] === chat ? { ...a, [ws]: siblings[siblings.length - 1] } : a));
-    } else {
-      // Never leave a workspace without a terminal.
-      const id = newTabId(chat);
-      setTabs((prev) => ({ ...prev, [chat]: [{ id, title: "shell" }] }));
-      setActiveTab((prev) => ({ ...prev, [chat]: id }));
-    }
+    setTabs(({ [chat]: _gone, ...rest }) => rest);
+    setActiveChat((a) => {
+      if (a[ws] !== chat) return a;
+      if (siblings.length) return { ...a, [ws]: siblings[siblings.length - 1] };
+      const { [ws]: _gone, ...rest } = a;
+      return rest;
+    });
   };
 
   const afterIntro = useCallback(() => setOnboarding("name"), []);
@@ -1007,7 +1154,7 @@ export default function App() {
           ? repo.kind === "mkdocs"
             ? [["preview", "Doc preview"]]
             : isTestRepo
-              ? [["tree", "Tests"], ["coverage", "Coverage"]]
+              ? [["tree", "Tests"], ["coverage", "Coverage"], ["pipelines", "Pipelines"]]
               : []
           : []) as [string, string][]),
         ...((settings.browser ? [["browser", "Browser"]] : []) as [string, string][]),
@@ -1018,7 +1165,7 @@ export default function App() {
   const panelHidden = rightHidden || !hasPanel;
   const panelTab = panelTabList.some(([k]) => k === panelTabs[view]) ? panelTabs[view] : panelTabList[0]?.[0];
   // Native browser views float above HTML: hide them under overlays.
-  const overlayOpen = adding || !!menu || !!confirmDelete || !!agentDrag || dragging || !!jiraMenu || !!gitMenu || !!chatMenu || !!nameChat || !!confirmClose || !!onboarding || !!chatCtx || settingsOpen;
+  const overlayOpen = adding || !!menu || !!confirmDelete || !!agentDrag || dragging || !!gitMenu || !!chatMenu || !!nameChat || !!confirmClose || !!onboarding || !!chatCtx || settingsOpen || !!shotPick;
   const viewLayout = (!isSpecialView && layouts[ck]) || rootLayout();
   const viewSplits = splitTabIds(viewLayout);
 
@@ -1234,6 +1381,12 @@ export default function App() {
                     {r.label[0]?.toUpperCase()}
                   </span>
                   <span className="side-label">{r.label}</span>
+                  {pipeTone[key] && (
+                    <span
+                      className={`pipe-dot side-pipe ${pipeTone[key]}`}
+                      title={pipeTone[key] === "bad" ? "A scheduled pipeline failed" : pipeTone[key] === "run" ? "Pipeline running" : "Scheduled pipelines passed"}
+                    />
+                  )}
                   {r.pinned && <span className="side-pin" title="Pinned">{MenuIcons.pin}</span>}
                   {unread.has(key) && <span className="unread-dot" title="New activity" />}
                 </button>
@@ -1365,21 +1518,17 @@ export default function App() {
               {settings.jira && (
               <>
               <button
-                className={`side-item view-item ${view === "jira" ? "active" : ""} ${jiraMenu ? "menu-open" : ""}`}
-                data-menu-anchor="jira"
-                onClick={(e) => {
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  setJiraMenu((m) => (m ? null : rect));
-                }}
+                className={`side-item view-item ${view === "jira" ? "active" : ""}`}
+                onClick={() => setView("jira")}
                 tabIndex={viewsHidden ? -1 : 0}
               >
-                <span className="avatar view-icon"><JiraIcon /></span>
-                <span className="side-label">Jira</span>
+                <span className="avatar view-icon"><GlobeIcon /></span>
+                <span className="side-label">Browser</span>
                 {jiraTabs.tabs.length > 0 && (
                   <span
                     className={`side-sub-toggle ${jiraTabsHidden ? "collapsed" : ""}`}
                     role="button"
-                    title={jiraTabsHidden ? "Show open Jira tabs" : "Hide open Jira tabs"}
+                    title={jiraTabsHidden ? "Show open tabs" : "Hide open tabs"}
                     onClick={(e) => {
                       e.stopPropagation();
                       toggleJiraTabs();
@@ -1476,27 +1625,9 @@ export default function App() {
             <FeatureMap onAddWorkspace={() => setAdding(true)} />
           </section>
         ) : view === "jira" ? (
+          // Browser view (internally still "jira", so saved tabs and logins carry over).
           <section className="full-pane jira-pane">
-            {jiraBoards.length === 0 && !jiraOpen ? (
-              <div className="jira-empty">
-                <JiraIcon />
-                <h2>Jira inside Crux</h2>
-                <p>Save the boards, backlogs, filters or issues you use, then open them here next to your terminals. Your Atlassian login stays signed in.</p>
-                <button className="primary" onClick={(e) => setJiraMenu(e.currentTarget.getBoundingClientRect())}>
-                  + Add a Jira link
-                </button>
-              </div>
-            ) : (
-              <Browser
-                wsKey="jira"
-                visible={!overlayOpen}
-                network={settings.network}
-                picker={settings.picker}
-                defaultUrl={jiraBoards[0]?.url ?? jiraOpen?.url}
-                bookmarks={jiraBoards}
-                openRequest={jiraOpen}
-              />
-            )}
+            <Browser wsKey="jira" visible={!overlayOpen} network={settings.network} picker={settings.picker} />
           </section>
         ) : (
           <div
@@ -1524,7 +1655,7 @@ export default function App() {
                       {t.agent === "claude" && <ClaudeLogo />}
                       {t.agent === "codex" && <CodexLogo />}
                       {t.title}
-                      {(tabs[ck] ?? []).length > 1 && (
+                      {(
                         <button
                           className="term-tab-close"
                           title="Close terminal"
@@ -1538,7 +1669,7 @@ export default function App() {
                       )}
                     </span>
                   ))}
-                <button className="term-tab-add" title="New terminal in this chat" onClick={() => addTab(ck)}>
+                <button className="term-tab-add" title="New terminal in this chat" onClick={() => addTab(chatForNew())}>
                   +
                 </button>
                 <button
@@ -1562,7 +1693,28 @@ export default function App() {
                   </svg>
                 </button>
               </div>
-              <div className="term-slots">{renderPane(viewLayout, [])}</div>
+              <div className="term-slots">
+                {ck ? (
+                  renderPane(viewLayout, [])
+                ) : (
+                  // No chat yet: nothing runs until the user starts one. Still a
+                  // drop target, so dragging Claude / Codex here works too.
+                  <div className="term-slot chat-empty" data-pane-id={MAIN}>
+                    <p>No chats in {repo?.label ?? "this workspace"} yet</p>
+                    <div className="chat-empty-actions">
+                      <button onClick={() => askChatName(view, "claude")}>
+                        <ClaudeLogo /> New Claude chat
+                      </button>
+                      <button onClick={() => askChatName(view, "codex")}>
+                        <CodexLogo /> New Codex chat
+                      </button>
+                      <button onClick={() => askChatName(view, "shell")}>
+                        <TerminalIcon /> New terminal
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
               {agentDrag?.drop && termPaneRef.current && (
                 <DropPreview drop={agentDrag.drop} host={termPaneRef.current.getBoundingClientRect()} />
               )}
@@ -1586,6 +1738,9 @@ export default function App() {
                     </nav>
                     {panelTab === "preview" && <Preview key={view} wsKey={view} />}
                     {panelTab === "tree" && <TestTree repo={view} />}
+                    {panelTab === "pipelines" && (
+                      <PipelinesPanel key={view} wsKey={view} onInfo={notePipelines} onCheck={checkPipeline} />
+                    )}
                     {panelTab === "coverage" && (
                       <SuiteCoverage key={view} suite={repo.kind === "pytest" ? "api" : "e2e"} repoKey={view} />
                     )}
@@ -1674,6 +1829,30 @@ export default function App() {
               { label: "New terminal", icon: <TerminalIcon />, onSelect: () => askChatName(chatMenu.key, "shell") },
             ],
           ]}
+        />
+      )}
+      {shotPick && config && (
+        <ChatPicker
+          preview={shotPick.preview}
+          groups={Object.entries(config.repos).map(([ws, repo]) => ({
+            ws,
+            label: repo.label,
+            chats: chatsOf(ws).map((chat) => ({
+              chat,
+              name: chatTitle(chat),
+              kinds: [...new Set((tabs[chat] ?? []).map((t) => t.agent ?? "shell"))],
+            })),
+          }))}
+          onPick={(to) => {
+            const { path, preview } = shotPick;
+            setShotPick(null);
+            URL.revokeObjectURL(preview);
+            void pasteImage(to, path).catch((err) => setToast(String(err)));
+          }}
+          onCancel={() => {
+            URL.revokeObjectURL(shotPick.preview);
+            setShotPick(null);
+          }}
         />
       )}
       {settingsOpen && (
@@ -1799,22 +1978,6 @@ export default function App() {
             setTimeout(() => refreshBranch(view), mode === "shell" ? 1200 : 8000);
           }}
           onClose={() => setGitMenu(null)}
-        />
-      )}
-      {jiraMenu && (
-        <JiraMenu
-          anchor={jiraMenu}
-          boards={jiraBoards}
-          onBoards={(next) => {
-            setJiraBoards(next);
-            saveJiraBoards(next);
-          }}
-          onOpen={(url) => {
-            setJiraMenu(null);
-            setView("jira");
-            setJiraOpen({ url, nonce: Date.now() });
-          }}
-          onClose={() => setJiraMenu(null)}
         />
       )}
       {onboarding === "intro" && <Intro onDone={afterIntro} />}
