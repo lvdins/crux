@@ -1359,3 +1359,6 @@ button.primary:hover:not(:disabled) { background: var(--accent-ink); }
 
 /* macOS desktop: title bar hidden, traffic lights overlay the top bar */
 .tauri-mac .topbar { padding-left: 86px; min-height: 42px; user-select: none; -webkit-user-select: none; }
+/* chat rows: one icon per agent kind in the chat (e.g. Claude + Codex split) */
+.ws-chat-icons { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.ws-chat-icons .ws-chat-icon { width: 12px; }

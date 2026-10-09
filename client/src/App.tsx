@@ -106,7 +106,14 @@ interface SavedSession {
   tabs: Record<string, TermTab[]>;
   activeTab: Record<string, string>;
   layouts: Record<string, PaneNode>;
+  activeChat?: Record<string, string>;
+  chatTitles?: Record<string, string>;
 }
+
+// A chat is one screen inside a workspace: its own tabs and splits. Tab,
+// active-tab and layout state are keyed by chat ("<workspace>::<id>").
+const wsOf = (chat: string) => chat.split("::")[0];
+const newChatKey = (ws: string) => `${ws}::${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
 function loadSession(): SavedSession | null {
   try {
     const s = JSON.parse(localStorage.getItem(SESSION_KEY) ?? "null");
@@ -163,16 +170,26 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<Record<string, string>>({});
   // Terminal pane layout per workspace (split tree; MAIN = tab-strip pane).
   const [layouts, setLayouts] = useState<Record<string, PaneNode>>({});
+  // Chat shown per workspace, and chat names (default: first tab's title).
+  const [activeChat, setActiveChat] = useState<Record<string, string>>({});
+  const [chatTitles, setChatTitles] = useState<Record<string, string>>({});
+  const chatsOf = (ws: string) => Object.keys(tabs).filter((k) => wsOf(k) === ws);
+  const chatTitle = (chat: string) => chatTitles[chat] ?? tabs[chat]?.[0]?.title ?? "chat";
+  // The chat on screen for the current workspace.
+  const ck = activeChat[view] && tabs[activeChat[view]] ? activeChat[view] : chatsOf(view)[0] ?? "";
   // Save open chats once the saved ones are restored (not the empty start).
   const sessionReady = useRef(false);
   useEffect(() => {
     if (!sessionReady.current) return;
     try {
-      localStorage.setItem(SESSION_KEY, JSON.stringify({ tabs, activeTab, layouts } satisfies SavedSession));
+      localStorage.setItem(
+        SESSION_KEY,
+        JSON.stringify({ tabs, activeTab, layouts, activeChat, chatTitles } satisfies SavedSession),
+      );
     } catch {
       /* storage full or blocked: chats just won't be remembered */
     }
-  }, [tabs, activeTab, layouts]);
+  }, [tabs, activeTab, layouts, activeChat, chatTitles]);
   const [rightHidden, setRightHidden] = useState(() => localStorage.getItem("crux.rightHidden") === "1");
   const [sideHidden, setSideHidden] = useState(() => localStorage.getItem("crux.sideHidden") === "1");
   const toggleSide = () =>
@@ -237,7 +254,9 @@ export default function App() {
   const [chatCtx, setChatCtx] = useState<null | { key: string; id: string; name: string; x: number; y: number }>(null);
   const [renamingChat, setRenamingChat] = useState<string | null>(null);
   // "Are you sure?" before a chat / terminal is closed.
+  // id "" = close the whole chat `key`; otherwise one terminal in it.
   const [confirmClose, setConfirmClose] = useState<null | { key: string; id: string; name: string }>(null);
+  const doClose = (c: { key: string; id: string }) => (c.id ? closeTab(c.key, c.id) : closeChat(c.key));
   // Workspaces whose chat list is unfolded in the sidebar; all start folded.
   const [chatsOpen, setChatsOpen] = useState<Set<string>>(() => new Set());
   const [gitMenu, setGitMenu] = useState<null | { anchor: DOMRect; mode: "agent" | "shell"; tabId: string; target: string }>(null);
@@ -315,28 +334,43 @@ export default function App() {
         const initialTabs: Record<string, TermTab[]> = {};
         const initialActive: Record<string, string> = {};
         const initialLayouts: Record<string, PaneNode> = {};
+        const initialChat: Record<string, string> = {};
+        const initialTitles: Record<string, string> = {};
         const saved = loadSession();
-        for (const key of Object.keys(c.repos)) {
-          const prev = saved?.tabs[key]?.filter((t) => t.id && t.title);
-          if (prev?.length) {
+        for (const ws of Object.keys(c.repos)) {
+          // Saves from before chats existed are keyed by workspace.
+          const keys = Object.keys(saved?.tabs ?? {}).filter((k) => k === ws || wsOf(k) === ws);
+          for (const k of keys) {
+            const prev = saved!.tabs[k]?.filter((t) => t.id && t.title);
+            if (!prev?.length) continue;
+            const chat = k === ws ? `${ws}::1` : k;
             // Reopen last session's chats. Codex can't be told which session
             // to reopen, so it shows its "resume" picker.
-            initialTabs[key] = prev.map((t) => (t.agent === "codex" ? { ...t, bootCmd: "codex resume" } : t));
+            initialTabs[chat] = prev.map((t) => (t.agent === "codex" ? { ...t, bootCmd: "codex resume" } : t));
             const ids = new Set(prev.map((t) => t.id));
-            initialActive[key] = ids.has(saved!.activeTab[key]) ? saved!.activeTab[key] : prev[0].id;
-            const layout = saved!.layouts[key];
-            if (layout && splitTabIds(layout).every((id) => ids.has(id))) initialLayouts[key] = layout;
+            initialActive[chat] = ids.has(saved!.activeTab[k]) ? saved!.activeTab[k] : prev[0].id;
+            const layout = saved!.layouts[k];
+            if (layout && splitTabIds(layout).every((id) => ids.has(id))) initialLayouts[chat] = layout;
+            if (saved!.chatTitles?.[k]) initialTitles[chat] = saved!.chatTitles[k];
             // Keep new tab ids from colliding with restored ones.
             for (const t of prev) tabSeq = Math.max(tabSeq, (Number(t.id.split(":").at(-2)) || 0) + 1);
-          } else {
-            const id = newTabId(key);
-            initialTabs[key] = [{ id, title: "shell" }];
-            initialActive[key] = id;
           }
+          const mine = Object.keys(initialTabs).filter((k) => wsOf(k) === ws);
+          if (!mine.length) {
+            const chat = `${ws}::1`;
+            const id = newTabId(chat);
+            initialTabs[chat] = [{ id, title: "shell" }];
+            initialActive[chat] = id;
+            mine.push(chat);
+          }
+          const last = saved?.activeChat?.[ws];
+          initialChat[ws] = last && mine.includes(last) ? last : mine[0];
         }
         setTabs(initialTabs);
         setActiveTab(initialActive);
         setLayouts(initialLayouts);
+        setActiveChat(initialChat);
+        setChatTitles(initialTitles);
         sessionReady.current = true;
       });
   }, []);
@@ -504,10 +538,20 @@ export default function App() {
           return { ...act, [repo]: fallback ?? "" };
         });
         if (remaining.length === 0) {
-          // Never leave a workspace without a terminal.
-          const freshId = newTabId(repo);
-          next[repo] = [{ id: freshId, title: "shell" }];
-          setActiveTab((act) => ({ ...act, [repo]: freshId }));
+          const ws = wsOf(repo);
+          const siblings = Object.keys(prev).filter((k) => k !== repo && wsOf(k) === ws);
+          if (siblings.length) {
+            // Last tab of this chat: the chat goes, another one is shown.
+            delete next[repo];
+            setLayouts(({ [repo]: _l, ...rest }) => rest);
+            setChatTitles(({ [repo]: _t, ...rest }) => rest);
+            setActiveChat((a) => (a[ws] === repo ? { ...a, [ws]: siblings[siblings.length - 1] } : a));
+          } else {
+            // Never leave a workspace without a terminal.
+            const freshId = newTabId(repo);
+            next[repo] = [{ id: freshId, title: "shell" }];
+            setActiveTab((act) => ({ ...act, [repo]: freshId }));
+          }
         }
         return next;
       });
@@ -518,28 +562,28 @@ export default function App() {
   const launchAgent = useCallback(
     (cmd: "claude" | "codex") => {
       if (view === "connections" || view === "jira") return;
-      const repoTabs = tabs[view] ?? [];
-      const active = repoTabs.find((t) => t.id === activeTab[view]);
+      const repoTabs = tabs[ck] ?? [];
+      const active = repoTabs.find((t) => t.id === activeTab[ck]);
       if (active && !active.agent) {
         // Free shell tab: respawn it with the command baked into the shell
         // invocation (typing into a live shell races prompt init — p10k eats
         // typed-ahead input, so we never type commands at all).
         send({ type: "term:kill", id: active.id });
         disposeTerm(active.id);
-        const id = newTabId(view);
+        const id = newTabId(ck);
         setTabs((prev) => ({
           ...prev,
-          [view]: (prev[view] ?? []).map((t) =>
+          [ck]: (prev[ck] ?? []).map((t) =>
             t.id === active.id ? { id, title: cmd, agent: cmd, bootCmd: agentBoot(cmd) } : t,
           ),
         }));
-        setActiveTab((prev) => ({ ...prev, [view]: id }));
+        setActiveTab((prev) => ({ ...prev, [ck]: id }));
       } else {
         // Active tab already hosts an agent: open the new one in its own tab.
-        addTab(view, cmd, cmd, agentBoot(cmd));
+        addTab(ck, cmd, cmd, agentBoot(cmd));
       }
     },
-    [view, tabs, activeTab, send, addTab],
+    [view, ck, tabs, activeTab, send, addTab],
   );
 
   const dropAt = useCallback(
@@ -550,11 +594,11 @@ export default function App() {
       if (!pane) return null;
       const rect = pane.getBoundingClientRect();
       let side = sideAt(rect, clientX, clientY);
-      const panes = leafIds(layouts[view] ?? rootLayout()).length;
+      const panes = leafIds(layouts[ck] ?? rootLayout()).length;
       if (side !== "center" && panes >= MAX_PANES) side = "center";
       return { paneId: pane.dataset.paneId!, side, rect };
     },
-    [layouts, view],
+    [layouts, ck],
   );
 
   const startAgentDrag = useCallback(
@@ -580,28 +624,30 @@ export default function App() {
         if (!drop) return;
         if (drop.side === "center") {
           if (drop.paneId === MAIN) {
-            addTab(view, cmd, cmd, agentBoot(cmd));
+            addTab(ck, cmd, cmd, agentBoot(cmd));
           } else {
             // Middle of a split pane: becomes a tab in that pane.
-            const id = createTab(view, cmd, cmd, agentBoot(cmd));
-            setLayouts((prev) => ({ ...prev, [view]: addTabToPane(prev[view] ?? rootLayout(), drop.paneId, id) }));
+            const id = createTab(ck, cmd, cmd, agentBoot(cmd));
+            setLayouts((prev) => ({ ...prev, [ck]: addTabToPane(prev[ck] ?? rootLayout(), drop.paneId, id) }));
           }
           return;
         }
-        const id = createTab(view, cmd, cmd, agentBoot(cmd));
-        setLayouts((prev) => ({ ...prev, [view]: insertAt(prev[view] ?? rootLayout(), drop.paneId, drop.side as DropSide, id) }));
+        const id = createTab(ck, cmd, cmd, agentBoot(cmd));
+        setLayouts((prev) => ({ ...prev, [ck]: insertAt(prev[ck] ?? rootLayout(), drop.paneId, drop.side as DropSide, id) }));
       };
       window.addEventListener("pointermove", move);
       window.addEventListener("pointerup", up);
     },
-    [view, dropAt, launchAgent, addTab, createTab],
+    [view, ck, dropAt, launchAgent, addTab, createTab],
   );
 
   const onWorkspaceAdded = (key: string, repo: RepoInfo) => {
     setConfig((c) => (c ? { ...c, repos: { ...c.repos, [key]: repo } } : c));
-    const id = newTabId(key);
-    setTabs((prev) => ({ ...prev, [key]: [{ id, title: "shell" }] }));
-    setActiveTab((prev) => ({ ...prev, [key]: id }));
+    const chat = `${key}::1`;
+    const id = newTabId(chat);
+    setTabs((prev) => ({ ...prev, [chat]: [{ id, title: "shell" }] }));
+    setActiveTab((prev) => ({ ...prev, [chat]: id }));
+    setActiveChat((prev) => ({ ...prev, [key]: chat }));
     setView(key);
     setAdding(false);
   };
@@ -623,11 +669,13 @@ export default function App() {
       }
       localStorage.removeItem(`crux.browserTabs.${key}`);
     }
-    for (const t of tabs[key] ?? []) {
-      send({ type: "term:kill", id: t.id });
-      disposeTerm(t.id);
+    for (const chat of chatsOf(key)) {
+      for (const t of tabs[chat] ?? []) {
+        send({ type: "term:kill", id: t.id });
+        disposeTerm(t.id);
+      }
     }
-    setTabs(({ [key]: _gone, ...rest }) => rest);
+    setTabs((prev) => Object.fromEntries(Object.entries(prev).filter(([k]) => wsOf(k) !== key)));
     const { [key]: _removed, ...repos } = config?.repos ?? {};
     if (view === key) setView(Object.keys(repos)[0] ?? "");
     setConfig((c) => (c ? { ...c, repos } : c));
@@ -789,12 +837,12 @@ export default function App() {
 
   // Terminals currently shown: the main pane's tab + each split pane's tab.
   const visibleTermIds = (): string[] => {
-    const layout = layouts[view] ?? rootLayout();
+    const layout = layouts[ck] ?? rootLayout();
     const ids: string[] = [];
     const walk = (n: PaneNode) => {
       if (n.kind === "split") return n.children.forEach(walk);
       if (n.id === MAIN) {
-        if (activeTab[view]) ids.push(activeTab[view]);
+        if (activeTab[ck]) ids.push(activeTab[ck]);
       } else ids.push(paneActive(n));
     };
     walk(layout);
@@ -807,8 +855,8 @@ export default function App() {
     // otherwise the main pane's active tab.
     const onScreen = visibleTermIds();
     const focused = focusedTerm[view];
-    const tabId = focused && onScreen.includes(focused) ? focused : activeTab[view];
-    const tab = (tabs[view] ?? []).find((t) => t.id === tabId);
+    const tabId = focused && onScreen.includes(focused) ? focused : activeTab[ck];
+    const tab = (tabs[ck] ?? []).find((t) => t.id === tabId);
     if (!tab) return;
     let mode: "agent" | "shell" = tab.agent ? "agent" : "shell";
     try {
@@ -842,26 +890,44 @@ export default function App() {
       return next;
     });
 
-  // Jump to a chat from the sidebar: its workspace, its pane, its tab.
-  const openChat = (key: string, id: string) => {
-    setView(key);
-    let pane: string | null = null;
-    const walk = (n: PaneNode) => {
-      if (n.kind === "split") return n.children.forEach(walk);
-      if (n.id !== MAIN && paneTabs(n).includes(id)) pane = n.id;
-    };
-    if (layouts[key]) walk(layouts[key]);
-    if (pane) setLayouts((prev) => ({ ...prev, [key]: setPaneActive(prev[key] ?? rootLayout(), pane!, id) }));
-    else setActiveTab((prev) => ({ ...prev, [key]: id }));
-    setFocusedTerm((prev) => ({ ...prev, [key]: id }));
+  // Show a chat (its whole layout) from the sidebar.
+  const openChat = (chat: string) => {
+    const ws = wsOf(chat);
+    setView(ws);
+    setActiveChat((prev) => ({ ...prev, [ws]: chat }));
   };
 
+  // A new chat is a new screen in the workspace with one terminal / agent.
   const newChat = (key: string, kind: "claude" | "codex" | "shell", name: string) => {
+    const chat = newChatKey(key);
+    const title = name.trim() || (kind === "shell" ? "shell" : kind);
+    if (kind === "shell") addTab(chat, title);
+    else addTab(chat, title, kind, agentBoot(kind));
+    setChatTitles((prev) => ({ ...prev, [chat]: title }));
+    setActiveChat((prev) => ({ ...prev, [key]: chat }));
     setView(key);
     setChatsShown(key, true);
-    const title = name.trim() || (kind === "shell" ? "shell" : kind);
-    if (kind === "shell") addTab(key, title);
-    else addTab(key, title, kind, agentBoot(kind));
+  };
+
+  // Close a whole chat: every terminal in it.
+  const closeChat = (chat: string) => {
+    for (const t of tabs[chat] ?? []) {
+      send({ type: "term:kill", id: t.id });
+      disposeTerm(t.id);
+    }
+    const ws = wsOf(chat);
+    const siblings = chatsOf(ws).filter((k) => k !== chat);
+    setLayouts(({ [chat]: _l, ...rest }) => rest);
+    setChatTitles(({ [chat]: _t, ...rest }) => rest);
+    if (siblings.length) {
+      setTabs(({ [chat]: _gone, ...rest }) => rest);
+      setActiveChat((a) => (a[ws] === chat ? { ...a, [ws]: siblings[siblings.length - 1] } : a));
+    } else {
+      // Never leave a workspace without a terminal.
+      const id = newTabId(chat);
+      setTabs((prev) => ({ ...prev, [chat]: [{ id, title: "shell" }] }));
+      setActiveTab((prev) => ({ ...prev, [chat]: id }));
+    }
   };
 
   const afterIntro = useCallback(() => setOnboarding("name"), []);
@@ -883,30 +949,20 @@ export default function App() {
     });
   };
 
-  const renameChat = (key: string, id: string, title: string) => {
+  const renameChat = (chat: string, title: string) => {
     setRenamingChat(null);
     const next = title.trim();
-    if (!next) return;
-    setTabs((prev) => ({ ...prev, [key]: (prev[key] ?? []).map((t) => (t.id === id ? { ...t, title: next } : t)) }));
+    if (next) setChatTitles((prev) => ({ ...prev, [chat]: next }));
   };
 
   // Suggested name: "claude", "claude 2", … whichever is free.
   const askChatName = (key: string, kind: "claude" | "codex" | "shell") => {
-    const taken = new Set(chatNames(tabs[key] ?? []));
+    const taken = new Set(chatsOf(key).map(chatTitle));
     let name: string = kind;
     for (let n = 2; taken.has(name); n++) name = `${kind} ${n}`;
     setNameChat({ key, kind, name });
   };
 
-  // "claude", "claude 2", … so repeated chats are tellable apart.
-  const chatNames = (list: TermTab[]) => {
-    const seen = new Map<string, number>();
-    return list.map((t) => {
-      const n = (seen.get(t.title) ?? 0) + 1;
-      seen.set(t.title, n);
-      return n === 1 ? t.title : `${t.title} ${n}`;
-    });
-  };
 
   const hideRight = (hidden: boolean) => {
     setRightHidden(hidden);
@@ -917,7 +973,7 @@ export default function App() {
   useModalKeys(!!confirmClose, {
     onEnter: () => {
       if (!confirmClose) return;
-      closeTab(confirmClose.key, confirmClose.id);
+      doClose(confirmClose);
       setConfirmClose(null);
     },
     onEscape: () => setConfirmClose(null),
@@ -963,7 +1019,7 @@ export default function App() {
   const panelTab = panelTabList.some(([k]) => k === panelTabs[view]) ? panelTabs[view] : panelTabList[0]?.[0];
   // Native browser views float above HTML: hide them under overlays.
   const overlayOpen = adding || !!menu || !!confirmDelete || !!agentDrag || dragging || !!jiraMenu || !!gitMenu || !!chatMenu || !!nameChat || !!confirmClose || !!onboarding || !!chatCtx || settingsOpen;
-  const viewLayout = (!isSpecialView && layouts[view]) || rootLayout();
+  const viewLayout = (!isSpecialView && layouts[ck]) || rootLayout();
   const viewSplits = splitTabIds(viewLayout);
 
   // Drag a divider: resize the two panes either side of it.
@@ -982,7 +1038,7 @@ export default function App() {
       const next = [...sizes];
       next[index] = a;
       next[index + 1] = pair - a;
-      setLayouts((prev) => ({ ...prev, [view]: setSizesAt(prev[view] ?? rootLayout(), path, next) }));
+      setLayouts((prev) => ({ ...prev, [ck]: setSizesAt(prev[ck] ?? rootLayout(), path, next) }));
     };
     const up = () => {
       window.removeEventListener("pointermove", move);
@@ -1017,7 +1073,7 @@ export default function App() {
       );
     }
     if (node.id === MAIN) {
-      const t = (tabs[view] ?? []).find((x) => x.id === activeTab[view] && !viewSplits.includes(x.id));
+      const t = (tabs[ck] ?? []).find((x) => x.id === activeTab[ck] && !viewSplits.includes(x.id));
       return (
         <div className={`term-slot ${hasSplits && t && focusedTerm[view] === t.id ? "focused" : ""}`} data-pane-id={MAIN} key={MAIN}>
           {t && <Term key={t.id} id={t.id} repo={view} bootCmd={t.bootCmd} connected={connected} send={send} subscribe={subscribe} onFocus={noteFocus} />}
@@ -1027,7 +1083,7 @@ export default function App() {
     // A split pane with its own tabs.
     const ids = paneTabs(node);
     const activeId = paneActive(node);
-    const paneTabList = ids.map((id) => (tabs[view] ?? []).find((x) => x.id === id)).filter(Boolean) as TermTab[];
+    const paneTabList = ids.map((id) => (tabs[ck] ?? []).find((x) => x.id === id)).filter(Boolean) as TermTab[];
     const shown = paneTabList.find((x) => x.id === activeId) ?? paneTabList[paneTabList.length - 1];
     if (!shown) return null;
     return (
@@ -1038,7 +1094,7 @@ export default function App() {
               <span
                 key={t.id}
                 className={`pane-tab ${t.id === shown.id ? "on" : ""}`}
-                onClick={() => setLayouts((prev) => ({ ...prev, [view]: setPaneActive(prev[view] ?? rootLayout(), node.id, t.id) }))}
+                onClick={() => setLayouts((prev) => ({ ...prev, [ck]: setPaneActive(prev[ck] ?? rootLayout(), node.id, t.id) }))}
               >
                 {t.agent === "claude" && <ClaudeLogo />}
                 {t.agent === "codex" && <CodexLogo />}
@@ -1048,7 +1104,7 @@ export default function App() {
                   title="Close this terminal"
                   onClick={(e) => {
                     e.stopPropagation();
-                    setConfirmClose({ key: view, id: t.id, name: t.title });
+                    setConfirmClose({ key: ck, id: t.id, name: t.title });
                   }}
                 >
                   ×
@@ -1060,8 +1116,8 @@ export default function App() {
             className="pane-tab-add"
             title="New terminal in this pane"
             onClick={() => {
-              const id = createTab(view);
-              setLayouts((prev) => ({ ...prev, [view]: addTabToPane(prev[view] ?? rootLayout(), node.id, id) }));
+              const id = createTab(ck);
+              setLayouts((prev) => ({ ...prev, [ck]: addTabToPane(prev[ck] ?? rootLayout(), node.id, id) }));
             }}
           >
             +
@@ -1181,7 +1237,7 @@ export default function App() {
                   {r.pinned && <span className="side-pin" title="Pinned">{MenuIcons.pin}</span>}
                   {unread.has(key) && <span className="unread-dot" title="New activity" />}
                 </button>
-                {(tabs[key] ?? []).length > 0 && (
+                {chatsOf(key).length > 0 && (
                   <span
                     className={`side-sub-toggle ws-chat-toggle ${chatsOpen.has(key) ? "" : "collapsed"}`}
                     role="button"
@@ -1191,7 +1247,7 @@ export default function App() {
                       setView(key);
                     }}
                   >
-                    <small>{(tabs[key] ?? []).length}</small>
+                    <small>{chatsOf(key).length}</small>
                     <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M2.5 3.75 5 6.25l2.5-2.5" />
                     </svg>
@@ -1211,58 +1267,65 @@ export default function App() {
                   ×
                 </button>
               </div>
-              <div className={`side-sub ws-chats ${!chatsOpen.has(key) || !(tabs[key] ?? []).length ? "collapsed" : ""}`}>
+              <div className={`side-sub ws-chats ${!chatsOpen.has(key) || !chatsOf(key).length ? "collapsed" : ""}`}>
                 <div className="side-sub-inner">
                   {(() => {
-                    const list = tabs[key] ?? [];
-                    const names = chatNames(list);
-                    const current = focusedTerm[key] ?? activeTab[key];
-                    return list.map((t, i) => (
+                    const shown = activeChat[key] && tabs[activeChat[key]] ? activeChat[key] : chatsOf(key)[0];
+                    return chatsOf(key).map((chat) => {
+                      const name = chatTitle(chat);
+                      // One icon per kind of agent in the chat (Claude + Codex split → both).
+                      const kinds = [...new Set((tabs[chat] ?? []).map((t) => t.agent ?? "shell"))];
+                      return (
                       <div
-                        key={t.id}
-                        className={`side-sub-item ws-chat ${view === key && current === t.id ? "active" : ""}`}
-                        onClick={() => openChat(key, t.id)}
+                        key={chat}
+                        className={`side-sub-item ws-chat ${view === key && shown === chat ? "active" : ""}`}
+                        onClick={() => openChat(chat)}
                         onContextMenu={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          setChatCtx({ key, id: t.id, name: names[i], x: e.clientX, y: e.clientY });
+                          setChatCtx({ key: chat, id: "", name, x: e.clientX, y: e.clientY });
                         }}
-                        title={names[i]}
+                        title={`${name} · ${(tabs[chat] ?? []).length} terminal${(tabs[chat] ?? []).length === 1 ? "" : "s"}`}
                       >
-                        <span className="ws-chat-icon">
-                          {t.agent === "claude" ? <ClaudeLogo /> : t.agent === "codex" ? <CodexLogo /> : <TerminalIcon />}
+                        <span className="ws-chat-icons">
+                          {kinds.slice(0, 3).map((k) => (
+                            <span key={k} className="ws-chat-icon">
+                              {k === "claude" ? <ClaudeLogo /> : k === "codex" ? <CodexLogo /> : <TerminalIcon />}
+                            </span>
+                          ))}
                         </span>
-                        {renamingChat === t.id ? (
+                        {renamingChat === chat ? (
                           <input
                             className="side-rename ws-chat-rename"
-                            defaultValue={t.title}
+                            defaultValue={name}
                             autoFocus
                             onClick={(e) => e.stopPropagation()}
                             onFocus={(e) => e.currentTarget.select()}
                             onKeyDown={(e) => {
                               if (e.key === "Enter") e.currentTarget.blur();
                               if (e.key === "Escape") {
-                                e.currentTarget.value = t.title;
+                                e.currentTarget.value = name;
                                 e.currentTarget.blur();
                               }
                             }}
-                            onBlur={(e) => renameChat(key, t.id, e.currentTarget.value)}
+                            onBlur={(e) => renameChat(chat, e.currentTarget.value)}
                           />
                         ) : (
-                          <span className="side-sub-label">{names[i]}</span>
+                          <span className="side-sub-label">{name}</span>
                         )}
                         <button
                           className="side-remove"
                           title="Close chat"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setConfirmClose({ key, id: t.id, name: names[i] });
+                            setConfirmClose({ key: chat, id: "", name });
                           }}
                         >
                           ×
                         </button>
                       </div>
-                    ));
+                      );
+                    });
                   })()}
                 </div>
               </div>
@@ -1450,24 +1513,24 @@ export default function App() {
           >
             <section className="term-pane" ref={termPaneRef}>
               <div className="term-tabs">
-                {(tabs[view] ?? [])
+                {(tabs[ck] ?? [])
                   .filter((t) => !viewSplits.includes(t.id))
                   .map((t) => (
                     <span
                       key={t.id}
-                      className={`term-tab ${activeTab[view] === t.id ? "active" : ""}`}
-                      onClick={() => setActiveTab((prev) => ({ ...prev, [view]: t.id }))}
+                      className={`term-tab ${activeTab[ck] === t.id ? "active" : ""}`}
+                      onClick={() => setActiveTab((prev) => ({ ...prev, [ck]: t.id }))}
                     >
                       {t.agent === "claude" && <ClaudeLogo />}
                       {t.agent === "codex" && <CodexLogo />}
                       {t.title}
-                      {(tabs[view] ?? []).length > 1 && (
+                      {(tabs[ck] ?? []).length > 1 && (
                         <button
                           className="term-tab-close"
                           title="Close terminal"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setConfirmClose({ key: view, id: t.id, name: t.title });
+                            setConfirmClose({ key: ck, id: t.id, name: t.title });
                           }}
                         >
                           ×
@@ -1475,7 +1538,7 @@ export default function App() {
                       )}
                     </span>
                   ))}
-                <button className="term-tab-add" title="New terminal" onClick={() => addTab(view)}>
+                <button className="term-tab-add" title="New terminal in this chat" onClick={() => addTab(ck)}>
                   +
                 </button>
                 <button
@@ -1625,7 +1688,7 @@ export default function App() {
         />
       )}
       {chatCtx && (() => {
-        const t = (tabs[chatCtx.key] ?? []).find((x) => x.id === chatCtx.id);
+        const t = (tabs[chatCtx.key] ?? [])[0];
         if (!t) return null;
         const kind = t.agent === "claude" || t.agent === "codex" ? t.agent : "shell";
         const label = kind === "shell" ? "terminal" : `${kind === "claude" ? "Claude" : "Codex"} chat`;
@@ -1636,12 +1699,12 @@ export default function App() {
             onClose={() => setChatCtx(null)}
             groups={[
               [
-                { label: "Open", icon: kind === "claude" ? <ClaudeLogo /> : kind === "codex" ? <CodexLogo /> : <TerminalIcon />, onSelect: () => openChat(chatCtx.key, t.id) },
-                { label: "Rename", icon: MenuIcons.rename, onSelect: () => setRenamingChat(t.id) },
-                { label: `New ${label} here`, icon: MenuIcons.copy, onSelect: () => askChatName(chatCtx.key, kind) },
+                { label: "Open", icon: kind === "claude" ? <ClaudeLogo /> : kind === "codex" ? <CodexLogo /> : <TerminalIcon />, onSelect: () => openChat(chatCtx.key) },
+                { label: "Rename", icon: MenuIcons.rename, onSelect: () => setRenamingChat(chatCtx.key) },
+                { label: `New ${label} here`, icon: MenuIcons.copy, onSelect: () => askChatName(wsOf(chatCtx.key), kind) },
               ],
               [
-                { label: "Close chat", icon: MenuIcons.trash, danger: true, onSelect: () => setConfirmClose({ key: chatCtx.key, id: t.id, name: chatCtx.name }) },
+                { label: "Close chat", icon: MenuIcons.trash, danger: true, onSelect: () => setConfirmClose({ key: chatCtx.key, id: "", name: chatCtx.name }) },
               ],
             ]}
           />
@@ -1699,7 +1762,8 @@ export default function App() {
               <div>
                 <div className="chat-modal-title">Close “{confirmClose.name}”?</div>
                 <div className="chat-modal-sub">
-                  Its session{config.repos[confirmClose.key] ? ` in ${config.repos[confirmClose.key].label}` : ""} will be stopped.
+                  {confirmClose.id ? "Its session" : "Every terminal in this chat"}
+                  {config.repos[wsOf(confirmClose.key)] ? ` in ${config.repos[wsOf(confirmClose.key)].label}` : ""} will be stopped.
                 </div>
               </div>
             </div>
@@ -1709,7 +1773,7 @@ export default function App() {
               <button
                 className="danger-solid"
                 onClick={() => {
-                  closeTab(confirmClose.key, confirmClose.id);
+                  doClose(confirmClose);
                   setConfirmClose(null);
                 }}
               >
