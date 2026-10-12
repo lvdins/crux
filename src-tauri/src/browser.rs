@@ -377,27 +377,92 @@ pub async fn browser_close(app: AppHandle, label: String) -> Result<(), String> 
     Ok(())
 }
 
-/// Keep browser logins across restarts and updates. WebKit drops session
-/// cookies (no expiry) when the app quits, and many sites (the dashboard
-/// among them) log in with one. Every few seconds, give any session cookie a
-/// 30-day expiry so WebKit stores it on disk like a normal cookie.
+/// Keep browser logins across restarts and updates.
+/// - WebKit drops session cookies (no expiry) when the app quits, and many
+///   sites (GitLab, Jira, the dashboard) log in with one: every few seconds,
+///   give any session cookie a 30-day expiry so WebKit stores it on disk.
+/// - Those sites send the cookie again as a session cookie on every page, so
+///   at any moment some may be session-only again; an update that quits Crux
+///   right then loses them. So Crux also keeps its own copy of the cookie
+///   jar (`<CRUX_HOME>/browser-cookies.txt`, readable by you only) and, once a
+///   browser pane exists after a restart, puts back any cookie that's missing
+///   and reloads the panes. Logging out deletes the cookie, which the next
+///   copy (≤ 5 s later) reflects, so a logout is not undone.
 pub fn keep_logins(app: AppHandle) {
-    use tauri::webview::cookie::{time::{Duration, OffsetDateTime}, Expiration};
-    std::thread::spawn(move || loop {
-        std::thread::sleep(std::time::Duration::from_secs(10));
-        // All browser panes share one cookie store; any of them will do.
-        let Some(view) = app.webviews().into_iter().find(|(l, _)| l.starts_with("browser-")).map(|(_, v)| v) else {
-            continue;
-        };
-        let Ok(cookies) = view.cookies() else { continue };
-        for cookie in cookies {
-            let session = matches!(cookie.expires(), None | Some(Expiration::Session)) && cookie.max_age().is_none();
-            if !session {
-                continue;
+    use tauri::webview::cookie::{time::{Duration, OffsetDateTime}, Cookie, Expiration};
+    let backup = cookie_backup_path();
+    std::thread::spawn(move || {
+        let mut restored = false;
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(5));
+            // All browser panes share one cookie store; any of them will do.
+            let views: Vec<_> = app.webviews().into_iter().filter(|(l, _)| l.starts_with("browser-")).map(|(_, v)| v).collect();
+            let Some(view) = views.first() else { continue };
+            let Ok(cookies) = view.cookies() else { continue };
+            let key = |c: &Cookie| format!("{}\t{}\t{}", c.name(), c.domain().unwrap_or("").trim_start_matches('.'), c.path().unwrap_or("/"));
+
+            if !restored {
+                restored = true;
+                let have: std::collections::HashSet<String> = cookies.iter().map(|c| key(c)).collect();
+                let now = OffsetDateTime::now_utc();
+                let mut put_back = 0;
+                for line in std::fs::read_to_string(&backup).unwrap_or_default().lines() {
+                    let Ok(c) = Cookie::parse(line.to_string()) else { continue };
+                    let live = match c.expires() {
+                        Some(Expiration::DateTime(at)) => at > now,
+                        _ => true,
+                    };
+                    if live && !have.contains(&key(&c)) && view.set_cookie(c.into_owned()).is_ok() {
+                        put_back += 1;
+                    }
+                }
+                if put_back > 0 {
+                    for v in &views {
+                        let _ = v.eval("location.reload()");
+                    }
+                    continue; // copy the jar on the next round, with the restored cookies in it
+                }
             }
-            let mut kept = cookie.into_owned();
-            kept.set_expires(OffsetDateTime::now_utc() + Duration::days(30));
-            let _ = view.set_cookie(kept);
+
+            let mut lines = Vec::with_capacity(cookies.len());
+            for cookie in cookies {
+                let mut kept = cookie.into_owned();
+                let session = matches!(kept.expires(), None | Some(Expiration::Session)) && kept.max_age().is_none();
+                if session {
+                    kept.set_expires(OffsetDateTime::now_utc() + Duration::days(30));
+                    let _ = view.set_cookie(kept.clone());
+                }
+                lines.push(kept.to_string());
+            }
+            write_private(&backup, &(lines.join("\n") + "\n"));
         }
     });
+}
+
+fn cookie_backup_path() -> std::path::PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/".into());
+    std::env::var("CRUX_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::Path::new(&home).join(".crux"))
+        .join("browser-cookies.txt")
+}
+
+/// Write via a temp file + rename (never half a jar), mode 0600.
+fn write_private(path: &std::path::Path, text: &str) {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let tmp = path.with_extension("tmp");
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let ok = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(&tmp)
+        .and_then(|mut f| f.write_all(text.as_bytes()));
+    if ok.is_ok() {
+        let _ = std::fs::rename(&tmp, path);
+    }
 }
