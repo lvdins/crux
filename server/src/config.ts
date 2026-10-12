@@ -27,23 +27,58 @@ export interface CruxConfig {
 /** Which parts of Crux are on. A mode is a preset; each toggle can differ. */
 export interface Settings {
   mode: "qa" | "regular";
+  // workspace panel tabs
+  docPreview: boolean;
+  tests: boolean;
+  coverage: boolean;
+  pipelines: boolean;
   browser: boolean;
   network: boolean;
   picker: boolean;
-  qaPanels: boolean;
+  // sidebar views (and the Connections view's own tabs)
   connections: boolean;
+  connCoverage: boolean;
+  connGraph: boolean;
   jira: boolean;
+  // chats and notifications (not part of a mode)
+  defaultChat: "pick" | "claude" | "codex" | "shell";
+  askChatName: boolean;
+  confirmClose: boolean;
+  notifyAgent: boolean;
+  notifyPipeline: boolean;
+  /** Closing the window hides Crux to the menu bar (desktop app). */
+  keepRunning: boolean;
+  /** ⌥Space from any app opens the quick-ask box (desktop app). */
+  quickAsk: boolean;
+  /** Start on the Home screen instead of the last view. */
+  openHome: boolean;
+  /** Jira project key bugs are filed in (blank: the agent asks). */
+  jiraProject: string;
 }
 
+/** Tabs and views: a mode turns these on or off. */
+export const VIEW_KEYS = [
+  "docPreview", "tests", "coverage", "pipelines", "browser", "network", "picker",
+  "connections", "connCoverage", "connGraph", "jira",
+] as const;
+/** Personal preferences: kept when the mode changes. */
+export const PREF_KEYS = ["askChatName", "confirmClose", "notifyAgent", "notifyPipeline", "keepRunning", "quickAsk", "openHome"] as const;
+export const SETTING_KEYS = [...VIEW_KEYS, ...PREF_KEYS] as const;
+export const DEFAULT_CHATS = ["pick", "claude", "codex", "shell"] as const;
+
+const PREFS = { jiraProject: "", defaultChat: "pick", askChatName: true, confirmClose: true, notifyAgent: true, notifyPipeline: true, keepRunning: true, quickAsk: true, openHome: true } as const;
+const views = (on: boolean) => Object.fromEntries(VIEW_KEYS.map((k) => [k, on])) as Record<(typeof VIEW_KEYS)[number], boolean>;
 export const MODE_PRESETS: Record<Settings["mode"], Settings> = {
-  qa: { mode: "qa", browser: true, network: true, picker: true, qaPanels: true, connections: true, jira: true },
-  regular: { mode: "regular", browser: false, network: false, picker: false, qaPanels: false, connections: false, jira: false },
+  qa: { mode: "qa", ...views(true), ...PREFS },
+  regular: { mode: "regular", ...views(false), ...PREFS },
 };
 
 /** Saved settings over the mode's preset (existing users default to QA). */
 export function currentSettings(): Settings {
-  const saved = config.settings ?? {};
-  return { ...MODE_PRESETS[saved.mode ?? "qa"], ...saved };
+  const { qaPanels, ...saved } = (config.settings ?? {}) as Partial<Settings> & { qaPanels?: boolean };
+  // Before 0.1.11 one "QA panels" switch covered these tabs.
+  const legacy = qaPanels === false ? { docPreview: false, tests: false, coverage: false, pipelines: false } : {};
+  return { ...MODE_PRESETS[saved.mode ?? "qa"], ...legacy, ...saved };
 }
 
 // Bundled defaults (the original Giraffe360 setup); used only to seed a

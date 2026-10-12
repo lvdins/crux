@@ -196,3 +196,21 @@ export async function cropShot(pngBase64: string, issue: MarkedIssue): Promise<B
   ctx.strokeRect(r.x * scale - sx, r.y * scale - sy, r.w * scale, r.h * scale);
   return new Promise((resolve) => canvas.toBlob((b) => resolve(b!), "image/png"));
 }
+
+/** Asks the agent to draft, then (after the user's OK) file, a Jira bug for a marked issue. */
+export function jiraPrompt(issue: MarkedIssue, shot: string, project: string): string {
+  const lines = [
+    "File a Jira bug for the issue in the screenshot above.",
+    `Page: ${issue.url}${issue.title ? ` (${issue.title})` : ""}`,
+  ];
+  if (issue.text.trim()) lines.push(`Marked text: "${issue.text.trim().slice(0, 300)}"`);
+  if (issue.element?.locator) lines.push(`Element: ${issue.element.locator}`);
+  lines.push(
+    "",
+    "1. Draft it: a short title, steps to reproduce, expected vs actual result, and the page URL. Look at the page or code if you need to.",
+    "2. Show me the draft and wait for my OK.",
+    `3. Then create it in Jira${project ? ` project ${project}` : " (ask me which project)"} with your Jira / Atlassian tools, attach the screenshot (${shot}), and give me the link.`,
+    "If you have no Jira tools, say so and tell me how to connect them.",
+  );
+  return lines.join("\n");
+}

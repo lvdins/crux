@@ -5,6 +5,7 @@ import pty, { type IPty } from "node-pty";
 import type { WebSocket } from "ws";
 import { config } from "./config.js";
 import { agentEnv, writeMcpConfig } from "./agent-setup.js";
+import { findCodexSession, forgetTerm, loadTerm, pruneTerms, saveTerm } from "./sessions.js";
 
 /**
  * PTYs are keyed by client-chosen terminal id (a workspace can hold several
@@ -16,6 +17,13 @@ interface Entry {
   pty: IPty;
   buffer: string;
   subs: Set<WebSocket>;
+  cwd: string;
+  startedAt: number;
+  /** Started as `codex …`: its conversation id is looked up for reopening. */
+  codex: boolean;
+  codexSession?: string;
+  /** Output since the last save. */
+  dirty: boolean;
 }
 
 const terms = new Map<string, Entry>();
@@ -54,7 +62,11 @@ export function attachTerm(
     // into an interactive shell races fancy prompt init (p10k discards
     // typed-ahead input). `-il -c` sources zshrc (PATH), runs the command
     // once init is done, then execs a normal interactive shell.
-    const safeBoot = bootCmd && /^[\w ./-]+$/.test(bootCmd) ? resumeIfSaved(bootCmd) : undefined;
+    const saved = loadTerm(id);
+    let safeBoot = bootCmd && /^[\w ./@-]+$/.test(bootCmd) ? resumeIfSaved(bootCmd) : undefined;
+    // Reopened after Crux quit: Codex picks its conversation back up.
+    if (safeBoot === "codex" && saved?.codexSession && /^[0-9a-f-]{36}$/i.test(saved.codexSession)) safeBoot = `codex resume ${saved.codexSession}`;
+    const resumes = !!safeBoot && /^(claude --resume|codex resume) /.test(safeBoot);
     const args = safeBoot ? ["-il", "-c", `${safeBoot}; exec ${shell} -il`] : ["-l"];
     writeMcpConfig(repo); // workspace may have been added since startup
     const proc = pty.spawn(shell, args, {
@@ -62,10 +74,22 @@ export function attachTerm(
       cols: cols || 100,
       rows: rows || 30,
       cwd: repoCfg.path,
-      env: { ...env, ...agentEnv(repo, shell), TERM: "xterm-256color" },
+      env: { ...env, ...agentEnv(repo, shell, id), TERM: "xterm-256color" },
     });
-    const e: Entry = { pty: proc, buffer: "", subs: new Set() };
+    // A resumed conversation redraws itself; anything else shows its last screen.
+    const restored = saved?.output && !resumes ? `${saved.output}\x1b[?1049l\x1b[0m\r\n\x1b[2m── reopened · output above is from before Crux quit ──\x1b[0m\r\n` : "";
+    const e: Entry = {
+      pty: proc,
+      buffer: restored,
+      subs: new Set(),
+      cwd: repoCfg.path,
+      startedAt: Date.now(),
+      codex: !!safeBoot?.startsWith("codex"),
+      codexSession: safeBoot?.startsWith("codex resume ") ? saved?.codexSession : undefined,
+      dirty: !!restored,
+    };
     proc.onData((data) => {
+      e.dirty = true;
       e.buffer = (e.buffer + data).slice(-MAX_BUFFER);
       for (const sub of e.subs) send(sub, { type: "term:data", id, data });
     });
@@ -116,16 +140,43 @@ export function termResize(id: string, cols: number, rows: number): void {
   if (cols > 0 && rows > 0) terms.get(id)?.pty.resize(cols, rows);
 }
 
+/** Closed by the user: nothing to reopen. */
 export function killTerm(id: string): void {
   terms.get(id)?.pty.kill();
   terms.delete(id);
+  forgetTerm(id);
 }
+
+/** Saves each terminal's screen (and Codex conversation) for reopening. */
+export function saveTerms(all = false): void {
+  const taken = new Set([...terms.values()].map((e) => e.codexSession).filter(Boolean) as string[]);
+  for (const [id, e] of terms) {
+    if (e.codex && !e.codexSession) {
+      e.codexSession = findCodexSession(e.cwd, e.startedAt, taken);
+      if (e.codexSession) {
+        taken.add(e.codexSession);
+        e.dirty = true;
+      }
+    }
+    if (!e.dirty && !all) continue;
+    e.dirty = false;
+    try {
+      saveTerm(id, { output: e.buffer, codexSession: e.codexSession });
+    } catch {
+      /* disk full etc.: try again next time */
+    }
+  }
+}
+pruneTerms();
+setInterval(() => saveTerms(), 10_000).unref();
 
 export function detachAll(ws: WebSocket): void {
   for (const entry of terms.values()) entry.subs.delete(ws);
 }
 
+/** Crux is quitting: save, then stop (the tabs reopen next time). */
 export function killAllTerms(): void {
+  saveTerms(true);
   for (const entry of terms.values()) entry.pty.kill();
   terms.clear();
 }

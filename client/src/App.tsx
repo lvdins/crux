@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QA_SETTINGS, type AppConfig, type RepoInfo, type Settings } from "./types";
 import { api, WS_URL } from "./net";
 import Term, { disposeTerm, focusTerm } from "./components/Term";
@@ -7,18 +7,21 @@ import TestTree from "./components/TestTree";
 import SuiteCoverage from "./components/SuiteCoverage";
 import Browser from "./components/Browser";
 import { runAgentCommand, browserLabel, activeBrowserLabel } from "./agentBrowser";
-import { CANCEL_REPORT_SCRIPT, REPORT_SCRIPT, cropShot, type MarkedIssue } from "./reportIssue";
+import { CANCEL_REPORT_SCRIPT, REPORT_SCRIPT, cropShot, jiraPrompt, type MarkedIssue } from "./reportIssue";
+import ChatSearch, { type PastChat } from "./components/ChatSearch";
 import ChatPicker from "./components/ChatPicker";
 import PipelinesPanel, { overallTone, type PipelineInfo } from "./components/PipelinesPanel";
 import FeatureMap from "./components/FeatureMap";
+import Home, { reviewPrompt, type InboxMr } from "./components/Home";
 import AddWorkspace from "./components/AddWorkspace";
-import SetupChecklist from "./components/SetupChecklist";
+import SetupChecklist, { setupIssues } from "./components/SetupChecklist";
 import Intro from "./components/onboarding/Intro";
 import Welcome from "./components/onboarding/Welcome";
 import NameStep from "./components/onboarding/NameStep";
 import ModeStep from "./components/onboarding/ModeStep";
 import { useModalKeys } from "./useModalKeys";
 import SettingsModal from "./components/SettingsModal";
+import { notify } from "./notify";
 import "./components/settings.css";
 import FirstSetup from "./components/onboarding/FirstSetup";
 import "./components/onboarding/onboarding.css";
@@ -52,7 +55,15 @@ const CHIP_COLORS: Record<string, string> = {
   generic: "#b4a7d6",
 };
 
-type View = string | "connections";
+type View = string | "connections" | "jira" | "home";
+/** Views that are not a workspace. */
+const SPECIAL_VIEWS = new Set(["connections", "jira", "home"]);
+const isSpecial = (v: string) => SPECIAL_VIEWS.has(v);
+/** Sent by the ⌥Space quick-ask window. */
+type QuickAsk = { ws: string; text: string };
+const IN_TAURI = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+const invokeTauri = (cmd: string, args?: Record<string, unknown>) =>
+  IN_TAURI ? import("@tauri-apps/api/core").then(({ invoke }) => invoke(cmd, args)).catch(() => undefined) : Promise.resolve();
 
 /** Where a dragged agent would land: beside a pane, or as a tab. */
 interface Drop {
@@ -125,12 +136,46 @@ function loadSession(): SavedSession | null {
   }
 }
 
+const FINISHED = new Set(["success", "failed", "canceled", "skipped"]);
+/**
+ * A scheduled run that newly finished as failed → notification. Run ids
+ * already seen live in localStorage; the first look at a schedule only
+ * records its latest run.
+ */
+function notifyNewFailures(ws: string, info: PipelineInfo, enabled: boolean, label: string) {
+  let seen: Record<string, number> = {};
+  try {
+    seen = JSON.parse(localStorage.getItem("crux.seenRuns") ?? "{}");
+  } catch {
+    /* start over */
+  }
+  for (const s of info.schedules) {
+    const run = s.runs[0];
+    if (!s.active || !run || !FINISHED.has(run.status)) continue;
+    const key = `${ws}:${s.id}`;
+    if (seen[key] === run.id) continue;
+    if (enabled && seen[key] !== undefined && run.status === "failed") void notify(`${s.description} failed`, `${label} · scheduled pipeline`);
+    seen[key] = run.id;
+  }
+  try {
+    localStorage.setItem("crux.seenRuns", JSON.stringify(seen));
+  } catch {
+    /* private mode */
+  }
+}
+
 export default function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
-  const settings = config?.settings ?? QA_SETTINGS;
+  const settings = { ...QA_SETTINGS, ...config?.settings };
+  // Connections is listed only while at least one of its tabs is on.
+  const showConnections = settings.connections && (settings.connCoverage || settings.connGraph);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // { mode } applies that mode's preset; other keys flip single toggles.
+  // Quick clicks send several saves; only the newest reply may replace the
+  // local copy, or an older one would undo a switch just flipped.
+  const settingsSeq = useRef(0);
   const saveSettings = (patch: Partial<Settings>) => {
+    const seq = ++settingsSeq.current;
     setConfig((c) => (c ? { ...c, settings: { ...(c.settings ?? QA_SETTINGS), ...patch } } : c));
     void api("/api/settings", {
       method: "PATCH",
@@ -138,13 +183,13 @@ export default function App() {
       body: JSON.stringify(patch),
     })
       .then((r) => r.json())
-      .then((s: Settings) => setConfig((c) => (c ? { ...c, settings: s } : c)))
+      .then((s: Settings) => seq === settingsSeq.current && setConfig((c) => (c ? { ...c, settings: s } : c)))
       .catch(() => undefined);
   };
   const [view, setView] = useState<View>("");
   // A view switched off in Settings: leave it.
   useEffect(() => {
-    if ((view === "connections" && !settings.connections) || (view === "jira" && !settings.jira)) {
+    if ((view === "connections" && !showConnections) || (view === "jira" && !settings.jira)) {
       setView(Object.keys(config?.repos ?? {})[0] ?? "");
     }
   }, [view, settings.connections, settings.jira, config]);
@@ -217,22 +262,34 @@ export default function App() {
     });
   const toggleSideRef = useRef(toggleSide);
   const toggleRightRef = useRef<() => void>(() => {});
+  const quickAskRef = useRef<(q: QuickAsk) => void>(() => {});
   // ⌘⇧C (app menu, so it works while the page has focus): mark an issue.
   const reportIssueRef = useRef<() => void>(() => {});
   const markingRef = useRef(false);
   // Scheduled-pipeline health per E2E / API workspace (sidebar dot).
   const [pipeTone, setPipeTone] = useState<Record<string, "ok" | "bad" | "run">>({});
+  // The latest poll's data per workspace (Home → Failed pipelines).
+  const [pipeInfo, setPipeInfo] = useState<Record<string, PipelineInfo>>({});
   const pipeWorkspaces = Object.entries(config?.repos ?? {})
-    .filter(([, r]) => settings.qaPanels && (r.kind === "playwright" || r.kind === "pytest"))
+    .filter(([, r]) => settings.pipelines && (r.kind === "playwright" || r.kind === "pytest"))
     .map(([k]) => k)
     .join(",");
+  const notifyPipeRef = useRef(settings.notifyPipeline);
+  notifyPipeRef.current = settings.notifyPipeline;
+  const repoLabelRef = useRef<(ws: string) => string>((ws) => ws);
+  repoLabelRef.current = (ws) => config?.repos[ws]?.label ?? ws;
   useEffect(() => {
-    if (!pipeWorkspaces) return setPipeTone({});
+    if (!pipeWorkspaces) {
+      setPipeInfo({});
+      return setPipeTone({});
+    }
     const poll = () =>
       pipeWorkspaces.split(",").forEach((ws) =>
         api(`/api/pipelines/${ws}`)
           .then((r) => (r.ok ? r.json() : null))
           .then((info: PipelineInfo | null) => {
+            if (info) notifyNewFailures(ws, info, notifyPipeRef.current, repoLabelRef.current(ws));
+            if (info) setPipeInfo((prev) => ({ ...prev, [ws]: info }));
             const tone = overallTone(info);
             setPipeTone((prev) => {
               const { [ws]: _old, ...rest } = prev;
@@ -246,7 +303,29 @@ export default function App() {
     return () => clearInterval(timer);
   }, [pipeWorkspaces]);
   // Marked in the Browser view: the user picks which workspace chat gets it.
-  const [shotPick, setShotPick] = useState<null | { path: string; preview: string }>(null);
+  const [shotPick, setShotPick] = useState<null | { path: string; preview: string; issue: MarkedIssue }>(null);
+  // After a marked issue lands in a chat: offer to file it as a Jira bug.
+  const [issueBar, setIssueBar] = useState<null | { chat: string; path: string; issue: MarkedIssue }>(null);
+  useEffect(() => {
+    if (!issueBar) return;
+    const t = setTimeout(() => setIssueBar(null), 15_000);
+    return () => clearTimeout(t);
+  }, [issueBar]);
+  // ⌘K chat search (over every workspace).
+  const [searchOpen, setSearchOpen] = useState(false);
+  const repoList = Object.entries(config?.repos ?? {}).map(([k, r]) => `${k}\t${r.label}`).join("\n");
+  const searchWorkspaces = useMemo(
+    () => (repoList ? repoList.split("\n").map((l) => ({ ws: l.split("\t")[0], label: l.split("\t")[1] })) : []),
+    [repoList],
+  );
+  // Required tools missing or logged out (dot on the Settings gear).
+  const [setupCount, setSetupCount] = useState(0);
+  useEffect(() => {
+    api("/api/health")
+      .then((r) => r.json())
+      .then((d) => setSetupCount(setupIssues(d.tools ?? [])))
+      .catch(() => undefined);
+  }, []);
   toggleSideRef.current = toggleSide;
   const [adding, setAdding] = useState(false);
   // QA setup slots open Add workspace for one kind ("QA Docs" → mkdocs).
@@ -296,6 +375,8 @@ export default function App() {
   // id "" = close the whole chat `key`; otherwise one terminal in it.
   const [confirmClose, setConfirmClose] = useState<null | { key: string; id: string; name: string }>(null);
   const doClose = (c: { key: string; id: string }) => (c.id ? closeTab(c.key, c.id) : closeChat(c.key));
+  // Close a chat or terminal, asking first unless that's turned off in Settings.
+  const requestClose = (c: { key: string; id: string; name: string }) => (settings.confirmClose ? setConfirmClose(c) : doClose(c));
   // Workspaces whose chat list is unfolded in the sidebar; all start folded.
   const [chatsOpen, setChatsOpen] = useState<Set<string>>(() => new Set());
   const [gitMenu, setGitMenu] = useState<null | { anchor: DOMRect; mode: "agent" | "shell"; tabId: string; target: string }>(null);
@@ -308,6 +389,8 @@ export default function App() {
   }, []);
   // Open Jira tabs, mirrored from the Jira browser (and localStorage when it isn't mounted).
   const [jiraTabs, setJiraTabs] = useState<{ tabs: JiraTab[]; active: number }>(() => readJiraTabs());
+  // A page to open in the Browser view (Home's "Open" links).
+  const [browserOpen, setBrowserOpen] = useState<{ url: string; nonce: number } | null>(null);
   const [jiraTabsHidden, setJiraTabsHidden] = useState(() => localStorage.getItem("crux.jiraTabsHidden") === "1");
   const [menu, setMenu] = useState<null | { key: string; x: number; y: number }>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -321,6 +404,12 @@ export default function App() {
     }
   });
   const viewRef = useRef(view);
+  // Chats whose agent finished or needs input while you weren't looking.
+  const [attention, setAttention] = useState<Map<string, "input" | "stop">>(new Map());
+  // Called from the socket handler, so it reads this render's state.
+  const agentEventRef = useRef<(term: string, event: "stop" | "input" | "codex") => void>(() => {});
+  // Codex has no hooks: 10 s of quiet after ≥3 s of output counts as finished.
+  const codexQuiet = useRef(new Map<string, { since: number; timer: ReturnType<typeof setTimeout> }>());
   const [agentDrag, setAgentDrag] = useState<null | { cmd: "claude" | "codex"; x: number; y: number; drop: Drop | null }>(null);
   const panesRef = useRef<HTMLDivElement>(null);
   const termPaneRef = useRef<HTMLElement>(null);
@@ -367,7 +456,8 @@ export default function App() {
         if (!c.onboarded) setOnboarding("intro");
         const keys = Object.keys(c.repos);
         const last = localStorage.getItem("crux.view");
-        setView(last && (last === "connections" || last === "jira" || keys.includes(last)) ? last : keys[0] ?? "");
+        const openHome = { ...QA_SETTINGS, ...c.settings }.openHome && keys.length > 0;
+        setView(openHome ? "home" : last && (isSpecial(last) || keys.includes(last)) ? last : keys[0] ?? "");
         const initialTabs: Record<string, TermTab[]> = {};
         const initialActive: Record<string, string> = {};
         const initialLayouts: Record<string, PaneNode> = {};
@@ -434,8 +524,23 @@ export default function App() {
             .catch((err) => ws.send(JSON.stringify({ type: "browser:result", id: msg.id, ok: false, error: String(err?.message ?? err) })));
           return;
         }
+        if (msg.type === "agent:event") {
+          agentEventRef.current(String(msg.id), msg.event === "input" ? "input" : "stop");
+          return;
+        }
         if (msg.type === "term:data") {
           termHandlers.current.get(msg.id)?.(msg.data);
+          const quiet = codexQuiet.current;
+          const prev = quiet.get(msg.id);
+          if (prev) clearTimeout(prev.timer);
+          const since = prev?.since ?? Date.now();
+          quiet.set(msg.id, {
+            since,
+            timer: setTimeout(() => {
+              quiet.delete(msg.id);
+              if (Date.now() - since > 13_000) agentEventRef.current(String(msg.id), "codex");
+            }, 10_000),
+          });
           // Output in a workspace you're not looking at (an agent finishing,
           // a test run) flags it unread in the sidebar.
           const wsKey = String(msg.id).split(":")[0];
@@ -495,6 +600,8 @@ export default function App() {
           listen("menu:toggle-sidebar", () => toggleSideRef.current()),
           listen("menu:toggle-right", () => toggleRightRef.current()),
           listen("menu:report-issue", () => reportIssueRef.current()),
+          listen("menu:search-chats", () => setSearchOpen(true)),
+          listen<QuickAsk>("quick:ask", (e) => quickAskRef.current(e.payload)),
         ]).then((fns) => {
           if (cancelled) fns.forEach((fn) => fn());
           else unlisten = () => fns.forEach((fn) => fn());
@@ -512,6 +619,10 @@ export default function App() {
         e.preventDefault();
         e.stopPropagation();
         (key === "s" ? toggleSideRef : toggleRightRef).current();
+      } else if (key === "k") {
+        e.preventDefault();
+        e.stopPropagation();
+        setSearchOpen(true);
       }
     };
     window.addEventListener("keydown", onKey, true);
@@ -594,7 +705,7 @@ export default function App() {
 
   const launchAgent = useCallback(
     (cmd: "claude" | "codex") => {
-      if (view === "connections" || view === "jira") return;
+      if (isSpecial(view)) return;
       const repoTabs = tabs[ck] ?? [];
       const active = repoTabs.find((t) => t.id === activeTab[ck]);
       if (active && !active.agent) {
@@ -636,7 +747,7 @@ export default function App() {
 
   const startAgentDrag = useCallback(
     (cmd: "claude" | "codex") => (e: React.PointerEvent) => {
-      if (view === "connections" || view === "jira") return;
+      if (isSpecial(view)) return;
       e.preventDefault();
       const startX = e.clientX;
       const startY = e.clientY;
@@ -813,7 +924,7 @@ export default function App() {
     if (!("__TAURI_INTERNALS__" in window)) return;
     const ws = viewRef.current;
     const jira = ws === "jira";
-    if (!jira && (!ws || ws === "connections" || !config?.repos[ws])) return setToast("Open a workspace or Jira first");
+    if (!jira && (!ws || isSpecial(ws) || !config?.repos[ws])) return setToast("Open a workspace or Jira first");
     if (!jira && !settings.browser) return setToast("Turn on the browser panel in Settings to mark issues");
     const { invoke } = await import("@tauri-apps/api/core");
     const label = activeBrowserLabel(ws);
@@ -835,8 +946,8 @@ export default function App() {
       if (!issue) return;
       const shot = await cropShot(await invoke<string>("browser_screenshot", { label }), issue);
       const path = await saveShot(shot);
-      if (jira) setShotPick({ path, preview: URL.createObjectURL(shot) });
-      else await pasteImage({ chat }, path);
+      if (jira) setShotPick({ path, preview: URL.createObjectURL(shot), issue });
+      else setIssueBar({ chat: await pasteImage({ chat }, path), path, issue });
     } catch (err) {
       setToast(`Couldn't mark the page: ${String(err)}`);
     } finally {
@@ -873,13 +984,13 @@ export default function App() {
 
   // Put text into an agent's input in a chat (starting Claude there if it
   // has none); `submit` presses Enter too.
-  const deliverToAgent = async (to: { chat: string } | { newIn: string }, text: string, submit: boolean) => {
+  const deliverToAgent = async (to: { chat: string } | { newIn: string }, text: string, submit: boolean, title = "claude") => {
     let chat: string;
     let id: string | undefined;
     if ("newIn" in to) {
       chat = newChatKey(to.newIn);
       id = addTab(chat, "claude", "claude", agentBoot("claude"));
-      setChatTitles((prev) => ({ ...prev, [chat]: "claude" }));
+      setChatTitles((prev) => ({ ...prev, [chat]: title }));
       setChatsShown(to.newIn, true);
     } else {
       chat = to.chat;
@@ -906,6 +1017,7 @@ export default function App() {
     setToast(submit ? "Asked the agent" : "Added to the chat");
     setActiveTab((prev) => ({ ...prev, [chat]: id! }));
     setTimeout(() => focusTerm(target), 150);
+    return chat;
   };
 
   const notePipelines = useCallback((info: PipelineInfo | null) => {
@@ -927,7 +1039,7 @@ export default function App() {
   };
 
   toggleRightRef.current = () => {
-    if (viewRef.current && viewRef.current !== "connections" && viewRef.current !== "jira") hideRight(!rightHidden);
+    if (viewRef.current && !isSpecial(viewRef.current)) hideRight(!rightHidden);
   };
 
   // Browser view tab name: page title (before " - Site"), else the host.
@@ -981,7 +1093,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (view && view !== "connections" && view !== "jira") refreshBranch(view);
+    if (view && !isSpecial(view)) refreshBranch(view);
   }, [view, refreshBranch]);
 
   // Terminals currently shown: the main pane's tab + each split pane's tab.
@@ -1038,6 +1150,78 @@ export default function App() {
       else next.delete(key);
       return next;
     });
+
+  agentEventRef.current = (term, event) => {
+    const chat = Object.keys(tabs).find((k) => tabs[k].some((t) => t.id === term));
+    if (!chat) return;
+    const tab = tabs[chat].find((t) => t.id === term)!;
+    // Hooks report Claude; the quiet-output guess is only for Codex.
+    if ((event === "codex") !== (tab.agent === "codex")) return;
+    const ws = wsOf(chat);
+    const watching = document.hasFocus() && viewRef.current === ws && (activeChat[ws] ?? chatsOf(ws)[0]) === chat;
+    if (watching) return;
+    const kind = event === "input" ? "input" : "stop";
+    setAttention((a) => (a.get(chat) === kind ? a : new Map(a).set(chat, kind)));
+    if (!settings.notifyAgent) return;
+    const where = config?.repos[ws]?.label ?? ws;
+    void notify(`${chatTitle(chat)} · ${where}`, event === "input" ? "Needs your input" : "Finished");
+  };
+  // Looking at a chat clears its "needs you" dot.
+  const shownChat = view ? (activeChat[view] && tabs[activeChat[view]] ? activeChat[view] : chatsOf(view)[0]) : undefined;
+  useEffect(() => {
+    if (!shownChat || view === "home") return;
+    setAttention((a) => {
+      if (!a.has(shownChat)) return a;
+      const next = new Map(a);
+      next.delete(shownChat);
+      return next;
+    });
+  }, [shownChat, view]);
+
+  // Desktop app: keep running in the menu bar / ⌥Space, and the menu bar count.
+  useEffect(() => {
+    if (config) void invokeTauri("set_background", { keepRunning: settings.keepRunning, quickAsk: settings.quickAsk });
+  }, [settings.keepRunning, settings.quickAsk, !!config]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    void invokeTauri("set_attention", { count: attention.size });
+  }, [attention.size]);
+
+  // ⌥Space quick ask: a new Claude chat named after the prompt's first words.
+  quickAskRef.current = ({ ws, text }) => {
+    const target = config?.repos[ws] ? ws : Object.keys(config?.repos ?? {})[0];
+    if (!target || !text.trim()) return;
+    const title = text.trim().split(/\s+/).slice(0, 4).join(" ").slice(0, 32);
+    void deliverToAgent({ newIn: target }, text.trim(), true, title).catch((err) => setToast(String(err)));
+  };
+
+  // Setup → "Log in" / "Install": run the fix in a new terminal chat.
+  const runInTerminal = (cmd: string, tool: string) => {
+    const ws = config?.repos[view] ? view : Object.keys(config?.repos ?? {})[0];
+    if (!ws) {
+      void navigator.clipboard.writeText(cmd).catch(() => undefined);
+      return setToast("Copied. Paste it in Terminal");
+    }
+    const chat = newChatKey(ws);
+    addTab(chat, tool, undefined, cmd);
+    setChatTitles((prev) => ({ ...prev, [chat]: `${tool} setup` }));
+    setSettingsOpen(false);
+    openChat(chat);
+    setChatsShown(ws, true);
+  };
+
+  // ⌘K → a past conversation: reopen it in its own chat (or show it if it's open).
+  const resumePast = (ws: string, past: PastChat) => {
+    setSearchOpen(false);
+    const open = Object.keys(tabs).find((k) => tabs[k].some((t) => t.bootCmd?.includes(past.id)));
+    if (open) return openChat(open);
+    const chat = newChatKey(ws);
+    const cmd = past.kind === "claude" ? `claude --resume ${past.id}` : `codex resume ${past.id}`;
+    const title = past.title.slice(0, 40) || past.kind;
+    addTab(chat, past.kind, past.kind, cmd);
+    setChatTitles((prev) => ({ ...prev, [chat]: title }));
+    openChat(chat);
+    setChatsShown(ws, true);
+  };
 
   // Show a chat (its whole layout) from the sidebar.
   const openChat = (chat: string) => {
@@ -1107,7 +1291,8 @@ export default function App() {
     const taken = new Set(chatsOf(key).map(chatTitle));
     let name: string = kind;
     for (let n = 2; taken.has(name); n++) name = `${kind} ${n}`;
-    setNameChat({ key, kind, name });
+    if (settings.askChatName) setNameChat({ key, kind, name });
+    else newChat(key, kind, name);
   };
 
 
@@ -1144,28 +1329,34 @@ export default function App() {
 
   if (!config) return <div className="loading">Loading Crux…</div>;
 
-  const isSpecialView = view === "connections" || view === "jira";
+  const chatRow = (chat: string) => ({
+    chat,
+    ws: wsOf(chat),
+    wsLabel: config.repos[wsOf(chat)]?.label ?? wsOf(chat),
+    name: chatTitle(chat),
+    kinds: [...new Set((tabs[chat] ?? []).map((t) => t.agent ?? "shell"))],
+  });
+
+  const isSpecialView = isSpecial(view);
   const repo = !isSpecialView ? config.repos[view] : undefined;
   const isTestRepo = repo && (repo.kind === "playwright" || repo.kind === "pytest");
   // Right panel tabs, as allowed by Settings (QA panels, browser).
+  // Each tab can be hidden in Settings → Tabs & views.
   const panelTabList: [string, string][] = repo
-    ? [
-        ...((settings.qaPanels
-          ? repo.kind === "mkdocs"
-            ? [["preview", "Doc preview"]]
-            : isTestRepo
-              ? [["tree", "Tests"], ["coverage", "Coverage"], ["pipelines", "Pipelines"]]
-              : []
-          : []) as [string, string][]),
-        ...((settings.browser ? [["browser", "Browser"]] : []) as [string, string][]),
-      ]
+    ? ([
+        repo.kind === "mkdocs" && settings.docPreview && ["preview", "Doc preview"],
+        isTestRepo && settings.tests && ["tree", "Tests"],
+        isTestRepo && settings.coverage && ["coverage", "Coverage"],
+        isTestRepo && settings.pipelines && ["pipelines", "Pipelines"],
+        settings.browser && ["browser", "Browser"],
+      ].filter(Boolean) as [string, string][])
     : [];
   // Nothing to show on the right → chats take the full width.
   const hasPanel = panelTabList.length > 0;
   const panelHidden = rightHidden || !hasPanel;
   const panelTab = panelTabList.some(([k]) => k === panelTabs[view]) ? panelTabs[view] : panelTabList[0]?.[0];
   // Native browser views float above HTML: hide them under overlays.
-  const overlayOpen = adding || !!menu || !!confirmDelete || !!agentDrag || dragging || !!gitMenu || !!chatMenu || !!nameChat || !!confirmClose || !!onboarding || !!chatCtx || settingsOpen || !!shotPick;
+  const overlayOpen = adding || !!menu || !!confirmDelete || !!agentDrag || dragging || !!gitMenu || !!chatMenu || !!nameChat || !!confirmClose || !!onboarding || !!chatCtx || settingsOpen || !!shotPick || searchOpen;
   const viewLayout = (!isSpecialView && layouts[ck]) || rootLayout();
   const viewSplits = splitTabIds(viewLayout);
 
@@ -1251,7 +1442,7 @@ export default function App() {
                   title="Close this terminal"
                   onClick={(e) => {
                     e.stopPropagation();
-                    setConfirmClose({ key: ck, id: t.id, name: t.title });
+                    requestClose({ key: ck, id: t.id, name: t.title });
                   }}
                 >
                   ×
@@ -1317,6 +1508,23 @@ export default function App() {
             if (e.propertyName === "width") window.dispatchEvent(new Event("resize"));
           }}
         >
+          <button className={`side-item side-home ${view === "home" ? "active" : ""}`} onClick={() => setView("home")}>
+            <span className="avatar view-icon">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round">
+                <path d="M2.5 7.2 8 2.5l5.5 4.7V13a.5.5 0 0 1-.5.5H9.8V10H6.2v3.5H3a.5.5 0 0 1-.5-.5z" />
+              </svg>
+            </span>
+            <span className="side-label">Home</span>
+            {attention.size > 0 && <span className="home-count">{attention.size}</span>}
+          </button>
+          <button className="side-search" onClick={() => setSearchOpen(true)} title="Search open chats and past conversations">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+              <circle cx="7" cy="7" r="4.5" />
+              <path d="m10.5 10.5 3 3" />
+            </svg>
+            Search chats
+            <kbd>⌘K</kbd>
+          </button>
           <div className="side-section side-section-row">
             <span>Workspaces</span>
             <button className="side-add" title="Add workspace" onClick={() => setAdding(true)}>
@@ -1410,6 +1618,7 @@ export default function App() {
                   className="side-remove side-add-chat"
                   title="New chat"
                   onClick={(e) => {
+                    if (settings.defaultChat !== "pick") return askChatName(key, settings.defaultChat);
                     const r = e.currentTarget.getBoundingClientRect();
                     setChatMenu({ key, x: r.right + 6, y: r.top });
                   }}
@@ -1466,12 +1675,13 @@ export default function App() {
                         ) : (
                           <span className="side-sub-label">{name}</span>
                         )}
+                        {attention.has(chat) && <span className="unread-dot chat-attn" title="Finished or needs your input" />}
                         <button
                           className="side-remove"
                           title="Close chat"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setConfirmClose({ key: chat, id: "", name });
+                            requestClose({ key: chat, id: "", name });
                           }}
                         >
                           ×
@@ -1491,7 +1701,7 @@ export default function App() {
               <span className="side-label">Add a repo folder</span>
             </button>
           )}
-          {(settings.connections || settings.jira) && (
+          {(showConnections || settings.jira) && (
           <>
           <button
             className={`side-section side-section-toggle ${viewsHidden ? "collapsed" : ""}`}
@@ -1505,7 +1715,7 @@ export default function App() {
           </button>
           <div className={`side-views ${viewsHidden ? "collapsed" : ""}`}>
             <div className="side-views-inner">
-              {settings.connections && (
+              {showConnections && (
               <button
                 className={`side-item view-item ${view === "connections" ? "active" : ""}`}
                 onClick={() => setView("connections")}
@@ -1585,7 +1795,12 @@ export default function App() {
           <div className="side-footer">
             <span className="avatar">{(config.userName || config.user || "?")[0].toUpperCase()}</span>{" "}
             {config.userName || config.user} · Crux {appVersion}
-            <button className="settings-btn" title="Settings" onClick={() => setSettingsOpen(true)}>
+            <button
+              className="settings-btn"
+              title={setupCount ? `Settings · ${setupCount} setup problem${setupCount === 1 ? "" : "s"}` : "Settings"}
+              onClick={() => setSettingsOpen(true)}
+            >
+              {setupCount > 0 && <span className="gear-dot" />}
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M6.8 1.8h2.4l.4 1.7 1.3.7 1.6-.6 1.2 2.1-1.3 1.1v1.4l1.3 1.1-1.2 2.1-1.6-.6-1.3.7-.4 1.7H6.8l-.4-1.7-1.3-.7-1.6.6-1.2-2.1 1.3-1.1V7.3L2.3 6.2l1.2-2.1 1.6.6 1.3-.7z" />
                 <circle cx="8" cy="8" r="2" />
@@ -1620,14 +1835,46 @@ export default function App() {
             </ol>
             <SetupChecklist />
           </section>
+        ) : view === "home" ? (
+          <Home
+            userName={config.userName ?? ""}
+            needs={[...attention]
+              .filter(([chat]) => tabs[chat]?.length && config.repos[wsOf(chat)])
+              .map(([chat, event]) => ({ ...chatRow(chat), event }))}
+            agents={Object.keys(tabs)
+              .filter((chat) => config.repos[wsOf(chat)] && tabs[chat].some((t) => t.agent))
+              .map(chatRow)}
+            pipelines={Object.entries(pipeInfo)
+              .filter(([ws]) => config.repos[ws])
+              .map(([ws, info]) => ({ ws, wsLabel: config.repos[ws].label, info }))}
+            workspaces={searchWorkspaces}
+            onOpenChat={(chat) => {
+              openChat(chat);
+              setChatsShown(wsOf(chat), true);
+            }}
+            onReview={(mr: InboxMr) => {
+              const ws = mr.ws ?? Object.keys(config.repos)[0];
+              void deliverToAgent({ newIn: ws }, reviewPrompt(mr), true, `review !${mr.iid}`).catch((err) => setToast(String(err)));
+            }}
+            onAskPipeline={(ws, prompt) => void deliverToAgent({ newIn: ws }, prompt, true, "pipeline").catch((err) => setToast(String(err)))}
+            onResume={resumePast}
+            onOpenUrl={(url) => {
+              if (!settings.jira) {
+                if (IN_TAURI) return setToast("Turn on the Browser view in Settings → Tabs & views");
+                return void window.open(url, "_blank", "noopener");
+              }
+              setBrowserOpen({ url, nonce: Date.now() });
+              setView("jira");
+            }}
+          />
         ) : view === "connections" ? (
           <section className="full-pane">
-            <FeatureMap onAddWorkspace={() => setAdding(true)} />
+            <FeatureMap onAddWorkspace={() => setAdding(true)} showCoverage={settings.connCoverage} showGraph={settings.connGraph} />
           </section>
         ) : view === "jira" ? (
           // Browser view (internally still "jira", so saved tabs and logins carry over).
           <section className="full-pane jira-pane">
-            <Browser wsKey="jira" visible={!overlayOpen} network={settings.network} picker={settings.picker} />
+            <Browser wsKey="jira" visible={!overlayOpen} network={settings.network} picker={settings.picker} openRequest={browserOpen} />
           </section>
         ) : (
           <div
@@ -1661,7 +1908,7 @@ export default function App() {
                           title="Close terminal"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setConfirmClose({ key: ck, id: t.id, name: t.title });
+                            requestClose({ key: ck, id: t.id, name: t.title });
                           }}
                         >
                           ×
@@ -1817,6 +2064,44 @@ export default function App() {
         </div>
       )}
       {toast && <div className="toast">{toast}</div>}
+      {issueBar && !toast && (
+        <div className="issue-bar">
+          <span>Added to the chat</span>
+          <button
+            className="primary"
+            onClick={() => {
+              const { chat, path, issue } = issueBar;
+              setIssueBar(null);
+              void deliverToAgent({ chat }, jiraPrompt(issue, path, settings.jiraProject), true).catch((err) => setToast(String(err)));
+            }}
+          >
+            File as Jira bug
+          </button>
+          <button onClick={() => setIssueBar(null)} title="Dismiss">×</button>
+        </div>
+      )}
+      {searchOpen && config && (
+        <ChatSearch
+          open={Object.keys(tabs)
+            .filter((chat) => config.repos[wsOf(chat)] && tabs[chat].length)
+            .map((chat) => ({
+              chat,
+              ws: wsOf(chat),
+              wsLabel: config.repos[wsOf(chat)].label,
+              name: chatTitle(chat),
+              kinds: [...new Set(tabs[chat].map((t) => t.agent ?? "shell"))],
+            }))}
+          workspaces={searchWorkspaces}
+          current={view}
+          onOpen={(chat) => {
+            setSearchOpen(false);
+            openChat(chat);
+            setChatsShown(wsOf(chat), true);
+          }}
+          onResume={resumePast}
+          onClose={() => setSearchOpen(false)}
+        />
+      )}
       {chatMenu && config.repos[chatMenu.key] && (
         <ContextMenu
           x={chatMenu.x}
@@ -1844,10 +2129,12 @@ export default function App() {
             })),
           }))}
           onPick={(to) => {
-            const { path, preview } = shotPick;
+            const { path, preview, issue } = shotPick;
             setShotPick(null);
             URL.revokeObjectURL(preview);
-            void pasteImage(to, path).catch((err) => setToast(String(err)));
+            void pasteImage(to, path)
+              .then((chat) => setIssueBar({ chat, path, issue }))
+              .catch((err) => setToast(String(err)));
           }}
           onCancel={() => {
             URL.revokeObjectURL(shotPick.preview);
@@ -1864,6 +2151,23 @@ export default function App() {
             setSettingsOpen(false);
             setOnboarding("intro");
           }}
+          userName={config.userName ?? ""}
+          onRename={(name) => {
+            setConfig((c) => (c ? { ...c, userName: name } : c));
+            void api("/api/profile", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ name }),
+            });
+          }}
+          version={appVersion}
+          canUpdate={!import.meta.env.DEV && "__TAURI_INTERNALS__" in window}
+          update={update}
+          onUpdateFound={(latest) => setUpdate((u) => u ?? { latest, installing: false })}
+          onInstall={() => void installUpdate()}
+          setupCount={setupCount}
+          onSetupChecked={(tools) => setSetupCount(setupIssues(tools))}
+          onFix={runInTerminal}
         />
       )}
       {chatCtx && (() => {
@@ -1883,7 +2187,7 @@ export default function App() {
                 { label: `New ${label} here`, icon: MenuIcons.copy, onSelect: () => askChatName(wsOf(chatCtx.key), kind) },
               ],
               [
-                { label: "Close chat", icon: MenuIcons.trash, danger: true, onSelect: () => setConfirmClose({ key: chatCtx.key, id: "", name: chatCtx.name }) },
+                { label: "Close chat", icon: MenuIcons.trash, danger: true, onSelect: () => requestClose({ key: chatCtx.key, id: "", name: chatCtx.name }) },
               ],
             ]}
           />

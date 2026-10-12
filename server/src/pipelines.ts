@@ -49,14 +49,14 @@ export function parseRemote(url: string): { host: string; project: string } | nu
   }
 }
 
-const run = (cmd: string, args: string[], env: NodeJS.ProcessEnv = process.env) =>
+export const run = (cmd: string, args: string[], env: NodeJS.ProcessEnv = process.env) =>
   new Promise<string>((resolve, reject) =>
     execFile(cmd, args, { timeout: 20000, maxBuffer: 20 * 1024 * 1024, env }, (err, out, errOut) =>
       err ? reject(new Error((errOut || err.message).trim().split("\n")[0])) : resolve(out),
     ),
   );
 
-async function glab<T>(host: string, endpoint: string): Promise<T> {
+export async function glab<T>(host: string, endpoint: string): Promise<T> {
   try {
     return JSON.parse(await run("glab", ["api", "--hostname", host, endpoint])) as T;
   } catch (err) {

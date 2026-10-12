@@ -43,14 +43,35 @@ export interface TreeResponse {
 /** Which parts of Crux are on (Settings). A mode is a preset of toggles. */
 export interface Settings {
   mode: "qa" | "regular";
+  // workspace panel tabs
+  docPreview: boolean;
+  tests: boolean;
+  coverage: boolean;
+  pipelines: boolean;
   browser: boolean;
   network: boolean;
   picker: boolean;
-  qaPanels: boolean;
+  // sidebar views (and the Connections view's own tabs)
   connections: boolean;
+  connCoverage: boolean;
+  connGraph: boolean;
   jira: boolean;
+  // chats and notifications (not part of a mode)
+  defaultChat: "pick" | "claude" | "codex" | "shell";
+  askChatName: boolean;
+  confirmClose: boolean;
+  notifyAgent: boolean;
+  notifyPipeline: boolean;
+  keepRunning: boolean;
+  quickAsk: boolean;
+  openHome: boolean;
+  /** Jira project key bugs are filed in (blank: the agent asks). */
+  jiraProject: string;
 }
 
 export const QA_SETTINGS: Settings = {
-  mode: "qa", browser: true, network: true, picker: true, qaPanels: true, connections: true, jira: true,
+  mode: "qa",
+  docPreview: true, tests: true, coverage: true, pipelines: true, browser: true, network: true, picker: true,
+  connections: true, connCoverage: true, connGraph: true, jira: true,
+  defaultChat: "pick", askChatName: true, confirmClose: true, notifyAgent: true, notifyPipeline: true, keepRunning: true, quickAsk: true, openHome: true, jiraProject: "",
 };

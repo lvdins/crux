@@ -5,7 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
-import { currentSettings, MODE_PRESETS, type Settings } from "./config.js";
+import { currentSettings, DEFAULT_CHATS, MODE_PRESETS, PREF_KEYS, SETTING_KEYS, type Settings } from "./config.js";
 import { config, saveConfig, userConfigPath, addWorkspace, updateWorkspace, removeWorkspace, detectKind, expandHome } from "./config.js";
 import { attachTerm, termInput, termResize, killTerm, detachAll, killAllTerms, openLog, termProcess } from "./term.js";
 import { startPreview, stopPreview, stopAllPreviews, previewStatus } from "./preview.js";
@@ -14,6 +14,9 @@ import { installAgentSetup } from "./agent-setup.js";
 import { latestRelease, installRelease, isNewer } from "./update.js";
 import { guardHttp, wsAllowed } from "./security.js";
 import { pipelinesFor } from "./pipelines.js";
+import { checkSetup } from "./health.js";
+import { inboxMrs } from "./inbox.js";
+import { pastChats } from "./sessions.js";
 import { adoptLoginShellPath, checkTools, CRUX_HOME, PACKAGED, PORT, rootPath } from "./paths.js";
 
 adoptLoginShellPath();
@@ -89,10 +92,16 @@ app.post("/api/attachments", express.raw({ type: "*/*", limit: "100mb" }), (req,
 app.patch("/api/settings", (req, res) => {
   const body = (req.body ?? {}) as Partial<Settings>;
   let next = currentSettings();
-  if (body.mode === "qa" || body.mode === "regular") next = { ...MODE_PRESETS[body.mode] };
-  for (const k of ["browser", "network", "picker", "qaPanels", "connections", "jira"] as const) {
+  if (body.mode === "qa" || body.mode === "regular") {
+    // A mode resets the tabs and views; personal preferences stay.
+    const prefs = Object.fromEntries(PREF_KEYS.map((k) => [k, next[k]]));
+    next = { ...MODE_PRESETS[body.mode], ...prefs, defaultChat: next.defaultChat, jiraProject: next.jiraProject };
+  }
+  for (const k of SETTING_KEYS) {
     if (typeof body[k] === "boolean") next[k] = body[k];
   }
+  if (DEFAULT_CHATS.includes(body.defaultChat as Settings["defaultChat"])) next.defaultChat = body.defaultChat!;
+  if (typeof body.jiraProject === "string" && /^[\w -]{0,40}$/.test(body.jiraProject)) next.jiraProject = body.jiraProject.trim();
   config.settings = next;
   saveConfig();
   res.json(next);
@@ -104,6 +113,17 @@ app.post("/api/profile", (req, res) => {
   config.userName = name;
   saveConfig();
   res.json({ userName: name });
+});
+
+// Claude Code hooks in Crux terminals report "finished" / "needs input"
+// (see agent-setup.ts); every open window gets it to show a notification.
+app.post("/api/agent-event", (req, res) => {
+  const term = String(req.body?.term ?? "");
+  const event = String(req.body?.event ?? "");
+  if (!term || (event !== "stop" && event !== "input")) return void res.status(400).json({ error: "Bad event" });
+  const msg = JSON.stringify({ type: "agent:event", id: term, event });
+  for (const client of wss.clients) if (client.readyState === WebSocket.OPEN) client.send(msg);
+  res.json({ ok: true });
 });
 
 app.post("/api/onboarded", (req, res) => {
@@ -131,6 +151,23 @@ app.get("/api/tree", async (_req, res) => {
     }
   }
   res.json({ trees, shared: sharedEndpoints(trees), descriptions });
+});
+
+// Settings → Setup: tools installed and logged in.
+app.get("/api/health", async (_req, res) => {
+  res.json({ tools: await checkSetup() });
+});
+
+// Home screen: merge requests waiting for you, or that you opened.
+app.get("/api/inbox/mrs", async (req, res) => {
+  res.json(await inboxMrs(req.query.refresh === "1"));
+});
+
+// Chat search: past Claude / Codex conversations started in a workspace.
+app.get("/api/history/:key", (req, res) => {
+  const repo = config.repos[req.params.key];
+  if (!repo) return void res.status(404).json({ error: "Unknown workspace" });
+  res.json({ chats: pastChats(repo.path, String(req.query.q ?? "")) });
 });
 
 app.get("/api/system", (_req, res) => {
@@ -290,6 +327,16 @@ app.get("/api/features", async (req, res) => {
     featuresCache = { at: Date.now(), data: buildFeatureMap() };
   }
   res.json(featuresCache.data);
+});
+
+// Connections → Graph: how dashboard features connect (code + shared backend data).
+let featureGraphCache: { at: number; data: unknown } | null = null;
+app.get("/api/feature-graph", async (req, res) => {
+  if (!featureGraphCache || req.query.refresh || Date.now() - featureGraphCache.at > 5 * 60_000) {
+    const { buildFeatureGraph } = await import("./featureLinks.js");
+    featureGraphCache = { at: Date.now(), data: buildFeatureGraph() };
+  }
+  res.json(featureGraphCache.data);
 });
 
 app.get("/api/connections", async (_req, res) => {

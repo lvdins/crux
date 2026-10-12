@@ -82,9 +82,9 @@ function findAppRoot(repo: string): string | null {
 const CALL_RE = /\b(get|post|patch|put|del|delete|unauthenticatedGet|unauthenticatedPost|unauthenticatedPatch|unauthenticatedPut)\s*(?:<[^>()]*>)?\(\s*[`'"](\/gapi\/[^`'"?]*)/g;
 const GAPI_RE = /[`'"](\/gapi\/[^`'"?]*)/g;
 // Shared plumbing, not features: never the "owner" of a page.
-const INFRA_MODULES = new Set(["auth", "state-manager", "feature-flags", "notification", "external", "i18n"]);
+export const INFRA_MODULES = new Set(["auth", "state-manager", "feature-flags", "notification", "external", "i18n"]);
 
-function featureOf(modulePath: string): string | null {
+export function featureOf(modulePath: string): string | null {
   // modulePath: "billing/components/x.tsx" or "editor/floor-plan/x.tsx"
   const parts = modulePath.split("/");
   if (parts.length < 2) return null;
@@ -93,6 +93,9 @@ function featureOf(modulePath: string): string | null {
   }
   return parts[0];
 }
+
+/** Feature of an `@/modules/…` import ("help" alone means its index). */
+export const featureOfImport = (imported: string) => featureOf(imported.includes("/") ? imported : `${imported}/index.ts`);
 
 function routeOf(appDir: string, pageFile: string): string {
   const rel = path.relative(appDir, path.dirname(pageFile));
@@ -103,7 +106,7 @@ function routeOf(appDir: string, pageFile: string): string {
   return "/" + parts.join("/");
 }
 
-function scanFrontend(repo: RepoConfig) {
+export function scanFrontend(repo: RepoConfig) {
   const appRoot = findAppRoot(repo.path);
   const features = new Map<string, FeFeature>();
   if (!appRoot) return { features, appRoot: null as string | null };
@@ -151,7 +154,7 @@ function scanFrontend(repo: RepoConfig) {
       if (!/\/page\.tsx?$/.test(abs)) continue;
       const source = read(abs);
       const owners = [...source.matchAll(/from\s+['"]@\/modules\/([^'"]+)['"]/g)]
-        .map((m) => featureOf(m[1]))
+        .map((m) => featureOfImport(m[1]))
         .filter((id): id is string => !!id && !INFRA_MODULES.has(id));
       if (owners.length === 0) continue;
       // The most-imported module is the page's feature.
@@ -219,7 +222,7 @@ function moduleFile(root: string, mod: string): string | undefined {
   return undefined;
 }
 
-function scanBackend(repo: RepoConfig): BeRoute[] {
+export function scanBackend(repo: RepoConfig): BeRoute[] {
   const root = repo.path;
   const routes: BeRoute[] = [];
   const settings = read(path.join(root, "app", "settings.py"));
@@ -273,7 +276,7 @@ function scanBackend(repo: RepoConfig): BeRoute[] {
   return routes;
 }
 
-function resolveBackend(endpoint: string, routes: BeRoute[]): BeRoute | undefined {
+export function resolveBackend(endpoint: string, routes: BeRoute[]): BeRoute | undefined {
   const e = segs(endpoint);
   let best: { r: BeRoute; score: number } | undefined;
   for (const r of routes) {
@@ -491,13 +494,13 @@ const LABELS: Record<string, string> = {
   "editor/panorama-v2": "Editor · Panorama v2",
   "onboarding-v2": "Onboarding",
 };
-function labelOf(id: string): string {
+export function labelOf(id: string): string {
   if (LABELS[id]) return LABELS[id];
   const pretty = (s: string) => s.replace(/-/g, " ").replace(/^\w/, (c) => c.toUpperCase());
   return id.startsWith("editor/") ? `Editor · ${pretty(id.slice(7))}` : pretty(id);
 }
 
-function firstOfKind(kind: string): [string, RepoConfig] | null {
+export function firstOfKind(kind: string): [string, RepoConfig] | null {
   const hit = Object.entries(config.repos).find(([, r]) => r.kind === kind && fs.existsSync(r.path));
   return hit ?? null;
 }

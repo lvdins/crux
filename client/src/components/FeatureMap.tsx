@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../net";
-import FeatureGraph from "./FeatureGraph";
+import FeatureNetwork from "./FeatureNetwork";
 
 export interface FeatureEndpoint {
   path: string;
@@ -261,16 +261,30 @@ function Detail({ f, sources }: { f: Feature; sources: Record<string, Source | n
   );
 }
 
-export default function FeatureMap({ onAddWorkspace }: { onAddWorkspace: () => void }) {
+export default function FeatureMap({
+  onAddWorkspace,
+  showCoverage = true,
+  showGraph = true,
+}: {
+  onAddWorkspace: () => void;
+  /** Settings → Tabs & views can hide either tab. */
+  showCoverage?: boolean;
+  showGraph?: boolean;
+}) {
   const [data, setData] = useState<FeatureMapData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<string | null>(() => localStorage.getItem("crux.feature"));
   const [query, setQuery] = useState("");
+  // Re-scan also rebuilds the graph.
+  const [graphKey, setGraphKey] = useState(0);
   const [filter, setFilter] = useState<Filter>("all");
   const [tab, setTab] = useState<"coverage" | "graph">(() =>
     localStorage.getItem("crux.connTab") === "graph" ? "graph" : "coverage",
   );
+  // With one of the two tabs hidden in Settings, show the other.
+  if (!showGraph && tab === "graph") setTab("coverage");
+  else if (!showCoverage && tab === "coverage") setTab("graph");
   const switchTab = (next: "coverage" | "graph") => {
     setTab(next);
     localStorage.setItem("crux.connTab", next);
@@ -358,14 +372,17 @@ export default function FeatureMap({ onAddWorkspace }: { onAddWorkspace: () => v
   return (
     <div className="fm">
       <header className="fm-top">
-        <div className="fm-tabs">
-          <button className={tab === "coverage" ? "on" : ""} onClick={() => switchTab("coverage")}>
-            Coverage
-          </button>
-          <button className={tab === "graph" ? "on" : ""} onClick={() => switchTab("graph")}>
-            Graph
-          </button>
-        </div>
+        {showCoverage && showGraph && (
+          <div className="fm-tabs">
+            <button className={tab === "coverage" ? "on" : ""} onClick={() => switchTab("coverage")}>
+              Coverage
+            </button>
+            <button className={tab === "graph" ? "on" : ""} onClick={() => switchTab("graph")}>
+              Graph
+            </button>
+          </div>
+        )}
+        {tab === "coverage" && (
         <div className="fm-stats">
           <div className="fm-stat">
             <b>{t.features}</b>
@@ -384,6 +401,8 @@ export default function FeatureMap({ onAddWorkspace }: { onAddWorkspace: () => v
             <span>without E2E</span>
           </div>
         </div>
+        )}
+        {tab === "graph" && <div className="fm-graph-title">How dashboard features connect · from the frontend and backend code</div>}
         <div className="fm-tools">
           {tab === "coverage" && (
             <>
@@ -397,7 +416,12 @@ export default function FeatureMap({ onAddWorkspace }: { onAddWorkspace: () => v
           </div>
             </>
           )}
-          <button className="fm-refresh" onClick={() => load(true)} disabled={loading} title={`Scanned in ${data.ms} ms`}>
+          <button
+            className="fm-refresh"
+            onClick={() => {
+              load(true);
+              if (tab === "graph") setGraphKey((n) => n + 1);
+            }} disabled={loading} title={`Scanned in ${data.ms} ms`}>
             {loading ? "Scanning…" : "Re-scan"}
           </button>
         </div>
@@ -410,8 +434,8 @@ export default function FeatureMap({ onAddWorkspace }: { onAddWorkspace: () => v
       )}
       {tab === "graph" ? (
         <div className="fm-graph">
-          <FeatureGraph
-            data={data}
+          <FeatureNetwork
+            refreshKey={graphKey}
             onOpenFeature={(id) => {
               setSelected(id);
               setFilter("all");
