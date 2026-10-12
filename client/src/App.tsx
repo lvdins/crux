@@ -61,6 +61,8 @@ const SPECIAL_VIEWS = new Set(["connections", "jira", "home"]);
 const isSpecial = (v: string) => SPECIAL_VIEWS.has(v);
 /** Sent by the ⌥Space quick-ask window. */
 type QuickAsk = { ws: string; text: string };
+/** From Claude's hooks (working / stop / input) or Codex's output (codex-*). */
+type AgentEvent = "stop" | "input" | "working" | "codex" | "codex-working";
 const IN_TAURI = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 const invokeTauri = (cmd: string, args?: Record<string, unknown>) =>
   IN_TAURI ? import("@tauri-apps/api/core").then(({ invoke }) => invoke(cmd, args)).catch(() => undefined) : Promise.resolve();
@@ -407,9 +409,16 @@ export default function App() {
   // Chats whose agent finished or needs input while you weren't looking.
   const [attention, setAttention] = useState<Map<string, "input" | "stop">>(new Map());
   // Called from the socket handler, so it reads this render's state.
-  const agentEventRef = useRef<(term: string, event: "stop" | "input" | "codex") => void>(() => {});
-  // Codex has no hooks: 10 s of quiet after ≥3 s of output counts as finished.
-  const codexQuiet = useRef(new Map<string, { since: number; timer: ReturnType<typeof setTimeout> }>());
+  const agentEventRef = useRef<(term: string, event: AgentEvent) => void>(() => {});
+  // Chats whose agent is working right now → since when.
+  const [working, setWorking] = useState<Map<string, number>>(new Map());
+  const tabsRef = useRef<Record<string, TermTab[]>>({});
+  tabsRef.current = tabs;
+  // Last output per terminal: a "working" agent that has gone quiet (interrupted
+  // with Esc, so no Stop hook) stops counting as working.
+  const lastOutput = useRef(new Map<string, number>());
+  // Codex has no hooks: ≥3 s of output counts as working, then 10 s of quiet as finished.
+  const codexQuiet = useRef(new Map<string, { since: number; marked: boolean; timer: ReturnType<typeof setTimeout> }>());
   const [agentDrag, setAgentDrag] = useState<null | { cmd: "claude" | "codex"; x: number; y: number; drop: Drop | null }>(null);
   const panesRef = useRef<HTMLDivElement>(null);
   const termPaneRef = useRef<HTMLElement>(null);
@@ -525,7 +534,7 @@ export default function App() {
           return;
         }
         if (msg.type === "agent:event") {
-          agentEventRef.current(String(msg.id), msg.event === "input" ? "input" : "stop");
+          agentEventRef.current(String(msg.id), msg.event === "input" ? "input" : msg.event === "working" ? "working" : "stop");
           return;
         }
         if (msg.type === "term:data") {
@@ -534,8 +543,12 @@ export default function App() {
           const prev = quiet.get(msg.id);
           if (prev) clearTimeout(prev.timer);
           const since = prev?.since ?? Date.now();
+          lastOutput.current.set(String(msg.id), Date.now());
+          const marked = !!prev?.marked || Date.now() - since > 3000;
+          if (marked && !prev?.marked) agentEventRef.current(String(msg.id), "codex-working");
           quiet.set(msg.id, {
             since,
+            marked,
             timer: setTimeout(() => {
               quiet.delete(msg.id);
               if (Date.now() - since > 13_000) agentEventRef.current(String(msg.id), "codex");
@@ -893,11 +906,6 @@ export default function App() {
         },
       ],
       [
-        unread.has(key)
-          ? { label: "Mark as Read", icon: MenuIcons.read, onSelect: () => setUnread((u) => { const n = new Set(u); n.delete(key); return n; }) }
-          : { label: "Mark as Unread", icon: MenuIcons.unread, onSelect: () => setUnread((u) => new Set(u).add(key)) },
-      ],
-      [
         { label: "Remove from Sidebar", icon: MenuIcons.remove, onSelect: () => setConfirmRemove(key) },
         {
           label: "Delete",
@@ -1155,8 +1163,25 @@ export default function App() {
     const chat = Object.keys(tabs).find((k) => tabs[k].some((t) => t.id === term));
     if (!chat) return;
     const tab = tabs[chat].find((t) => t.id === term)!;
-    // Hooks report Claude; the quiet-output guess is only for Codex.
-    if ((event === "codex") !== (tab.agent === "codex")) return;
+    // Hooks report Claude; the output guess is only for Codex.
+    if (event.startsWith("codex") !== (tab.agent === "codex")) return;
+    if (event === "working" || event === "codex-working") {
+      setWorking((w) => (w.has(chat) ? w : new Map(w).set(chat, Date.now())));
+      // Working again: an older "finished" dot no longer applies.
+      setAttention((a) => {
+        if (!a.has(chat)) return a;
+        const next = new Map(a);
+        next.delete(chat);
+        return next;
+      });
+      return;
+    }
+    setWorking((w) => {
+      if (!w.has(chat)) return w;
+      const next = new Map(w);
+      next.delete(chat);
+      return next;
+    });
     const ws = wsOf(chat);
     const watching = document.hasFocus() && viewRef.current === ws && (activeChat[ws] ?? chatsOf(ws)[0]) === chat;
     if (watching) return;
@@ -1182,9 +1207,32 @@ export default function App() {
   useEffect(() => {
     if (config) void invokeTauri("set_background", { keepRunning: settings.keepRunning, quickAsk: settings.quickAsk });
   }, [settings.keepRunning, settings.quickAsk, !!config]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Menu bar: "⟳ 2" agents working, "● 1" waiting for you.
+  const workingCount = [...working.keys()].filter((c) => tabs[c]).length;
   useEffect(() => {
-    void invokeTauri("set_attention", { count: attention.size });
-  }, [attention.size]);
+    const parts = [workingCount && `⟳ ${workingCount}`, attention.size && `● ${attention.size}`].filter(Boolean);
+    void invokeTauri("set_tray_title", { title: parts.join("  ") });
+  }, [workingCount, attention.size]);
+  // Working, but no output for 45 s (interrupted, or the tab closed): not working.
+  useEffect(() => {
+    if (!working.size) return;
+    const t = setInterval(() => {
+      setWorking((w) => {
+        let changed = false;
+        const next = new Map(w);
+        for (const chat of w.keys()) {
+          const ids = (tabsRef.current[chat] ?? []).map((t) => t.id);
+          const last = Math.max(0, ...ids.map((id) => lastOutput.current.get(id) ?? 0));
+          if (!ids.length || Date.now() - Math.max(last, w.get(chat)!) > 45_000) {
+            next.delete(chat);
+            changed = true;
+          }
+        }
+        return changed ? next : w;
+      });
+    }, 10_000);
+    return () => clearInterval(t);
+  }, [working.size]);
 
   // ⌥Space quick ask: a new Claude chat named after the prompt's first words.
   quickAskRef.current = ({ ws, text }) => {
@@ -1589,14 +1637,8 @@ export default function App() {
                     {r.label[0]?.toUpperCase()}
                   </span>
                   <span className="side-label">{r.label}</span>
-                  {pipeTone[key] && (
-                    <span
-                      className={`pipe-dot side-pipe ${pipeTone[key]}`}
-                      title={pipeTone[key] === "bad" ? "A scheduled pipeline failed" : pipeTone[key] === "run" ? "Pipeline running" : "Scheduled pipelines passed"}
-                    />
-                  )}
                   {r.pinned && <span className="side-pin" title="Pinned">{MenuIcons.pin}</span>}
-                  {unread.has(key) && <span className="unread-dot" title="New activity" />}
+                  {chatsOf(key).some((c) => working.has(c)) && <span className="agent-spin side-spin" title="An agent is working" />}
                 </button>
                 {chatsOf(key).length > 0 && (
                   <span
@@ -1675,7 +1717,14 @@ export default function App() {
                         ) : (
                           <span className="side-sub-label">{name}</span>
                         )}
-                        {attention.has(chat) && <span className="unread-dot chat-attn" title="Finished or needs your input" />}
+                        {working.has(chat) ? (
+                          <span className="agent-spin chat-spin" title="Working" />
+                        ) : attention.has(chat) ? (
+                          <span
+                            className={`chat-attn ${attention.get(chat) === "input" ? "input" : "done"}`}
+                            title={attention.get(chat) === "input" ? "Needs your input" : "Finished"}
+                          />
+                        ) : null}
                         <button
                           className="side-remove"
                           title="Close chat"
@@ -1843,7 +1892,9 @@ export default function App() {
               .map(([chat, event]) => ({ ...chatRow(chat), event }))}
             agents={Object.keys(tabs)
               .filter((chat) => config.repos[wsOf(chat)] && tabs[chat].some((t) => t.agent))
-              .map(chatRow)}
+              .map((chat) => ({ ...chatRow(chat), workingSince: working.get(chat), waiting: attention.get(chat) }))
+              // Working first (longest running on top), then waiting, then idle.
+              .sort((a, b) => (a.workingSince ?? Infinity) - (b.workingSince ?? Infinity) || Number(!!b.waiting) - Number(!!a.waiting))}
             pipelines={Object.entries(pipeInfo)
               .filter(([ws]) => config.repos[ws])
               .map(([ws, info]) => ({ ws, wsLabel: config.repos[ws].label, info }))}

@@ -120,7 +120,7 @@ app.post("/api/profile", (req, res) => {
 app.post("/api/agent-event", (req, res) => {
   const term = String(req.body?.term ?? "");
   const event = String(req.body?.event ?? "");
-  if (!term || (event !== "stop" && event !== "input")) return void res.status(400).json({ error: "Bad event" });
+  if (!term || !["stop", "input", "working"].includes(event)) return void res.status(400).json({ error: "Bad event" });
   const msg = JSON.stringify({ type: "agent:event", id: term, event });
   for (const client of wss.clients) if (client.readyState === WebSocket.OPEN) client.send(msg);
   res.json({ ok: true });

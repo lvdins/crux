@@ -70,7 +70,7 @@ export default function Home({
 }: {
   userName: string;
   needs: (ChatRow & { event: "input" | "stop" })[];
-  agents: ChatRow[];
+  agents: (ChatRow & { workingSince?: number; waiting?: "input" | "stop" })[];
   pipelines: { ws: string; wsLabel: string; info: PipelineInfo }[];
   workspaces: { ws: string; label: string }[];
   onOpenChat: (chat: string) => void;
@@ -83,6 +83,12 @@ export default function Home({
   const [mrs, setMrs] = useState<null | { items: InboxMr[]; errors: string[] }>(null);
   const [mrBusy, setMrBusy] = useState(false);
   const [recent, setRecent] = useState<(PastChat & { ws: string })[] | null>(null);
+  // Ticks the "Working · 3m" timers.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 30_000);
+    return () => clearInterval(t);
+  }, []);
 
   const loadMrs = (refresh = false) => {
     setMrBusy(true);
@@ -233,6 +239,9 @@ export default function Home({
           <div className="home-card">
             <h3>
               Open agents <small>{agents.length || ""}</small>
+              {agents.some((a) => a.workingSince) && (
+                <span className="home-working-count">{agents.filter((a) => a.workingSince).length} working</span>
+              )}
             </h3>
             {agents.length === 0 ? (
               <p className="home-empty">No Claude or Codex chats are open.</p>
@@ -242,8 +251,20 @@ export default function Home({
                   <span className="home-icons">{a.kinds.slice(0, 2).map((k) => <span key={k}>{kindIcon(k)}</span>)}</span>
                   <span className="home-text">
                     <b>{a.name}</b>
-                    <span>{a.wsLabel}</span>
+                    <span>
+                      {a.wsLabel} ·{" "}
+                      {a.workingSince ? (
+                        <em className="home-state working">Working · {ago(new Date(a.workingSince).toISOString())}</em>
+                      ) : a.waiting === "input" ? (
+                        <em className="home-state input">Needs your input</em>
+                      ) : a.waiting === "stop" ? (
+                        <em className="home-state done">Finished</em>
+                      ) : (
+                        "Idle"
+                      )}
+                    </span>
                   </span>
+                  {a.workingSince && <span className="agent-spin" />}
                   <span className="home-go">Open</span>
                 </button>
               ))

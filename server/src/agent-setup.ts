@@ -23,7 +23,8 @@ export const mcpConfigPath = (ws: string) => path.join(MCP_DIR, `${ws}.json`);
 /** Claude Code settings Crux adds (`--settings`): hooks that tell Crux when a turn ends. */
 export const HOOKS_PATH = path.join(home, "claude-hooks.json");
 
-// Stop = Claude finished its turn; Notification = it needs your input or permission.
+// UserPromptSubmit / PostToolUse = Claude is working; Stop = it finished its
+// turn; Notification = it needs your input or permission.
 const report = (event: string) =>
   `[ -n "$CRUX_TERM" ] && curl -s -m 2 -X POST -H 'Content-Type: application/json' ` +
   `-d "{\\"term\\":\\"$CRUX_TERM\\",\\"event\\":\\"${event}\\"}" "$CRUX_URL/api/agent-event" >/dev/null 2>&1; true`;
@@ -36,7 +37,9 @@ execFile("claude", ["--help"], { timeout: 15000 }, (err, out) => {
 
 function writeHooks(): void {
   const hook = (event: string) => [{ hooks: [{ type: "command", command: report(event) }] }];
-  const cfg = { hooks: { Stop: hook("stop"), Notification: hook("input") } };
+  const cfg = {
+    hooks: { UserPromptSubmit: hook("working"), PostToolUse: hook("working"), Stop: hook("stop"), Notification: hook("input") },
+  };
   fs.writeFileSync(HOOKS_PATH, JSON.stringify(cfg, null, 2) + "\n");
 }
 

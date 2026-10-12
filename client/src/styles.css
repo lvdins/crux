@@ -1568,3 +1568,19 @@ html.quick-window, html.quick-window body { background: var(--surface); overflow
 .quick-ws { background: var(--surface-2); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; font-size: 12px; }
 .quick-hint { margin-left: auto; color: var(--ink-faint); font-size: 11px; }
 .quick-hint kbd { font-family: var(--mono); font-size: 10.5px; color: var(--ink-soft); }
+
+/* ---------- agent state (working spinner, waiting dots) ---------- */
+.agent-spin { flex: none; width: 10px; height: 10px; border-radius: 50%; border: 1.6px solid var(--line); border-top-color: var(--accent); animation: agent-spin 0.9s linear infinite; }
+@keyframes agent-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .agent-spin { animation-duration: 2.5s; } }
+.side-item .side-spin { margin-left: auto; }
+.side-pin + .side-spin { margin-left: 6px; }
+.ws-chat .chat-spin { margin-left: auto; }
+.chat-attn { flex: none; width: 7px; height: 7px; border-radius: 50%; margin-left: auto; }
+.chat-attn.input { background: var(--warn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 22%, transparent); }
+.chat-attn.done { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.home-working-count { margin-left: auto; color: var(--accent-ink); font-weight: 500; text-transform: none; letter-spacing: 0; }
+.home-state { font-style: normal; }
+.home-state.working { color: var(--accent-ink); }
+.home-state.input { color: var(--warn); }
+.home-state.done { color: var(--ink-soft); }

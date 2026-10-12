@@ -22,7 +22,7 @@ const VIEW_GROUPS: Group[] = [
       { key: "docPreview", label: "Doc preview", hint: "Live preview for MkDocs folders." },
       { key: "tests", label: "Tests", hint: "Test tree for Playwright / pytest folders." },
       { key: "coverage", label: "Coverage", hint: "Which features the tests cover." },
-      { key: "pipelines", label: "Pipelines", hint: "Morning / evening scheduled GitLab runs, and the sidebar status dot." },
+      { key: "pipelines", label: "Pipelines", hint: "Morning / evening scheduled GitLab runs; failures show on Home." },
       { key: "browser", label: "Browser", hint: "A browser beside your chats. When off, agents still use a hidden browser through MCP." },
       { key: "network", label: "Network view", hint: "Fetch / XHR calls under the browser.", parent: "browser" },
       { key: "picker", label: "Element picker", hint: "Pick an element to get Playwright locators.", parent: "browser" },

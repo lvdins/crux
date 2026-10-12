@@ -175,11 +175,11 @@ fn set_background(app: tauri::AppHandle, keep_running: bool, quick_ask: bool) {
     }
 }
 
-/// Menu bar count of chats waiting for you (blank when none).
+/// Menu bar text next to the icon: agents working / waiting for you (blank when none).
 #[tauri::command]
-fn set_attention(app: tauri::AppHandle, count: u32) {
+fn set_tray_title(app: tauri::AppHandle, title: String) {
     if let Some(tray) = app.tray_by_id("crux") {
-        let _ = tray.set_title(if count > 0 { Some(count.to_string()) } else { None::<String> });
+        let _ = tray.set_title(if title.is_empty() { None } else { Some(title) });
     }
 }
 
@@ -307,7 +307,7 @@ fn main() {
             browser::browser_screenshot,
             browser::browser_devtools,
             set_background,
-            set_attention,
+            set_tray_title,
             quick_hide,
             main_show,
             in_applications,
