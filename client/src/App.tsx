@@ -1573,15 +1573,6 @@ export default function App() {
             if (e.propertyName === "width") window.dispatchEvent(new Event("resize"));
           }}
         >
-          <button className={`side-item side-home ${view === "home" ? "active" : ""}`} onClick={() => setView("home")}>
-            <span className="avatar view-icon">
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round">
-                <path d="M2.5 7.2 8 2.5l5.5 4.7V13a.5.5 0 0 1-.5.5H9.8V10H6.2v3.5H3a.5.5 0 0 1-.5-.5z" />
-              </svg>
-            </span>
-            <span className="side-label">Home</span>
-            {attention.size > 0 && <span className="home-count">{attention.size}</span>}
-          </button>
           <button className="side-search" onClick={() => setSearchOpen(true)} title="Search open chats and past conversations">
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
               <circle cx="7" cy="7" r="4.5" />
@@ -1589,6 +1580,15 @@ export default function App() {
             </svg>
             Search chats
             <kbd>⌘K</kbd>
+          </button>
+          <button className={`side-item view-item side-home ${view === "home" ? "active" : ""}`} onClick={() => setView("home")} title="Home: what needs you">
+            <span className="avatar view-icon">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round">
+                <path d="M2.5 7.2 8 2.5l5.5 4.7V13a.5.5 0 0 1-.5.5H9.8V10H6.2v3.5H3a.5.5 0 0 1-.5-.5z" />
+              </svg>
+            </span>
+            <span className="side-label">Home</span>
+            {attention.size > 0 && <span className="home-count">{attention.size}</span>}
           </button>
           <div className="side-section side-section-row">
             <span>Workspaces</span>
