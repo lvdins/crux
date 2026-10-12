@@ -188,6 +188,27 @@ fn set_tray_title(app: tauri::AppHandle, title: String) {
     }
 }
 
+/// Take down Crux's delivered notifications with these titles (a chat's
+/// "Finished" banner once you're looking at that chat). The notification
+/// plugin can't remove them on macOS, so ask Notification Center directly.
+#[tauri::command]
+fn clear_notifications(app: tauri::AppHandle, titles: Vec<String>) {
+    #[cfg(target_os = "macos")]
+    let _ = app.run_on_main_thread(move || {
+        use objc2_foundation::NSUserNotificationCenter;
+        #[allow(deprecated)]
+        let center = NSUserNotificationCenter::defaultUserNotificationCenter();
+        #[allow(deprecated)]
+        for n in center.deliveredNotifications().iter() {
+            if n.title().is_some_and(|t| titles.iter().any(|want| *want == t.to_string())) {
+                center.removeDeliveredNotification(&n);
+            }
+        }
+    });
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, titles);
+}
+
 /// Start at login records this binary's path: only safe from /Applications
 /// (a DMG or quarantined Downloads copy runs from a temporary folder).
 #[tauri::command]
@@ -322,6 +343,7 @@ fn main() {
             browser::browser_devtools,
             set_background,
             set_tray_title,
+            clear_notifications,
             quick_hide,
             main_show,
             in_applications,

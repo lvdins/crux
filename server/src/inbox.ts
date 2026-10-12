@@ -2,12 +2,12 @@ import { config } from "./config.js";
 import { glab, parseRemote, run } from "./pipelines.js";
 
 /**
- * Home screen inbox: open merge requests (GitLab, via the user's glab login) and
- * pull requests (GitHub, via gh) that are waiting for you, or that you opened.
+ * Home screen inbox: open GitLab merge requests (via the user's glab login)
+ * that are waiting for you, or that you opened. GitHub PRs are left out.
  */
 
 export interface InboxMr {
-  source: "gitlab" | "github";
+  source: "gitlab";
   host: string;
   project: string;
   iid: number;
@@ -84,61 +84,19 @@ async function gitlab(host: string): Promise<InboxMr[]> {
   return out;
 }
 
-async function github(): Promise<InboxMr[]> {
-  const fields = "number,title,url,author,isDraft,updatedAt,repository";
-  const search = async (flag: string, role: InboxMr["role"]) => {
-    const raw = await run("gh", ["search", "prs", flag, "--state=open", "--limit=30", "--json", fields]);
-    return (
-      JSON.parse(raw) as {
-        number: number;
-        title: string;
-        url: string;
-        author: { login: string };
-        isDraft: boolean;
-        updatedAt: string;
-        repository: { nameWithOwner: string };
-      }[]
-    ).map(
-      (p): InboxMr => ({
-        source: "github",
-        host: "github.com",
-        project: p.repository.nameWithOwner,
-        iid: p.number,
-        title: p.title,
-        url: p.url,
-        author: p.author.login,
-        role,
-        draft: p.isDraft,
-        updatedAt: p.updatedAt,
-        ws: null,
-      }),
-    );
-  };
-  const [review, mine] = await Promise.all([search("--review-requested=@me", "review"), search("--author=@me", "mine")]);
-  const urls = new Set(review.map((p) => p.url));
-  return [...review, ...mine.filter((p) => !urls.has(p.url))];
-}
-
 export async function inboxMrs(refresh = false) {
   if (!refresh && cache && Date.now() - cache.at < 2 * 60_000) return cache.data;
   const repos = await remotes();
   const hosts = [...new Set(repos.map((r) => r.host).filter((h) => !h.includes("github")))];
   const errors: string[] = [];
-  const lists = await Promise.all([
-    ...hosts.map((h) =>
+  const lists = await Promise.all(
+    hosts.map((h) =>
       gitlab(h).catch((err: Error) => {
         errors.push(`${h}: ${err.message}`);
         return [] as InboxMr[];
       }),
     ),
-    // GitHub only when a workspace lives there (gh is otherwise just for updates).
-    repos.some((r) => r.host.includes("github"))
-      ? github().catch((err: Error) => {
-          errors.push(`github.com: ${err.message}`);
-          return [] as InboxMr[];
-        })
-      : Promise.resolve([] as InboxMr[]),
-  ]);
+  );
   const items = lists
     .flat()
     .map((m) => ({ ...m, ws: repos.find((r) => r.host === m.host && r.project.toLowerCase() === m.project.toLowerCase())?.ws ?? null }))

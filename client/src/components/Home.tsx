@@ -5,7 +5,7 @@ import { ClaudeLogo, CodexLogo, TerminalIcon } from "./icons";
 import { checkPrompt, type PipelineInfo } from "./PipelinesPanel";
 
 export interface InboxMr {
-  source: "gitlab" | "github";
+  source: "gitlab";
   host: string;
   project: string;
   iid: number;
@@ -42,14 +42,11 @@ const greeting = () => {
 
 const ROLE: Record<InboxMr["role"], string> = { review: "Review requested", assigned: "Assigned to you", mine: "Yours" };
 
-/** The prompt "Review with Claude" sends: read the MR with glab / gh, report, don't comment yet. */
+/** The prompt "Review with Claude" sends: read the MR with glab, report, don't comment yet. */
 export function reviewPrompt(mr: InboxMr): string {
-  const read =
-    mr.source === "gitlab"
-      ? `glab mr view ${mr.iid} -R https://${mr.host}/${mr.project} --comments and glab mr diff ${mr.iid} -R https://${mr.host}/${mr.project}`
-      : `gh pr view ${mr.url} --comments and gh pr diff ${mr.url}`;
+  const read = `glab mr view ${mr.iid} -R https://${mr.host}/${mr.project} --comments and glab mr diff ${mr.iid} -R https://${mr.host}/${mr.project}`;
   return [
-    `Review ${mr.source === "gitlab" ? "merge request" : "pull request"} "${mr.title}" (${mr.url}).`,
+    `Review merge request "${mr.title}" (${mr.url}).`,
     `Read it with: ${read}`,
     "List real problems first (bugs, missing tests, risky changes) with file:line, then smaller notes. Don't post comments or approve until I say so.",
   ].join("\n");

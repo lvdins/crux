@@ -424,6 +424,20 @@ export default function App() {
   const viewRef = useRef(view);
   // Chats whose agent finished or needs input while you weren't looking.
   const [attention, setAttention] = useState<Map<string, "input" | "stop">>(new Map());
+  // Titles of the system notifications sent per chat, so they can be taken down.
+  const sentNotes = useRef<Map<string, Set<string>>>(new Map());
+  // The Crux window has focus (coming back to a finished chat clears it too).
+  const [windowFocused, setWindowFocused] = useState(() => document.hasFocus());
+  useEffect(() => {
+    const on = () => setWindowFocused(true);
+    const off = () => setWindowFocused(false);
+    window.addEventListener("focus", on);
+    window.addEventListener("blur", off);
+    return () => {
+      window.removeEventListener("focus", on);
+      window.removeEventListener("blur", off);
+    };
+  }, []);
   // Called from the socket handler, so it reads this render's state.
   const agentEventRef = useRef<(term: string, event: AgentEvent) => void>(() => {});
   // Chats whose agent is working right now → since when.
@@ -1220,19 +1234,27 @@ export default function App() {
     setAttention((a) => (a.get(chat) === kind ? a : new Map(a).set(chat, kind)));
     if (!settings.notifyAgent) return;
     const where = config?.repos[ws]?.label ?? ws;
-    void notify(`${chatTitle(chat)} · ${where}`, event === "input" ? "Needs your input" : "Finished");
+    const title = `${chatTitle(chat)} · ${where}`;
+    sentNotes.current.set(chat, (sentNotes.current.get(chat) ?? new Set()).add(title));
+    void notify(title, event === "input" ? "Needs your input" : "Finished");
   };
-  // Looking at a chat clears its "needs you" dot.
+  // Looking at a chat (window focused) clears its "needs you" dot and takes
+  // its notification banners down.
   const shownChat = view ? (activeChat[view] && tabs[activeChat[view]] ? activeChat[view] : chatsOf(view)[0]) : undefined;
   useEffect(() => {
-    if (!shownChat || view === "home") return;
+    if (!shownChat || view === "home" || !windowFocused) return;
     setAttention((a) => {
       if (!a.has(shownChat)) return a;
       const next = new Map(a);
       next.delete(shownChat);
       return next;
     });
-  }, [shownChat, view]);
+    const titles = sentNotes.current.get(shownChat);
+    if (titles?.size) {
+      sentNotes.current.delete(shownChat);
+      void invokeTauri("clear_notifications", { titles: [...titles] });
+    }
+  }, [shownChat, view, windowFocused]);
 
   // Desktop app: keep running in the menu bar / ⌥Space, and the menu bar count.
   useEffect(() => {
