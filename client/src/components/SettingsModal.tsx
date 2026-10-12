@@ -94,6 +94,7 @@ const MODES: { mode: Settings["mode"]; title: string; body: string }[] = [
 
 const PAGES = [
   ["profile", "Profile"],
+  ["updates", "Updates"],
   ["setup", "Setup"],
   ["tabs", "Tabs & views"],
   ["chats", "Chats"],
@@ -102,7 +103,7 @@ const PAGES = [
   ["keys", "Shortcuts"],
   ["mode", "Mode"],
 ] as const;
-type Page = (typeof PAGES)[number][0];
+export type Page = (typeof PAGES)[number][0];
 
 /** Settings, one page per topic. Changes save right away. */
 export default function SettingsModal({
@@ -120,6 +121,7 @@ export default function SettingsModal({
   setupCount,
   onSetupChecked,
   onFix,
+  initialPage = "profile",
 }: {
   settings: Settings;
   onChange: (patch: Partial<Settings>) => void;
@@ -139,8 +141,10 @@ export default function SettingsModal({
   onSetupChecked: (tools: ToolHealth[]) => void;
   /** Runs an install / login command in a terminal. */
   onFix: (cmd: string, tool: string) => void;
+  /** "updates" also checks right away (Crux menu → Check for Updates…). */
+  initialPage?: Page;
 }) {
-  const [page, setPage] = useState<Page>("profile");
+  const [page, setPage] = useState<Page>(initialPage);
   const [name, setName] = useState(userName);
   const [jira, setJira] = useState(settings.jiraProject);
   const [checking, setChecking] = useState<"" | "busy" | "latest" | "error">("");
@@ -192,6 +196,10 @@ export default function SettingsModal({
       setChecking("error");
     }
   };
+
+  useEffect(() => {
+    if (initialPage === "updates" && canUpdate && !update) void checkUpdate();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Turning a notification on asks macOS for permission the first time.
   const change = async (key: Key, on: boolean) => {
@@ -268,6 +276,11 @@ export default function SettingsModal({
                 <p className="settings-note">
                   Used by “File as Jira bug” after you mark an issue with ⌘⇧C. The agent files it with its own Jira access.
                 </p>
+              </>
+            )}
+
+            {page === "updates" && (
+              <>
                 <div className="settings-section">Crux</div>
                 <div className="settings-list">
                   <div className="settings-row static">
@@ -282,7 +295,7 @@ export default function SettingsModal({
                               ? "You're on the latest version."
                               : checking === "error"
                                 ? "Couldn't reach GitHub. Is gh logged in?"
-                                : "Crux checks for updates every 6 hours."}
+                                : "Crux checks every 30 minutes and when you switch back to it."}
                       </span>
                     </span>
                     {canUpdate &&

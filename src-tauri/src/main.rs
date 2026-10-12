@@ -100,7 +100,12 @@ fn install_menu(app: &mut tauri::App) -> tauri::Result<()> {
     let search = MenuItemBuilder::with_id("search-chats", "Search Chats")
         .accelerator("CmdOrCtrl+K")
         .build(app)?;
+    let updates = MenuItemBuilder::with_id("check-updates", "Check for Updates…").build(app)?;
     let menu = Menu::default(app.handle())?;
+    // App menu (first submenu, "Crux"): Check for Updates… under About.
+    if let Some(MenuItemKind::Submenu(first)) = menu.items()?.into_iter().next() {
+        first.insert(&updates, 1)?;
+    }
     let mut placed = false;
     for item in menu.items()? {
         if let MenuItemKind::Submenu(sub) = item {
@@ -215,8 +220,9 @@ fn install_tray(app: &mut tauri::App) -> tauri::Result<()> {
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
     let open = MenuItemBuilder::with_id("tray-open", "Open Crux").build(app)?;
     let quick = MenuItemBuilder::with_id("tray-quick", "Quick Ask…").accelerator("Alt+Space").build(app)?;
+    let updates = MenuItemBuilder::with_id("tray-updates", "Check for Updates…").build(app)?;
     let quit = MenuItemBuilder::with_id("tray-quit", "Quit Crux").accelerator("CmdOrCtrl+Q").build(app)?;
-    let menu = MenuBuilder::new(app).item(&open).item(&quick).separator().item(&quit).build()?;
+    let menu = MenuBuilder::new(app).item(&open).item(&quick).item(&updates).separator().item(&quit).build()?;
     let mut tray = TrayIconBuilder::with_id("crux")
         .tooltip("Crux")
         .menu(&menu)
@@ -224,6 +230,10 @@ fn install_tray(app: &mut tauri::App) -> tauri::Result<()> {
         .on_menu_event(|app, event| match event.id().as_ref() {
             "tray-open" => show_main(app),
             "tray-quick" => toggle_quick(app),
+            "tray-updates" => {
+                show_main(app);
+                let _ = app.emit_to("main", "menu:check-updates", ());
+            }
             "tray-quit" => app.exit(0),
             _ => {}
         })
@@ -292,6 +302,10 @@ fn main() {
                 }
                 "search-chats" => {
                     let _ = app.emit_to("main", "menu:search-chats", ());
+                }
+                "check-updates" => {
+                    show_main(app);
+                    let _ = app.emit_to("main", "menu:check-updates", ());
                 }
                 _ => {}
             }

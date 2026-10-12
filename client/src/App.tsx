@@ -20,7 +20,7 @@ import Welcome from "./components/onboarding/Welcome";
 import NameStep from "./components/onboarding/NameStep";
 import ModeStep from "./components/onboarding/ModeStep";
 import { useModalKeys } from "./useModalKeys";
-import SettingsModal from "./components/SettingsModal";
+import SettingsModal, { type Page as SettingsPage } from "./components/SettingsModal";
 import { notify } from "./notify";
 import "./components/settings.css";
 import FirstSetup from "./components/onboarding/FirstSetup";
@@ -172,6 +172,7 @@ export default function App() {
   // Connections is listed only while at least one of its tabs is on.
   const showConnections = settings.connections && (settings.connCoverage || settings.connGraph);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsPage, setSettingsPage] = useState<SettingsPage>("profile");
   // { mode } applies that mode's preset; other keys flip single toggles.
   // Quick clicks send several saves; only the newest reply may replace the
   // local copy, or an older one would undo a switch just flipped.
@@ -358,8 +359,20 @@ export default function App() {
       setAppVersion(current);
       void check();
     });
-    const timer = setInterval(() => current && void check(), 6 * 60 * 60 * 1000);
-    return () => clearInterval(timer);
+    // Crux now stays open for days (menu bar), and macOS pauses timers in a
+    // hidden window: check often, and whenever Crux comes back to the front.
+    let lastCheck = 0;
+    const maybeCheck = () => {
+      if (!current || Date.now() - lastCheck < 10 * 60_000) return;
+      lastCheck = Date.now();
+      void check();
+    };
+    const timer = setInterval(maybeCheck, 30 * 60_000);
+    window.addEventListener("focus", maybeCheck);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", maybeCheck);
+    };
   }, []);
   const installUpdate = async () => {
     setUpdate((u) => (u ? { ...u, installing: true } : u));
@@ -614,6 +627,10 @@ export default function App() {
           listen("menu:toggle-right", () => toggleRightRef.current()),
           listen("menu:report-issue", () => reportIssueRef.current()),
           listen("menu:search-chats", () => setSearchOpen(true)),
+          listen("menu:check-updates", () => {
+            setSettingsPage("updates");
+            setSettingsOpen(true);
+          }),
           listen<QuickAsk>("quick:ask", (e) => quickAskRef.current(e.payload)),
         ]).then((fns) => {
           if (cancelled) fns.forEach((fn) => fn());
@@ -2195,9 +2212,13 @@ export default function App() {
       )}
       {settingsOpen && (
         <SettingsModal
+          key={settingsPage}
           settings={settings}
           onChange={saveSettings}
-          onClose={() => setSettingsOpen(false)}
+          onClose={() => {
+            setSettingsOpen(false);
+            setSettingsPage("profile");
+          }}
           onReplayIntro={() => {
             setSettingsOpen(false);
             setOnboarding("intro");
@@ -2219,6 +2240,7 @@ export default function App() {
           setupCount={setupCount}
           onSetupChecked={(tools) => setSetupCount(setupIssues(tools))}
           onFix={runInTerminal}
+          initialPage={settingsPage}
         />
       )}
       {chatCtx && (() => {
