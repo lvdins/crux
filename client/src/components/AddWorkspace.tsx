@@ -47,6 +47,8 @@ export default function AddWorkspace({
   const [label, setLabel] = useState("");
   const [kind, setKind] = useState(wantedKind ?? "generic");
   const [saving, setSaving] = useState(false);
+  // Inline "New folder" row: null while closed, else the typed name.
+  const [newFolder, setNewFolder] = useState<string | null>(null);
 
   const open = useCallback((target?: string) => {
     setError("");
@@ -67,8 +69,26 @@ export default function AddWorkspace({
 
   useEffect(() => open(), [open]);
 
-  // Esc closes; Enter stays with the path field (Go).
-  useModalKeys(true, { onEscape: onClose });
+  const createFolder = async () => {
+    if (!listing || !newFolder?.trim()) return;
+    setError("");
+    try {
+      const r = await api("/api/fs/mkdir", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ parent: listing.path, name: newFolder.trim() }),
+      });
+      const body = await r.json();
+      if (!r.ok) throw new Error(body.error);
+      setNewFolder(null);
+      open(body.path); // step into it, ready to add
+    } catch (err) {
+      setError(String((err as Error).message ?? err));
+    }
+  };
+
+  // Esc closes (or cancels the new-folder row); Enter stays with the path field (Go).
+  useModalKeys(true, { onEscape: () => (newFolder !== null ? setNewFolder(null) : onClose()) });
 
   const add = async () => {
     if (!listing) return;
@@ -125,11 +145,33 @@ export default function AddWorkspace({
                 {i < crumbs.length - 1 && <span className="crumb-sep">/</span>}
               </span>
             ))}
+            <button className="crumb-new" onClick={() => setNewFolder("")} title="Create a folder here">
+              + New folder
+            </button>
             <button className="crumb-home" onClick={() => open(listing.home)} title="Home folder">~</button>
           </div>
         )}
 
         <div className="dir-list">
+          {listing && newFolder !== null && (
+            <form
+              className="dir-new"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void createFolder();
+              }}
+            >
+              <input
+                autoFocus
+                value={newFolder}
+                onChange={(e) => setNewFolder(e.target.value)}
+                placeholder="Folder name"
+                spellCheck={false}
+              />
+              <button type="submit" disabled={!newFolder.trim()}>Create</button>
+              <button type="button" onClick={() => setNewFolder(null)}>Cancel</button>
+            </form>
+          )}
           {listing?.parent && (
             <button className="dir-row" onClick={() => open(listing.parent!)}>
               <span className="dir-name">..</span>

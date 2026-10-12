@@ -67,6 +67,9 @@ const IN_TAURI = typeof window !== "undefined" && "__TAURI_INTERNALS__" in windo
 const invokeTauri = (cmd: string, args?: Record<string, unknown>) =>
   IN_TAURI ? import("@tauri-apps/api/core").then(({ invoke }) => invoke(cmd, args)).catch(() => undefined) : Promise.resolve();
 
+/** What the top-bar launchers drag: an agent, or a plain terminal. */
+type DragCmd = "claude" | "codex" | "shell";
+
 /** Where a dragged agent would land: beside a pane, or as a tab. */
 interface Drop {
   paneId: string;
@@ -432,7 +435,7 @@ export default function App() {
   const lastOutput = useRef(new Map<string, number>());
   // Codex has no hooks: ≥3 s of output counts as working, then 10 s of quiet as finished.
   const codexQuiet = useRef(new Map<string, { since: number; marked: boolean; timer: ReturnType<typeof setTimeout> }>());
-  const [agentDrag, setAgentDrag] = useState<null | { cmd: "claude" | "codex"; x: number; y: number; drop: Drop | null }>(null);
+  const [agentDrag, setAgentDrag] = useState<null | { cmd: DragCmd; x: number; y: number; drop: Drop | null }>(null);
   const panesRef = useRef<HTMLDivElement>(null);
   const termPaneRef = useRef<HTMLElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -775,8 +778,17 @@ export default function App() {
     [layouts, ck],
   );
 
+  // A dragged terminal is a plain shell; agents boot their command.
+  const spawnTab = useCallback(
+    (repo: string, cmd: DragCmd, inMain = false) => {
+      const make = inMain ? addTab : createTab;
+      return cmd === "shell" ? make(repo) : make(repo, cmd, cmd, agentBoot(cmd));
+    },
+    [addTab, createTab],
+  );
+
   const startAgentDrag = useCallback(
-    (cmd: "claude" | "codex") => (e: React.PointerEvent) => {
+    (cmd: DragCmd) => (e: React.PointerEvent) => {
       if (isSpecial(view)) return;
       e.preventDefault();
       const startX = e.clientX;
@@ -791,28 +803,30 @@ export default function App() {
         window.removeEventListener("pointerup", up);
         setAgentDrag(null);
         if (!started) {
-          launchAgent(cmd); // plain click
+          // plain click
+          if (cmd === "shell") addTab(chatForNew());
+          else launchAgent(cmd);
           return;
         }
         const drop = dropAt(ev.clientX, ev.clientY);
         if (!drop) return;
         if (drop.side === "center") {
           if (drop.paneId === MAIN) {
-            addTab(chatForNew(), cmd, cmd, agentBoot(cmd));
+            spawnTab(chatForNew(), cmd, true);
           } else {
             // Middle of a split pane: becomes a tab in that pane.
-            const id = createTab(ck, cmd, cmd, agentBoot(cmd));
+            const id = spawnTab(ck, cmd);
             setLayouts((prev) => ({ ...prev, [ck]: addTabToPane(prev[ck] ?? rootLayout(), drop.paneId, id) }));
           }
           return;
         }
-        const id = createTab(ck, cmd, cmd, agentBoot(cmd));
+        const id = spawnTab(ck, cmd);
         setLayouts((prev) => ({ ...prev, [ck]: insertAt(prev[ck] ?? rootLayout(), drop.paneId, drop.side as DropSide, id) }));
       };
       window.addEventListener("pointermove", move);
       window.addEventListener("pointerup", up);
     },
-    [view, ck, dropAt, launchAgent, addTab, createTab],
+    [view, ck, dropAt, launchAgent, addTab, spawnTab],
   );
 
   const onWorkspaceAdded = (key: string, repo: RepoInfo) => {
@@ -1562,6 +1576,14 @@ export default function App() {
             onPointerDown={repo ? startAgentDrag("codex") : undefined}
           >
             <CodexLogo /> Codex
+          </button>
+          <button
+            className="agent-btn"
+            disabled={!repo}
+            title={repo ? `Click for a new terminal · drag into the terminal for a tab or split` : "Pick a workspace first"}
+            onPointerDown={repo ? startAgentDrag("shell") : undefined}
+          >
+            <TerminalIcon /> Terminal
           </button>
         </div>
         <span className={`conn ${connected ? "on" : "off"}`}>{connected ? "connected" : "offline"}</span>
@@ -2401,7 +2423,8 @@ export default function App() {
       )}
       {agentDrag && (
         <div className="drag-ghost" style={{ left: agentDrag.x, top: agentDrag.y }}>
-          {agentDrag.cmd === "claude" ? <ClaudeLogo /> : <CodexLogo />} {agentDrag.cmd}
+          {agentDrag.cmd === "claude" ? <ClaudeLogo /> : agentDrag.cmd === "codex" ? <CodexLogo /> : <TerminalIcon />}{" "}
+          {agentDrag.cmd === "shell" ? "terminal" : agentDrag.cmd}
         </div>
       )}
     </div>

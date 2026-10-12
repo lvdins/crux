@@ -489,6 +489,8 @@ button.primary:hover:not(:disabled) { background: var(--accent-ink); }
 .modal .crumbs button { background: none; border: none; color: var(--ink-soft); padding: 2px 4px; }
 .modal .crumbs button:hover { color: var(--ink); background: var(--surface-2); }
 .crumb-sep { color: var(--ink-faint); }
+.modal .crumbs .crumb-new { margin-left: auto; }
+.modal .crumbs .crumb-new + .crumb-home { margin-left: 0; }
 .modal .crumbs .crumb-home { margin-left: auto; }
 .dir-list {
   flex: 1; min-height: 140px; overflow-y: auto; margin: 0 14px;
@@ -500,6 +502,12 @@ button.primary:hover:not(:disabled) { background: var(--accent-ink); }
 }
 .modal .dir-row:hover { background: var(--surface-2); color: var(--ink); }
 .dir-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dir-new { display: flex; gap: 6px; padding: 4px 4px 6px; }
+.dir-new input {
+  flex: 1; min-width: 0; background: var(--surface-2); border: 1px solid var(--line); color: var(--ink);
+  border-radius: 6px; padding: 5px 8px; font: inherit; font-size: 12.5px; font-family: var(--mono);
+}
+.dir-new input:focus { outline: none; border-color: var(--ink-faint); }
 .dir-empty { padding: 14px; color: var(--ink-faint); font-size: 12px; text-align: center; }
 .kind-badge {
   font-size: 10.5px; padding: 1px 7px; border-radius: 10px; border: 1px solid var(--line);

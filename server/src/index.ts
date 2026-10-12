@@ -312,6 +312,32 @@ app.get("/api/fs/list", (req, res) => {
   res.json({ path: dir, parent: path.dirname(dir) === dir ? null : path.dirname(dir), home: os.homedir(), kind, dirs });
 });
 
+/** New folder inside `parent` (Add workspace → New folder). */
+app.post("/api/fs/mkdir", (req, res) => {
+  const { parent, name } = req.body ?? {};
+  const clean = typeof name === "string" ? name.trim() : "";
+  if (typeof parent !== "string" || !parent) {
+    res.status(400).json({ error: "Missing parent folder" });
+    return;
+  }
+  if (!clean || clean === "." || clean === ".." || /[/\\\0]/.test(clean)) {
+    res.status(400).json({ error: "Folder name can't be empty or contain slashes" });
+    return;
+  }
+  const dir = path.join(path.resolve(expandHome(parent)), clean);
+  if (fs.existsSync(dir)) {
+    res.status(409).json({ error: `${clean} already exists` });
+    return;
+  }
+  try {
+    fs.mkdirSync(dir);
+  } catch (err) {
+    res.status(400).json({ error: `Cannot create ${dir}: ${(err as Error).message}` });
+    return;
+  }
+  res.json({ path: dir });
+});
+
 app.get("/api/term/:id/process", (req, res) => {
   res.json({ process: termProcess(req.params.id) });
 });
