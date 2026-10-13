@@ -2,6 +2,6 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default capability for the main window",
-  "windows": ["main", "quick"],
+  "windows": ["main", "quick", "tray"],
   "permissions": ["core:default", "core:window:allow-start-dragging", "notification:default", "autostart:default"]
 }

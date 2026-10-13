@@ -1578,6 +1578,27 @@ html.quick-window, html.quick-window body { background: var(--surface); overflow
 .quick-hint { margin-left: auto; color: var(--ink-faint); font-size: 11px; }
 .quick-hint kbd { font-family: var(--mono); font-size: 10.5px; color: var(--ink-soft); }
 
+/* ---------- Menu bar panel (click the Crux icon) ---------- */
+html.tray-window, html.tray-window body, html.tray-window #root { background: transparent; overflow: hidden; }
+/* Room around the card for its shadow; it pops out of the menu bar (a bubble). */
+.tray-panel { padding: 4px 12px 20px; }
+.tray-card {
+  border-radius: 12px; border-color: var(--menu-line); padding-bottom: 6px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
+  transform-origin: 50% 0; opacity: 0; transform: translateY(-8px) scale(0.92);
+}
+.tray-panel.open .tray-card {
+  opacity: 1; transform: none;
+  transition: transform 260ms cubic-bezier(0.34, 1.45, 0.64, 1), opacity 140ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) { .tray-panel.open .tray-card { transition: opacity 120ms ease-out; } }
+.tray-list { max-height: 480px; overflow-y: auto; margin: 0 -2px; padding: 0 2px; }
+.home-text .tray-detail { color: var(--ink-faint); opacity: 0.85; margin-top: 1px; }
+.tray-foot { display: flex; gap: 4px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
+.tray-foot button { background: none; border: 0; border-radius: 6px; padding: 5px 8px; color: var(--ink-soft); font: inherit; font-size: 12px; cursor: pointer; }
+.tray-foot button:hover { background: var(--surface-2); color: var(--ink); }
+.tray-foot kbd { margin-left: 4px; font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); }
+
 /* ---------- agent state (working spinner, waiting dots) ---------- */
 .agent-spin { flex: none; width: 10px; height: 10px; border-radius: 50%; border: 1.6px solid var(--line); border-top-color: var(--accent); animation: agent-spin 0.9s linear infinite; }
 @keyframes agent-spin { to { transform: rotate(360deg); } }

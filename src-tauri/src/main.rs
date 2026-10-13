@@ -5,7 +5,7 @@ mod browser;
 use std::net::TcpStream;
 use tauri::{Emitter, Manager};
 use std::process::{Child, Command};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -211,6 +211,69 @@ fn clear_notifications(app: tauri::AppHandle, titles: Vec<String>) {
     let _ = (app, titles);
 }
 
+// ---------- macOS permissions (onboarding's Permissions step) ----------
+
+#[cfg(target_os = "macos")]
+#[link(name = "CoreGraphics", kind = "framework")]
+extern "C" {
+    fn CGPreflightScreenCaptureAccess() -> bool;
+    fn CGRequestScreenCaptureAccess() -> bool;
+}
+
+/// Screen Recording granted (Screenshot to agent needs it).
+#[tauri::command]
+fn screen_permission() -> bool {
+    #[cfg(target_os = "macos")]
+    return unsafe { CGPreflightScreenCaptureAccess() };
+    #[cfg(not(target_os = "macos"))]
+    true
+}
+
+/// Ask for Screen Recording: the system prompt the first time; after that
+/// macOS only lets you switch it on in System Settings, so open that pane.
+#[tauri::command]
+fn request_screen_permission() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        if unsafe { CGPreflightScreenCaptureAccess() } {
+            return true;
+        }
+        let granted = unsafe { CGRequestScreenCaptureAccess() };
+        if !granted {
+            open_privacy("ScreenCapture".into());
+        }
+        granted
+    }
+    #[cfg(not(target_os = "macos"))]
+    true
+}
+
+/// Touch Documents, Desktop and Downloads so macOS asks for each now (repos
+/// and agents' files live there) instead of mid-task. Which ones Crux can read.
+#[tauri::command]
+async fn request_folder_access() -> Vec<(String, bool)> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let home = std::env::var("HOME").unwrap_or_default();
+        ["Documents", "Desktop", "Downloads"]
+            .iter()
+            .map(|name| (name.to_string(), std::fs::read_dir(format!("{home}/{name}")).is_ok()))
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
+}
+
+/// Open a Privacy & Security pane in System Settings.
+#[tauri::command]
+fn open_privacy(pane: String) {
+    let url = match pane.as_str() {
+        "ScreenCapture" | "FilesAndFolders" => format!("x-apple.systempreferences:com.apple.preference.security?Privacy_{pane}"),
+        "Notifications" => "x-apple.systempreferences:com.apple.Notifications-Settings.extension".into(),
+        _ => return,
+    };
+    let _ = Command::new("open").arg(url).spawn();
+}
+
 /// Start at login records this binary's path: only safe from /Applications
 /// (a DMG or quarantined Downloads copy runs from a temporary folder).
 #[tauri::command]
@@ -237,83 +300,151 @@ fn quick_shortcut() -> tauri_plugin_global_shortcut::Shortcut {
     Shortcut::new(Some(Modifiers::ALT), Code::Space)
 }
 
-/// A chat listed in the menu bar menu (pushed by the client with `set_tray_chats`).
-#[derive(serde::Deserialize, Clone)]
-struct TrayChat {
-    chat: String,
-    label: String,
-    /// "input" (needs you), "stop" (finished) or "working".
-    status: String,
-    /// Latest line from the agent (its reply, tool, or what it needs); greyed under the chat.
-    #[serde(default)]
-    detail: String,
+/// Agent chats for the menu bar panel, as the main window last sent them (JSON).
+static TRAY_CHATS: Mutex<String> = Mutex::new(String::new());
+/// When the panel last hid on losing focus: a click on the menu bar icon
+/// blurs it first, and that same click must not open it again.
+static TRAY_HIDDEN_AT: AtomicU64 = AtomicU64::new(0);
+const TRAY_WIDTH: f64 = 380.0;
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
-/// Menu bar menu: chats that need you (and agents working) on top, then
-/// open Crux, quick ask, updates, quit.
-fn tray_menu<M: Manager<tauri::Wry>>(app: &M, chats: &[TrayChat]) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
-    use tauri::menu::{MenuBuilder, MenuItemBuilder};
-    let mut menu = MenuBuilder::new(app);
-    let needs: Vec<&TrayChat> = chats.iter().filter(|c| c.status != "working").collect();
-    let busy: Vec<&TrayChat> = chats.iter().filter(|c| c.status == "working").collect();
-    if needs.is_empty() && busy.is_empty() {
-        menu = menu.item(&MenuItemBuilder::with_id("tray-head-none", "No chats need you").enabled(false).build(app)?).separator();
-    }
-    for (title, list) in [("Needs you", &needs), ("Working", &busy)] {
-        if list.is_empty() {
-            continue;
-        }
-        menu = menu.item(&MenuItemBuilder::with_id(format!("tray-head-{title}"), title).enabled(false).build(app)?);
-        for c in list.iter() {
-            let mark = match c.status.as_str() {
-                "input" => "●  Needs input — ",
-                "stop" => "✓  Finished — ",
-                _ => "⟳  ",
-            };
-            menu = menu.item(&MenuItemBuilder::with_id(format!("chat:{}", c.chat), format!("{mark}{}", c.label)).build(app)?);
-            if !c.detail.is_empty() {
-                let line = MenuItemBuilder::with_id(format!("detail:{}", c.chat), format!("      {}", c.detail)).enabled(false).build(app)?;
-                menu = menu.item(&line);
-            }
-        }
-        menu = menu.separator();
-    }
-    menu.item(&MenuItemBuilder::with_id("tray-open", "Open Crux").build(app)?)
-        .item(&MenuItemBuilder::with_id("tray-quick", "Quick Ask…").accelerator("Alt+Space").build(app)?)
-        .item(&MenuItemBuilder::with_id("tray-updates", "Check for Updates…").build(app)?)
-        .separator()
-        .item(&MenuItemBuilder::with_id("tray-quit", "Quit Crux").accelerator("CmdOrCtrl+Q").build(app)?)
-        .build()
+/// The main window pushes its open agent chats here; the panel gets them live.
+#[tauri::command]
+fn set_tray_chats(app: tauri::AppHandle, chats: serde_json::Value) {
+    *TRAY_CHATS.lock().unwrap() = chats.to_string();
+    let _ = app.emit_to("tray", "tray:chats", chats);
 }
 
 #[tauri::command]
-fn set_tray_chats(app: tauri::AppHandle, chats: Vec<TrayChat>) {
-    if let (Some(tray), Ok(menu)) = (app.tray_by_id("crux"), tray_menu(&app, &chats)) {
-        let _ = tray.set_menu(Some(menu));
+fn tray_chats() -> serde_json::Value {
+    serde_json::from_str(&TRAY_CHATS.lock().unwrap()).unwrap_or_else(|_| serde_json::json!([]))
+}
+
+/// The panel sized itself to its content.
+#[tauri::command]
+fn tray_fit(app: tauri::AppHandle, height: f64) {
+    if let Some(w) = app.get_webview_window("tray") {
+        let _ = w.set_size(tauri::LogicalSize::new(TRAY_WIDTH, height.clamp(60.0, 620.0)));
     }
 }
 
-/// Menu bar icon: a click opens the menu (closing the window only hides Crux).
+/// Panel buttons: a chat, or open / quick ask / updates / quit.
+#[tauri::command]
+fn tray_action(app: tauri::AppHandle, action: String, chat: Option<String>) {
+    if let Some(w) = app.get_webview_window("tray") {
+        let _ = w.hide();
+    }
+    match action.as_str() {
+        "chat" => {
+            show_main(&app);
+            if let Some(chat) = chat {
+                let _ = app.emit_to("main", "tray:open-chat", chat);
+            }
+        }
+        "open" => show_main(&app),
+        "quick" => toggle_quick(&app),
+        "capture" => capture_screen(&app),
+        "updates" => {
+            show_main(&app);
+            let _ = app.emit_to("main", "menu:check-updates", ());
+        }
+        "quit" => app.exit(0),
+        _ => {}
+    }
+}
+
+/// Screenshot to agent: macOS region capture (drag a box anywhere, Esc
+/// cancels), then Crux comes forward and asks which agent gets it.
+fn capture_screen(app: &tauri::AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        use base64::Engine;
+        let file = std::env::temp_dir().join(format!("crux-shot-{}.png", now_ms()));
+        let _ = Command::new("/usr/sbin/screencapture").args(["-i", "-x"]).arg(&file).status();
+        // No file: cancelled.
+        let Ok(png) = std::fs::read(&file) else { return };
+        let _ = std::fs::remove_file(&file);
+        show_main(&app);
+        let _ = app.emit_to("main", "tray:screenshot", base64::engine::general_purpose::STANDARD.encode(png));
+    });
+}
+
+/// Menu bar icon clicked: show the panel under it, or hide it.
+fn toggle_tray(app: &tauri::AppHandle, rect: tauri::Rect) {
+    let win = match app.get_webview_window("tray") {
+        Some(w) => {
+            if w.is_visible().unwrap_or(false) || now_ms().saturating_sub(TRAY_HIDDEN_AT.load(Ordering::Relaxed)) < 300 {
+                let _ = w.hide();
+                return;
+            }
+            w
+        }
+        None => match tauri::WebviewWindowBuilder::new(app, "tray", tauri::WebviewUrl::App("index.html".into()))
+            .title("Crux")
+            .inner_size(TRAY_WIDTH, 240.0)
+            .resizable(false)
+            .decorations(false)
+            .transparent(true)
+            .shadow(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .visible_on_all_workspaces(true)
+            .visible(false)
+            .initialization_script("window.__CRUX_TRAY__ = true;")
+            .build()
+        {
+            Ok(w) => w,
+            Err(_) => return,
+        },
+    };
+    let scale = win.scale_factor().unwrap_or(2.0);
+    let icon = rect.position.to_physical::<f64>(scale);
+    let size = rect.size.to_physical::<f64>(scale);
+    let width = TRAY_WIDTH * scale;
+    let mut x = icon.x + size.width / 2.0 - width / 2.0;
+    // Keep it on the screen the icon is on (the icon sits near the right edge).
+    if let Ok(Some(m)) = app.monitor_from_point(icon.x, icon.y) {
+        let (left, right) = (m.position().x as f64, m.position().x as f64 + m.size().width as f64);
+        x = x.min(right - width - 8.0 * scale).max(left + 8.0 * scale);
+    }
+    let _ = win.set_position(tauri::PhysicalPosition::new(x, icon.y + size.height));
+    let _ = win.show();
+    let _ = win.set_focus();
+    let _ = app.emit_to("tray", "tray:shown", ());
+}
+
+/// Menu bar icon: a click opens the agents panel; right-click a small menu
+/// (closing the window only hides Crux).
 fn install_tray(app: &mut tauri::App) -> tauri::Result<()> {
-    use tauri::tray::TrayIconBuilder;
-    let menu = tray_menu(&*app, &[])?;
+    use tauri::menu::{MenuBuilder, MenuItemBuilder};
+    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+    let open = MenuItemBuilder::with_id("tray-open", "Open Crux").build(app)?;
+    let quick = MenuItemBuilder::with_id("tray-quick", "Quick Ask…").accelerator("Alt+Space").build(app)?;
+    let shot = MenuItemBuilder::with_id("tray-shot", "Screenshot to Agent…").build(app)?;
+    let updates = MenuItemBuilder::with_id("tray-updates", "Check for Updates…").build(app)?;
+    let quit = MenuItemBuilder::with_id("tray-quit", "Quit Crux").accelerator("CmdOrCtrl+Q").build(app)?;
+    let menu = MenuBuilder::new(app).item(&open).item(&quick).item(&shot).item(&updates).separator().item(&quit).build()?;
     let mut tray = TrayIconBuilder::with_id("crux")
         .tooltip("Crux")
         .menu(&menu)
-        .show_menu_on_left_click(true)
+        .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "tray-open" => show_main(app),
             "tray-quick" => toggle_quick(app),
+            "tray-shot" => capture_screen(app),
             "tray-updates" => {
                 show_main(app);
                 let _ = app.emit_to("main", "menu:check-updates", ());
             }
             "tray-quit" => app.exit(0),
-            id => {
-                if let Some(chat) = id.strip_prefix("chat:") {
-                    show_main(app);
-                    let _ = app.emit_to("main", "tray:open-chat", chat.to_string());
-                }
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, rect, .. } = event {
+                toggle_tray(tray.app_handle(), rect);
             }
         });
     if let Some(icon) = app.default_window_icon() {
@@ -358,6 +489,10 @@ fn main() {
                 api.prevent_close();
                 let _ = window.hide();
             }
+            tauri::WindowEvent::Focused(false) if window.label() == "tray" => {
+                TRAY_HIDDEN_AT.store(now_ms(), Ordering::Relaxed);
+                let _ = window.hide();
+            }
             tauri::WindowEvent::Focused(false) if window.label() == "quick" => {
                 let _ = window.hide();
             }
@@ -397,6 +532,13 @@ fn main() {
             set_background,
             set_tray_title,
             set_tray_chats,
+            tray_chats,
+            tray_fit,
+            tray_action,
+            screen_permission,
+            request_screen_permission,
+            request_folder_access,
+            open_privacy,
             clear_notifications,
             quick_hide,
             main_show,

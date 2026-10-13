@@ -82,7 +82,8 @@ return await new Promise((resolve) => {
   bar.style.cssText = "position:fixed;z-index:2147483647;top:12px;left:50%;transform:translateX(-50%);padding:8px 14px;border-radius:999px;background:#1b1c20;color:#ececee;font:600 12.5px -apple-system,system-ui,sans-serif;box-shadow:0 8px 30px rgba(0,0,0,.35);display:flex;gap:10px;align-items:center;pointer-events:auto";
   bar.innerHTML = '<span style="color:#3ecf8e">●</span><span>Drag a box around the issue</span><button data-t style="all:unset;cursor:pointer;color:#a9abb2;text-decoration:underline">or select text</button><span style="color:#7b7e86">Esc to cancel</span>';
   const box = document.createElement("div");
-  box.style.cssText = "position:fixed;border:2px solid #3ecf8e;background:rgba(62,207,142,.12);border-radius:4px;display:none;pointer-events:none";
+  // Thin white line; the faint dark halo keeps it visible on white pages.
+  box.style.cssText = "position:fixed;border:1px solid #fff;background:rgba(255,255,255,.06);box-shadow:0 0 0 1px rgba(0,0,0,.35);border-radius:3px;display:none;pointer-events:none";
   root.append(box);
   document.documentElement.append(root, bar);
 

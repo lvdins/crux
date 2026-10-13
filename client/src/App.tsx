@@ -22,8 +22,10 @@ import ModeStep from "./components/onboarding/ModeStep";
 import { useModalKeys } from "./useModalKeys";
 import SettingsModal, { type Page as SettingsPage } from "./components/SettingsModal";
 import { notify } from "./notify";
+import type { TrayAgent } from "./components/TrayPanel";
 import "./components/settings.css";
 import FirstSetup from "./components/onboarding/FirstSetup";
+import PermissionsStep from "./components/onboarding/PermissionsStep";
 import "./components/onboarding/onboarding.css";
 import GitMenu, { branchSwitchText, type GitAction } from "./components/GitMenu";
 import {
@@ -120,6 +122,8 @@ const agentBoot = (cmd: string) => (cmd === "claude" ? `claude --session-id ${cr
 
 // Open chats (names, kinds, splits) are remembered across restarts.
 const SESSION_KEY = "crux.session";
+/** Set once the Permissions step was shown (onboarding, or once after updating). */
+const PERMS_SEEN = "crux.permissionsSeen";
 interface SavedSession {
   tabs: Record<string, TermTab[]>;
   activeTab: Record<string, string>;
@@ -309,7 +313,9 @@ export default function App() {
     return () => clearInterval(timer);
   }, [pipeWorkspaces]);
   // Marked in the Browser view: the user picks which workspace chat gets it.
-  const [shotPick, setShotPick] = useState<null | { path: string; preview: string; issue: MarkedIssue }>(null);
+  // A screenshot waiting for "which chat gets it": a marked page issue, or a
+  // plain screen capture from the menu bar panel (no issue).
+  const [shotPick, setShotPick] = useState<null | { path: string; preview: string; issue?: MarkedIssue }>(null);
   // After a marked issue lands in a chat: offer to file it as a Jira bug.
   const [issueBar, setIssueBar] = useState<null | { chat: string; path: string; issue: MarkedIssue }>(null);
   useEffect(() => {
@@ -343,7 +349,9 @@ export default function App() {
   // Name prompt shown before a new chat is created.
   const [nameChat, setNameChat] = useState<null | { key: string; kind: "claude" | "codex" | "shell"; name: string }>(null);
   // First-run intro → welcome cards → guided setup (replayable from the ? button).
-  const [onboarding, setOnboarding] = useState<null | "intro" | "name" | "mode" | "welcome" | "setup">(null);
+  const [onboarding, setOnboarding] = useState<null | "intro" | "name" | "mode" | "permissions" | "welcome" | "setup">(null);
+  // Permissions opened on its own (Settings, or once after updating) closes instead of going on to Welcome.
+  const permsAlone = useRef(false);
   // Installed app only: newer GitHub release → bubble above the sidebar footer.
   const [appVersion, setAppVersion] = useState("0.1.0");
   const [update, setUpdate] = useState<null | { latest: string; installing: boolean }>(null);
@@ -443,8 +451,10 @@ export default function App() {
   // Latest line about each chat from Claude's hooks: your prompt, the tool
   // it's running, what it needs, or its last reply (shown in the menu bar).
   const [chatDetail, setChatDetail] = useState<Map<string, string>>(new Map());
-  // Menu bar menu → "show me this chat" (the listener is set up once).
+  // Menu bar menu → "show me this chat" / "pick who gets this screenshot"
+  // (the listeners are set up once).
   const openChatRef = useRef<(chat: string) => void>(() => {});
+  const screenshotRef = useRef<(pngBase64: string) => void>(() => {});
   // Chats whose agent is working right now → since when.
   const [working, setWorking] = useState<Map<string, number>>(new Map());
   const tabsRef = useRef<Record<string, TermTab[]>>({});
@@ -498,6 +508,11 @@ export default function App() {
       .then((c: AppConfig) => {
         setConfig(c);
         if (!c.onboarded) setOnboarding("intro");
+        // Set up before the Permissions step existed: show it once.
+        else if (IN_TAURI && !localStorage.getItem(PERMS_SEEN)) {
+          permsAlone.current = true;
+          setOnboarding("permissions");
+        }
         const keys = Object.keys(c.repos);
         const last = localStorage.getItem("crux.view");
         const openHome = { ...QA_SETTINGS, ...c.settings }.openHome && keys.length > 0;
@@ -659,6 +674,7 @@ export default function App() {
           }),
           listen<QuickAsk>("quick:ask", (e) => quickAskRef.current(e.payload)),
           listen<string>("tray:open-chat", (e) => openChatRef.current(e.payload)),
+          listen<string>("tray:screenshot", (e) => screenshotRef.current(e.payload)),
         ]).then((fns) => {
           if (cancelled) fns.forEach((fn) => fn());
           else unlisten = () => fns.forEach((fn) => fn());
@@ -1030,14 +1046,23 @@ export default function App() {
     );
   };
 
-  const saveShot = async (shot: Blob) => {
-    const r = await api("/api/attachments?name=issue.png", {
+  const saveShot = async (shot: Blob, name = "issue.png") => {
+    const r = await api(`/api/attachments?name=${name}`, {
       method: "POST",
       headers: { "Content-Type": "application/octet-stream" },
       body: shot,
     });
     if (!r.ok) throw new Error(`saving the screenshot failed (${r.status})`);
     return ((await r.json()) as { path: string }).path;
+  };
+
+  screenshotRef.current = (png) => {
+    const preview = `data:image/png;base64,${png}`;
+    void fetch(preview)
+      .then((r) => r.blob())
+      .then((blob) => saveShot(blob, "screenshot.png"))
+      .then((path) => setShotPick({ path, preview }))
+      .catch((err) => setToast(`Couldn't save the screenshot: ${String(err)}`));
   };
 
   // Just the marked screenshot goes into the agent's input (Claude shows it as
@@ -1277,32 +1302,25 @@ export default function App() {
     const parts = [workingCount && `⟳ ${workingCount}`, attention.size && `● ${attention.size}`].filter(Boolean);
     void invokeTauri("set_tray_title", { title: parts.join("  ") });
   }, [workingCount, attention.size]);
-  // Menu bar menu: chats that need you (input first), then agents working
-  // (with how long, ticking each minute while any are).
-  const [clock, setClock] = useState(() => Date.now());
-  useEffect(() => {
-    if (!working.size) return;
-    setClock(Date.now());
-    const t = setInterval(() => setClock(Date.now()), 60_000);
-    return () => clearInterval(t);
-  }, [working.size]);
-  const trayChats = config
-    ? [
-        ...[...attention]
-          .filter(([chat]) => tabs[chat]?.length && config.repos[wsOf(chat)])
-          .sort(([, a], [, b]) => Number(b === "input") - Number(a === "input"))
-          .map(([chat, status]) => ({ chat, status })),
-        ...[...working.keys()]
-          .filter((chat) => tabs[chat]?.length && config.repos[wsOf(chat)] && !attention.has(chat))
-          .map((chat) => ({ chat, status: "working" })),
-      ]
-        .slice(0, 12)
-        .map(({ chat, status }) => {
-          const since = working.get(chat);
-          const mins = status === "working" && since ? Math.floor((clock - since) / 60_000) : -1;
-          const took = mins < 0 ? "" : mins < 1 ? " — just started" : mins < 60 ? ` — ${mins}m` : ` — ${Math.floor(mins / 60)}h ${mins % 60}m`;
-          return { chat, status, label: `${chatTitle(chat)} · ${config.repos[wsOf(chat)].label}${took}`, detail: chatDetail.get(chat) ?? "" };
-        })
+  // Menu bar panel: open agent chats, like Home's card. Needs input first,
+  // then finished, working (longest running on top), idle.
+  const rank = (chat: string) => {
+    const a = attention.get(chat);
+    return a === "input" ? 0 : a === "stop" ? 1 : working.has(chat) ? 2 : 3;
+  };
+  const trayChats: TrayAgent[] = config
+    ? Object.keys(tabs)
+        .filter((chat) => config.repos[wsOf(chat)] && tabs[chat].some((t) => t.agent))
+        .sort((a, b) => rank(a) - rank(b) || (working.get(a) ?? 0) - (working.get(b) ?? 0))
+        .map((chat) => ({
+          chat,
+          name: chatTitle(chat),
+          wsLabel: config.repos[wsOf(chat)].label,
+          kinds: [...new Set(tabs[chat].map((t) => t.agent ?? "shell"))],
+          workingSince: working.get(chat),
+          waiting: attention.get(chat),
+          detail: chatDetail.get(chat),
+        }))
     : [];
   const trayKey = JSON.stringify(trayChats);
   useEffect(() => {
@@ -2292,7 +2310,7 @@ export default function App() {
             setShotPick(null);
             URL.revokeObjectURL(preview);
             void pasteImage(to, path)
-              .then((chat) => setIssueBar({ chat, path, issue }))
+              .then((chat) => issue && setIssueBar({ chat, path, issue }))
               .catch((err) => setToast(String(err)));
           }}
           onCancel={() => {
@@ -2313,6 +2331,11 @@ export default function App() {
           onReplayIntro={() => {
             setSettingsOpen(false);
             setOnboarding("intro");
+          }}
+          onPermissions={() => {
+            setSettingsOpen(false);
+            permsAlone.current = true;
+            setOnboarding("permissions");
           }}
           userName={config.userName ?? ""}
           onRename={(name) => {
@@ -2455,7 +2478,17 @@ export default function App() {
           initial={config?.settings?.mode ?? "qa"}
           onDone={(mode) => {
             if (mode !== settings.mode) saveSettings({ mode });
-            setOnboarding("welcome");
+            // Permissions are macOS prompts: only in the desktop app.
+            setOnboarding(IN_TAURI ? "permissions" : "welcome");
+          }}
+        />
+      )}
+      {onboarding === "permissions" && (
+        <PermissionsStep
+          onDone={() => {
+            localStorage.setItem(PERMS_SEEN, "1");
+            setOnboarding(permsAlone.current ? null : "welcome");
+            permsAlone.current = false;
           }}
         />
       )}

@@ -9,7 +9,7 @@
     },
     "macOS": {
       "minimumSystemVersion": "12.0",
-      "signingIdentity": "-"
+      "signingIdentity": "Crux Code Signing"
     }
   }
 }

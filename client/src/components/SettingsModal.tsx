@@ -111,6 +111,7 @@ export default function SettingsModal({
   onChange,
   onClose,
   onReplayIntro,
+  onPermissions,
   userName,
   onRename,
   version,
@@ -128,6 +129,8 @@ export default function SettingsModal({
   onClose: () => void;
   /** Replays the intro + welcome + setup guide. */
   onReplayIntro: () => void;
+  /** Opens the Permissions step (notifications, screen recording, folders). */
+  onPermissions: () => void;
   userName: string;
   onRename: (name: string) => void;
   version: string;
@@ -437,6 +440,11 @@ export default function SettingsModal({
                 <button className="settings-replay" onClick={onReplayIntro}>
                   Replay intro &amp; setup guide
                 </button>
+                {IN_TAURI && (
+                  <button className="settings-replay" onClick={onPermissions}>
+                    Permissions…
+                  </button>
+                )}
               </>
             )}
           </div>
