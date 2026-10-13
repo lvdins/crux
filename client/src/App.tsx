@@ -1056,6 +1056,7 @@ export default function App() {
     return ((await r.json()) as { path: string }).path;
   };
 
+  // Screenshot to agent (menu bar crosshair): save it, then pick the chat.
   screenshotRef.current = (png) => {
     const preview = `data:image/png;base64,${png}`;
     void fetch(preview)

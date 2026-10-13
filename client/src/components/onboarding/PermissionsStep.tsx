@@ -2,12 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import { notifyAllowed } from "../../notify";
 import { useModalKeys } from "../../useModalKeys";
 
-type State = "granted" | "denied" | "unknown";
+/** "restart": Screen Recording was asked for; macOS applies it once Crux restarts. */
+type State = "granted" | "denied" | "unknown" | "restart";
 
 const invoke = <T,>(cmd: string, args?: Record<string, unknown>) =>
   import("@tauri-apps/api/core").then(({ invoke }) => invoke<T>(cmd, args));
 
-const LABEL: Record<State, string> = { granted: "Allowed", denied: "Not allowed", unknown: "Not asked yet" };
+const LABEL: Record<State, string> = { granted: "Allowed", denied: "Not allowed", unknown: "Not asked yet", restart: "Restart needed" };
 
 /**
  * Onboarding: what macOS will ask Crux for, and why, asked for up front
@@ -23,8 +24,8 @@ export default function PermissionsStep({ onDone }: { onDone: () => void }) {
   // Notifications and Screen Recording can be checked without asking; folders can't.
   const refresh = useCallback(() => {
     void notifyAllowed(false).then((ok) => setNotes((s) => (ok ? "granted" : s)));
-    void invoke<boolean>("screen_permission")
-      .then((ok) => setScreen((s) => (ok ? "granted" : s)))
+    void invoke<string>("screen_permission")
+      .then((st) => setScreen((s) => (st === "granted" ? "granted" : st === "restart" ? "restart" : s)))
       .catch(() => undefined);
   }, []);
   useEffect(() => {
@@ -35,7 +36,8 @@ export default function PermissionsStep({ onDone }: { onDone: () => void }) {
   }, [refresh]);
 
   const askNotes = async () => setNotes((await notifyAllowed(true)) ? "granted" : "denied");
-  const askScreen = async () => setScreen((await invoke<boolean>("request_screen_permission").catch(() => false)) ? "granted" : "denied");
+  // Not granted right away: you switch it on in System Settings, then Crux must restart.
+  const askScreen = async () => setScreen((await invoke<boolean>("request_screen_permission").catch(() => false)) ? "granted" : "restart");
   const askFolders = async () => {
     const res = await invoke<[string, boolean][]>("request_folder_access").catch(() => []);
     const no = res.filter(([, ok]) => !ok).map(([name]) => name);
@@ -54,15 +56,15 @@ export default function PermissionsStep({ onDone }: { onDone: () => void }) {
     },
     {
       title: "Screen Recording",
-      why: "Screenshot to agent: drag a box anywhere on screen and hand it to a chat. Agents and terminals in Crux get this too, as with any terminal app.",
+      why: "For Screenshot to agent in the menu bar: drag a box anywhere and hand it to a chat. Crux only captures when you click it. Agents in Crux get this too, as in any terminal app.",
       state: screen,
       ask: () => void askScreen(),
       pane: "ScreenCapture",
-      note: screen === "denied" ? "Switch Crux on in System Settings, then quit and reopen Crux." : undefined,
+      note: screen === "restart" ? "Switch Crux on in System Settings, then restart Crux (chats reopen)." : undefined,
     },
     {
       title: "Documents, Desktop and Downloads",
-      why: "Your repos and the files agents read and write often live here. macOS asks once per folder.",
+      why: "Your repos and the files agents read and write often live here, and so do your screenshots. macOS asks once per folder.",
       state: folders,
       ask: () => void askFolders(),
       pane: "FilesAndFolders",
@@ -85,7 +87,16 @@ export default function PermissionsStep({ onDone }: { onDone: () => void }) {
               </div>
               <div className="perm-side">
                 <span className={`perm-state ${r.state}`}>{LABEL[r.state]}</span>
-                {r.state === "granted" ? null : r.state === "denied" ? (
+                {r.state === "granted" ? null : r.state === "restart" ? (
+                  <>
+                    <button className="primary" onClick={() => void invoke("restart_app")}>
+                      Restart Crux
+                    </button>
+                    <button className="onb-link" onClick={() => settings(r.pane)}>
+                      Open Settings
+                    </button>
+                  </>
+                ) : r.state === "denied" ? (
                   <button onClick={() => settings(r.pane)}>Open Settings</button>
                 ) : (
                   <button className="primary" onClick={r.ask}>

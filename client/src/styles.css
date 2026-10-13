@@ -1592,6 +1592,16 @@ html.tray-window, html.tray-window body, html.tray-window #root { background: tr
   transition: transform 260ms cubic-bezier(0.34, 1.45, 0.64, 1), opacity 140ms ease-out;
 }
 @media (prefers-reduced-motion: reduce) { .tray-panel.open .tray-card { transition: opacity 120ms ease-out; } }
+.tray-card + .tray-card { margin-top: 8px; }
+.tray-wait { display: flex; align-items: center; gap: 12px; padding: 12px; }
+.tray-wait-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.tray-wait-text b { font-size: 13px; font-weight: 500; color: var(--ink); }
+.tray-wait-text span { font-size: 11.5px; color: var(--ink-faint); }
+.tray-wait button { flex: none; background: none; border: 1px solid var(--line); border-radius: 6px; padding: 4px 9px; color: var(--ink-soft); font: inherit; font-size: 12px; cursor: pointer; }
+.tray-wait button:hover { color: var(--ink); border-color: var(--ink-faint); }
+.tray-wait-actions { flex: none; display: flex; flex-direction: column; gap: 5px; }
+.tray-wait button.primary { background: var(--accent); border-color: var(--accent); color: #06140d; font-weight: 600; }
+.tray-wait button.primary:hover { background: var(--accent-ink); border-color: var(--accent-ink); color: #06140d; }
 .tray-list { max-height: 480px; overflow-y: auto; margin: 0 -2px; padding: 0 2px; }
 .home-text .tray-detail { color: var(--ink-faint); opacity: 0.85; margin-top: 1px; }
 .tray-foot { display: flex; gap: 4px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }

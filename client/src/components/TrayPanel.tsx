@@ -73,10 +73,46 @@ export default function TrayPanel() {
     return () => ro.disconnect();
   }, []);
 
+  // Screenshot to agent needs Screen Recording (as in Claude's app): the
+  // crosshair when allowed, else macOS's prompt (or its Settings page).
+  // "restart": asked already since Crux started, and macOS only applies a new
+  // grant after a restart, so don't reopen System Settings, offer the restart.
+  const [needsPermission, setNeedsPermission] = useState<null | "ask" | "restart">(null);
+  const screenshot = async () => {
+    const status = await invoke("screen_permission");
+    if (status === "granted") return void invoke("tray_action", { action: "capture" });
+    if (status === "restart") return setNeedsPermission("restart");
+    setNeedsPermission("ask");
+    if (await invoke("request_screen_permission")) {
+      setNeedsPermission(null);
+      void invoke("tray_action", { action: "capture" });
+    }
+  };
+
   const busy = agents.filter((a) => a.workingSince).length;
 
   return (
     <div className={`tray-panel ${open ? "open" : ""}`} ref={root}>
+      {needsPermission && (
+        <div className="home-card tray-card tray-wait">
+          <div className="tray-wait-text">
+            <b>{needsPermission === "restart" ? "Restart Crux to finish" : "Allow Screen Recording for Crux"}</b>
+            <span>
+              {needsPermission === "restart"
+                ? "macOS only applies Screen Recording after Crux restarts. Not switched on yet? Open Settings."
+                : "Switch Crux on in System Settings → Screen Recording, then restart Crux."}
+            </span>
+          </div>
+          <div className="tray-wait-actions">
+            {needsPermission === "restart" && (
+              <button onClick={() => void invoke("open_privacy", { pane: "ScreenCapture" })}>Settings</button>
+            )}
+            <button className="primary" onClick={() => void invoke("restart_app")}>
+              Restart
+            </button>
+          </div>
+        </div>
+      )}
       <div className="home-card tray-card">
         <h3>
           Open agents <small>{agents.length || ""}</small>
@@ -116,7 +152,7 @@ export default function TrayPanel() {
           <button onClick={() => void invoke("tray_action", { action: "quick" })}>
             Quick Ask <kbd>⌥Space</kbd>
           </button>
-          <button title="Drag a box anywhere on screen, then pick the agent it goes to" onClick={() => void invoke("tray_action", { action: "capture" })}>
+          <button title="Take a screenshot and pick the chat it goes to" onClick={() => void screenshot()}>
             Screenshot to agent
           </button>
         </div>
