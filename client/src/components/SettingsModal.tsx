@@ -279,6 +279,29 @@ export default function SettingsModal({
                 <p className="settings-note">
                   Used by “File as Jira bug” after you mark an issue with ⌘⇧C. The agent files it with its own Jira access.
                 </p>
+                <div className="settings-section">Getting started</div>
+                <div className="settings-list">
+                  {IN_TAURI && (
+                    <div className="settings-row static">
+                      <span className="settings-text">
+                        <b>Permissions</b>
+                        <span>Notifications, Screen Recording and folder access: what each is for, and its status.</span>
+                      </span>
+                      <button className="settings-btn-sm" onClick={onPermissions}>
+                        Review
+                      </button>
+                    </div>
+                  )}
+                  <div className="settings-row static">
+                    <span className="settings-text">
+                      <b>Intro &amp; setup guide</b>
+                      <span>The welcome tour and the guide for adding your workspaces.</span>
+                    </span>
+                    <button className="settings-btn-sm" onClick={onReplayIntro}>
+                      Replay
+                    </button>
+                  </div>
+                </div>
               </>
             )}
 
@@ -437,14 +460,6 @@ export default function SettingsModal({
                     </button>
                   ))}
                 </div>
-                <button className="settings-replay" onClick={onReplayIntro}>
-                  Replay intro &amp; setup guide
-                </button>
-                {IN_TAURI && (
-                  <button className="settings-replay" onClick={onPermissions}>
-                    Permissions…
-                  </button>
-                )}
               </>
             )}
           </div>

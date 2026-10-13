@@ -41,6 +41,10 @@ DMG=$(ls "$T"/*.dmg | head -1)
 mkdir "$T/mnt"
 hdiutil attach -nobrowse -quiet -mountpoint "$T/mnt" "$DMG"
 ditto "$T/mnt/$(basename "$APP")" "$T/new.app"
+# Every copy macOS sees registers the same app ID; leftovers confuse it about
+# which one is Crux (notifications go to the wrong copy). Forget the temp ones.
+LSREG=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+"$LSREG" -u "$T/mnt/$(basename "$APP")" 2>/dev/null || true
 hdiutil detach -quiet "$T/mnt"
 # Refuse a damaged or modified download (its seal must still verify);
 # the installed app is left alone if this fails.
@@ -52,6 +56,8 @@ for i in $(seq 1 25); do pgrep -f "$APP/Contents/" >/dev/null || break; sleep 0.
 rm -rf "$APP"
 ditto "$T/new.app" "$APP"
 xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
+"$LSREG" -u "$T/new.app" 2>/dev/null || true
+"$LSREG" -f "$APP" 2>/dev/null || true
 # Launch Services can refuse (-609) right after the swap: retry.
 for i in 1 2 3 4 5 6; do open "$APP" && break; sleep 1; done
 rm -rf "$T"
