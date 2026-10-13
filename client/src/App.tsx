@@ -457,6 +457,8 @@ export default function App() {
   const screenshotRef = useRef<(pngBase64: string) => void>(() => {});
   // Chats whose agent is working right now → since when.
   const [working, setWorking] = useState<Map<string, number>>(new Map());
+  // The agent tab that reported working, per chat (its output is the signal).
+  const workingTab = useRef(new Map<string, string>());
   const tabsRef = useRef<Record<string, TermTab[]>>({});
   tabsRef.current = tabs;
   // Last output per terminal: a "working" agent that has gone quiet (interrupted
@@ -1248,6 +1250,7 @@ export default function App() {
     if (event.startsWith("codex") !== (tab.agent === "codex")) return;
     if (detail) setChatDetail((d) => (d.get(chat) === detail ? d : new Map(d).set(chat, detail)));
     if (event === "working" || event === "codex-working") {
+      workingTab.current.set(chat, term);
       setWorking((w) => (w.has(chat) ? w : new Map(w).set(chat, Date.now())));
       // Working again: an older "finished" dot no longer applies.
       setAttention((a) => {
@@ -1327,7 +1330,10 @@ export default function App() {
   useEffect(() => {
     void invokeTauri("set_tray_chats", { chats: JSON.parse(trayKey) });
   }, [trayKey]);
-  // Working, but no output for 45 s (interrupted, or the tab closed): not working.
+  // Working, but the agent's own tab has been quiet for 20 s: it stopped
+  // (interrupted with Esc sends no "finished"), or the tab closed. Only that
+  // tab counts: a dev server or test watcher next to it prints all the time,
+  // while a working agent redraws its spinner and timer constantly.
   useEffect(() => {
     if (!working.size) return;
     const t = setInterval(() => {
@@ -1335,9 +1341,11 @@ export default function App() {
         let changed = false;
         const next = new Map(w);
         for (const chat of w.keys()) {
-          const ids = (tabsRef.current[chat] ?? []).map((t) => t.id);
+          const all = (tabsRef.current[chat] ?? []).map((t) => t.id);
+          const agentTab = workingTab.current.get(chat);
+          const ids = agentTab && all.includes(agentTab) ? [agentTab] : agentTab ? [] : all;
           const last = Math.max(0, ...ids.map((id) => lastOutput.current.get(id) ?? 0));
-          if (!ids.length || Date.now() - Math.max(last, w.get(chat)!) > 45_000) {
+          if (!ids.length || Date.now() - Math.max(last, w.get(chat)!) > 20_000) {
             next.delete(chat);
             changed = true;
           }
@@ -2297,6 +2305,7 @@ export default function App() {
       {shotPick && config && (
         <ChatPicker
           preview={shotPick.preview}
+          active={trayChats}
           groups={Object.entries(config.repos).map(([ws, repo]) => ({
             ws,
             label: repo.label,

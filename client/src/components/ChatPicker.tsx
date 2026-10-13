@@ -10,16 +10,31 @@ interface Group {
   chats: { chat: string; name: string; kinds: string[] }[];
 }
 
+/** An open agent chat, listed first ("Active chats"), in the menu bar's order. */
+export interface ActiveChat {
+  chat: string;
+  name: string;
+  wsLabel: string;
+  kinds: string[];
+  workingSince?: number;
+  waiting?: "input" | "stop";
+}
+
+const ACTIVE = "Active chats";
+const stateOf = (a: ActiveChat) => (a.waiting === "input" ? "Needs input" : a.waiting === "stop" ? "Finished" : a.workingSince ? "Working" : "");
+
 const kindIcon = (k: string) => (k === "claude" ? <ClaudeLogo /> : k === "codex" ? <CodexLogo /> : <TerminalIcon />);
 
-/** Where should this image go? Every workspace's chats, plus a new Claude chat. */
+/** Where should this image go? Open agent chats first, then every workspace's chats plus a new Claude chat. */
 export default function ChatPicker({
   preview,
+  active = [],
   groups,
   onPick,
   onCancel,
 }: {
   preview: string;
+  active?: ActiveChat[];
   groups: Group[];
   onPick: (to: Target) => void;
   onCancel: () => void;
@@ -30,7 +45,11 @@ export default function ChatPicker({
   // Flat list of choices (what ↑ ↓ move through), filtered by the search.
   const rows = useMemo(() => {
     const f = filter.trim().toLowerCase();
-    const out: { to: Target; ws: string; label: string; kinds?: string[]; isNew?: boolean }[] = [];
+    const out: { to: Target; ws: string; label: string; kinds?: string[]; isNew?: boolean; sub?: string; state?: string }[] = [];
+    for (const a of active) {
+      if (f && !a.name.toLowerCase().includes(f) && !a.wsLabel.toLowerCase().includes(f)) continue;
+      out.push({ to: { chat: a.chat }, ws: ACTIVE, label: a.name, kinds: a.kinds, sub: a.wsLabel, state: stateOf(a) });
+    }
     for (const g of groups) {
       const wsHit = g.label.toLowerCase().includes(f);
       for (const c of g.chats) {
@@ -89,7 +108,9 @@ export default function ChatPicker({
                   onClick={() => onPick(row.to)}
                 >
                   <span className="picker-icons">{row.isNew ? "+" : row.kinds!.slice(0, 3).map((k) => <span key={k}>{kindIcon(k)}</span>)}</span>
-                  {row.label}
+                  <span className="picker-label">{row.label}</span>
+                  {row.sub && <span className="picker-sub">{row.sub}</span>}
+                  {row.state && <span className={`picker-state ${row.state === "Needs input" ? "input" : row.state === "Working" ? "working" : ""}`}>{row.state}</span>}
                 </button>
               </div>
             );
