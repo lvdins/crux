@@ -10,7 +10,7 @@ import { config, saveConfig, userConfigPath, addWorkspace, updateWorkspace, remo
 import { attachTerm, termInput, termResize, killTerm, detachAll, killAllTerms, openLog, termProcess } from "./term.js";
 import { startPreview, stopPreview, stopAllPreviews, previewStatus } from "./preview.js";
 import { buildTree, sharedEndpoints } from "./tree.js";
-import { installAgentSetup } from "./agent-setup.js";
+import { hookDetail, installAgentSetup } from "./agent-setup.js";
 import { latestRelease, installRelease, isNewer } from "./update.js";
 import { guardHttp, wsAllowed } from "./security.js";
 import { pipelinesFor } from "./pipelines.js";
@@ -29,7 +29,10 @@ const app = express();
 // see security.ts. Runs before body parsing so refused requests cost nothing.
 app.use(guardHttp);
 app.options("*", (_req, res) => res.sendStatus(204));
-app.use(express.json());
+// Claude hook events carry the hook's JSON, tool output included: allow more.
+const jsonBody = express.json();
+const hookBody = express.json({ limit: "50mb" });
+app.use((req, res, next) => (req.path === "/api/agent-event" ? hookBody : jsonBody)(req, res, next));
 
 // Serve the built client when it exists, so the desktop app (and plain
 // http://localhost:8787) works without vite.
@@ -117,11 +120,14 @@ app.post("/api/profile", (req, res) => {
 
 // Claude Code hooks in Crux terminals report "finished" / "needs input"
 // (see agent-setup.ts); every open window gets it to show a notification.
+// Older chats post {term, event}; newer hooks put those in the query and the
+// hook's own JSON in the body (turned into a one-line detail for the menu bar).
 app.post("/api/agent-event", (req, res) => {
-  const term = String(req.body?.term ?? "");
-  const event = String(req.body?.event ?? "");
+  const term = String(req.query.term ?? req.body?.term ?? "");
+  const event = String(req.query.event ?? req.body?.event ?? "");
   if (!term || !["stop", "input", "working"].includes(event)) return void res.status(400).json({ error: "Bad event" });
-  const msg = JSON.stringify({ type: "agent:event", id: term, event });
+  const detail = req.query.term ? hookDetail(event, req.body ?? {}) : "";
+  const msg = JSON.stringify({ type: "agent:event", id: term, event, detail });
   for (const client of wss.clients) if (client.readyState === WebSocket.OPEN) client.send(msg);
   res.json({ ok: true });
 });

@@ -244,6 +244,9 @@ struct TrayChat {
     label: String,
     /// "input" (needs you), "stop" (finished) or "working".
     status: String,
+    /// Latest line from the agent (its reply, tool, or what it needs); greyed under the chat.
+    #[serde(default)]
+    detail: String,
 }
 
 /// Menu bar menu: chats that need you (and agents working) on top, then
@@ -268,6 +271,10 @@ fn tray_menu<M: Manager<tauri::Wry>>(app: &M, chats: &[TrayChat]) -> tauri::Resu
                 _ => "⟳  ",
             };
             menu = menu.item(&MenuItemBuilder::with_id(format!("chat:{}", c.chat), format!("{mark}{}", c.label)).build(app)?);
+            if !c.detail.is_empty() {
+                let line = MenuItemBuilder::with_id(format!("detail:{}", c.chat), format!("      {}", c.detail)).enabled(false).build(app)?;
+                menu = menu.item(&line);
+            }
         }
         menu = menu.separator();
     }

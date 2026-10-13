@@ -24,10 +24,11 @@ export const mcpConfigPath = (ws: string) => path.join(MCP_DIR, `${ws}.json`);
 export const HOOKS_PATH = path.join(home, "claude-hooks.json");
 
 // UserPromptSubmit / PostToolUse = Claude is working; Stop = it finished its
-// turn; Notification = it needs your input or permission.
+// turn; Notification = it needs your input or permission. The hook's own JSON
+// (prompt, tool, message, transcript) is passed on as the body: see hookDetail.
 const report = (event: string) =>
   `[ -n "$CRUX_TERM" ] && curl -s -m 2 -X POST -H 'Content-Type: application/json' ` +
-  `-d "{\\"term\\":\\"$CRUX_TERM\\",\\"event\\":\\"${event}\\"}" "$CRUX_URL/api/agent-event" >/dev/null 2>&1; true`;
+  `--data-binary @- "$CRUX_URL/api/agent-event?term=$CRUX_TERM&event=${event}" >/dev/null 2>&1; true`;
 
 // Older claude CLIs reject --settings: then chats start without the hooks.
 let hooksSupported = true;
@@ -41,6 +42,64 @@ function writeHooks(): void {
     hooks: { UserPromptSubmit: hook("working"), PostToolUse: hook("working"), Stop: hook("stop"), Notification: hook("input") },
   };
   fs.writeFileSync(HOOKS_PATH, JSON.stringify(cfg, null, 2) + "\n");
+}
+
+/** One line, at most `max` characters. */
+const oneLine = (text: string, max = 80) => {
+  // Drop markdown emphasis / code ticks and heading or quote marks (not underscores: file names).
+  const flat = text.replace(/[`*]+/g, "").replace(/^\s*[#>]+\s*/gm, "").replace(/\s+/g, " ").trim();
+  return flat.length > max ? flat.slice(0, max - 1) + "…" : flat;
+};
+
+/** Claude's last reply in a transcript (JSONL): read from the end only. */
+function lastReply(transcript: string): string {
+  try {
+    const fd = fs.openSync(transcript, "r");
+    const size = fs.fstatSync(fd).size;
+    const len = Math.min(size, 512 * 1024);
+    const buf = Buffer.alloc(len);
+    fs.readSync(fd, buf, 0, len, size - len);
+    fs.closeSync(fd);
+    const lines = buf.toString("utf8").split("\n").reverse();
+    for (const line of lines) {
+      try {
+        const entry = JSON.parse(line);
+        if (entry.type !== "assistant") continue;
+        const content = entry.message?.content;
+        const text = typeof content === "string" ? content : Array.isArray(content) ? content.filter((c) => c?.type === "text").map((c) => c.text).join(" ") : "";
+        if (text.trim()) return text;
+      } catch {
+        /* partial first line */
+      }
+    }
+  } catch {
+    /* transcript gone */
+  }
+  return "";
+}
+
+/** What a tool call is doing, e.g. "Bash: npm test", "Edit: App.tsx". */
+function toolLine(name: string, input: Record<string, unknown> = {}): string {
+  const str = (k: string) => (typeof input[k] === "string" ? (input[k] as string) : "");
+  const detail =
+    str("description") && name !== "Bash"
+      ? str("description")
+      : str("command") || (str("file_path") && path.basename(str("file_path"))) || str("pattern") || str("url") || str("query") || str("description");
+  return detail ? `${name}: ${detail}` : name;
+}
+
+/**
+ * A short line for the menu bar about a Claude hook event: your prompt, the
+ * tool it just ran, what it needs from you, or its last reply.
+ */
+export function hookDetail(event: string, hook: Record<string, unknown>): string {
+  const str = (k: string) => (typeof hook[k] === "string" ? (hook[k] as string) : "");
+  let text = "";
+  if (event === "input") text = str("message");
+  else if (event === "stop") text = str("last_assistant_message") || (str("transcript_path") && lastReply(str("transcript_path")));
+  else if (str("prompt")) text = `You: ${str("prompt")}`;
+  else if (str("tool_name")) text = toolLine(str("tool_name"), hook.tool_input as Record<string, unknown>);
+  return text ? oneLine(text) : "";
 }
 
 export function writeMcpConfig(ws: string): void {

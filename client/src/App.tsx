@@ -439,7 +439,10 @@ export default function App() {
     };
   }, []);
   // Called from the socket handler, so it reads this render's state.
-  const agentEventRef = useRef<(term: string, event: AgentEvent) => void>(() => {});
+  const agentEventRef = useRef<(term: string, event: AgentEvent, detail?: string) => void>(() => {});
+  // Latest line about each chat from Claude's hooks: your prompt, the tool
+  // it's running, what it needs, or its last reply (shown in the menu bar).
+  const [chatDetail, setChatDetail] = useState<Map<string, string>>(new Map());
   // Menu bar menu → "show me this chat" (the listener is set up once).
   const openChatRef = useRef<(chat: string) => void>(() => {});
   // Chats whose agent is working right now → since when.
@@ -566,7 +569,11 @@ export default function App() {
           return;
         }
         if (msg.type === "agent:event") {
-          agentEventRef.current(String(msg.id), msg.event === "input" ? "input" : msg.event === "working" ? "working" : "stop");
+          agentEventRef.current(
+            String(msg.id),
+            msg.event === "input" ? "input" : msg.event === "working" ? "working" : "stop",
+            typeof msg.detail === "string" ? msg.detail : "",
+          );
           return;
         }
         if (msg.type === "term:data") {
@@ -1207,12 +1214,13 @@ export default function App() {
       return next;
     });
 
-  agentEventRef.current = (term, event) => {
+  agentEventRef.current = (term, event, detail) => {
     const chat = Object.keys(tabs).find((k) => tabs[k].some((t) => t.id === term));
     if (!chat) return;
     const tab = tabs[chat].find((t) => t.id === term)!;
     // Hooks report Claude; the output guess is only for Codex.
     if (event.startsWith("codex") !== (tab.agent === "codex")) return;
+    if (detail) setChatDetail((d) => (d.get(chat) === detail ? d : new Map(d).set(chat, detail)));
     if (event === "working" || event === "codex-working") {
       setWorking((w) => (w.has(chat) ? w : new Map(w).set(chat, Date.now())));
       // Working again: an older "finished" dot no longer applies.
@@ -1239,7 +1247,7 @@ export default function App() {
     const where = config?.repos[ws]?.label ?? ws;
     const title = `${chatTitle(chat)} · ${where}`;
     sentNotes.current.set(chat, (sentNotes.current.get(chat) ?? new Set()).add(title));
-    void notify(title, event === "input" ? "Needs your input" : "Finished");
+    void notify(title, detail || (event === "input" ? "Needs your input" : "Finished"));
   };
   // Looking at a chat (window focused) clears its "needs you" dot and takes
   // its notification banners down.
@@ -1269,7 +1277,15 @@ export default function App() {
     const parts = [workingCount && `⟳ ${workingCount}`, attention.size && `● ${attention.size}`].filter(Boolean);
     void invokeTauri("set_tray_title", { title: parts.join("  ") });
   }, [workingCount, attention.size]);
-  // Menu bar menu: chats that need you (input first), then agents working.
+  // Menu bar menu: chats that need you (input first), then agents working
+  // (with how long, ticking each minute while any are).
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => {
+    if (!working.size) return;
+    setClock(Date.now());
+    const t = setInterval(() => setClock(Date.now()), 60_000);
+    return () => clearInterval(t);
+  }, [working.size]);
   const trayChats = config
     ? [
         ...[...attention]
@@ -1281,7 +1297,12 @@ export default function App() {
           .map((chat) => ({ chat, status: "working" })),
       ]
         .slice(0, 12)
-        .map(({ chat, status }) => ({ chat, status, label: `${chatTitle(chat)} · ${config.repos[wsOf(chat)].label}` }))
+        .map(({ chat, status }) => {
+          const since = working.get(chat);
+          const mins = status === "working" && since ? Math.floor((clock - since) / 60_000) : -1;
+          const took = mins < 0 ? "" : mins < 1 ? " — just started" : mins < 60 ? ` — ${mins}m` : ` — ${Math.floor(mins / 60)}h ${mins % 60}m`;
+          return { chat, status, label: `${chatTitle(chat)} · ${config.repos[wsOf(chat)].label}${took}`, detail: chatDetail.get(chat) ?? "" };
+        })
     : [];
   const trayKey = JSON.stringify(trayChats);
   useEffect(() => {
