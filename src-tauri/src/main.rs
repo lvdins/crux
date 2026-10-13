@@ -193,8 +193,10 @@ fn set_tray_title(app: tauri::AppHandle, title: String) {
 /// plugin can't remove them on macOS, so ask Notification Center directly.
 #[tauri::command]
 fn clear_notifications(app: tauri::AppHandle, titles: Vec<String>) {
+    // NSUserNotification is deprecated, but it's what the notification plugin delivers with.
     #[cfg(target_os = "macos")]
     let _ = app.run_on_main_thread(move || {
+        #[allow(deprecated)]
         use objc2_foundation::NSUserNotificationCenter;
         #[allow(deprecated)]
         let center = NSUserNotificationCenter::defaultUserNotificationCenter();
@@ -235,19 +237,63 @@ fn quick_shortcut() -> tauri_plugin_global_shortcut::Shortcut {
     Shortcut::new(Some(Modifiers::ALT), Code::Space)
 }
 
-/// Menu bar icon: open Crux, quick ask, quit (closing the window only hides it).
-fn install_tray(app: &mut tauri::App) -> tauri::Result<()> {
+/// A chat listed in the menu bar menu (pushed by the client with `set_tray_chats`).
+#[derive(serde::Deserialize, Clone)]
+struct TrayChat {
+    chat: String,
+    label: String,
+    /// "input" (needs you), "stop" (finished) or "working".
+    status: String,
+}
+
+/// Menu bar menu: chats that need you (and agents working) on top, then
+/// open Crux, quick ask, updates, quit.
+fn tray_menu<M: Manager<tauri::Wry>>(app: &M, chats: &[TrayChat]) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
     use tauri::menu::{MenuBuilder, MenuItemBuilder};
-    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-    let open = MenuItemBuilder::with_id("tray-open", "Open Crux").build(app)?;
-    let quick = MenuItemBuilder::with_id("tray-quick", "Quick Ask…").accelerator("Alt+Space").build(app)?;
-    let updates = MenuItemBuilder::with_id("tray-updates", "Check for Updates…").build(app)?;
-    let quit = MenuItemBuilder::with_id("tray-quit", "Quit Crux").accelerator("CmdOrCtrl+Q").build(app)?;
-    let menu = MenuBuilder::new(app).item(&open).item(&quick).item(&updates).separator().item(&quit).build()?;
+    let mut menu = MenuBuilder::new(app);
+    let needs: Vec<&TrayChat> = chats.iter().filter(|c| c.status != "working").collect();
+    let busy: Vec<&TrayChat> = chats.iter().filter(|c| c.status == "working").collect();
+    if needs.is_empty() && busy.is_empty() {
+        menu = menu.item(&MenuItemBuilder::with_id("tray-head-none", "No chats need you").enabled(false).build(app)?).separator();
+    }
+    for (title, list) in [("Needs you", &needs), ("Working", &busy)] {
+        if list.is_empty() {
+            continue;
+        }
+        menu = menu.item(&MenuItemBuilder::with_id(format!("tray-head-{title}"), title).enabled(false).build(app)?);
+        for c in list.iter() {
+            let mark = match c.status.as_str() {
+                "input" => "●  Needs input — ",
+                "stop" => "✓  Finished — ",
+                _ => "⟳  ",
+            };
+            menu = menu.item(&MenuItemBuilder::with_id(format!("chat:{}", c.chat), format!("{mark}{}", c.label)).build(app)?);
+        }
+        menu = menu.separator();
+    }
+    menu.item(&MenuItemBuilder::with_id("tray-open", "Open Crux").build(app)?)
+        .item(&MenuItemBuilder::with_id("tray-quick", "Quick Ask…").accelerator("Alt+Space").build(app)?)
+        .item(&MenuItemBuilder::with_id("tray-updates", "Check for Updates…").build(app)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("tray-quit", "Quit Crux").accelerator("CmdOrCtrl+Q").build(app)?)
+        .build()
+}
+
+#[tauri::command]
+fn set_tray_chats(app: tauri::AppHandle, chats: Vec<TrayChat>) {
+    if let (Some(tray), Ok(menu)) = (app.tray_by_id("crux"), tray_menu(&app, &chats)) {
+        let _ = tray.set_menu(Some(menu));
+    }
+}
+
+/// Menu bar icon: a click opens the menu (closing the window only hides Crux).
+fn install_tray(app: &mut tauri::App) -> tauri::Result<()> {
+    use tauri::tray::TrayIconBuilder;
+    let menu = tray_menu(&*app, &[])?;
     let mut tray = TrayIconBuilder::with_id("crux")
         .tooltip("Crux")
         .menu(&menu)
-        .show_menu_on_left_click(false)
+        .show_menu_on_left_click(true)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "tray-open" => show_main(app),
             "tray-quick" => toggle_quick(app),
@@ -256,11 +302,11 @@ fn install_tray(app: &mut tauri::App) -> tauri::Result<()> {
                 let _ = app.emit_to("main", "menu:check-updates", ());
             }
             "tray-quit" => app.exit(0),
-            _ => {}
-        })
-        .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
-                show_main(tray.app_handle());
+            id => {
+                if let Some(chat) = id.strip_prefix("chat:") {
+                    show_main(app);
+                    let _ = app.emit_to("main", "tray:open-chat", chat.to_string());
+                }
             }
         });
     if let Some(icon) = app.default_window_icon() {
@@ -343,6 +389,7 @@ fn main() {
             browser::browser_devtools,
             set_background,
             set_tray_title,
+            set_tray_chats,
             clear_notifications,
             quick_hide,
             main_show,

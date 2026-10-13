@@ -440,6 +440,8 @@ export default function App() {
   }, []);
   // Called from the socket handler, so it reads this render's state.
   const agentEventRef = useRef<(term: string, event: AgentEvent) => void>(() => {});
+  // Menu bar menu → "show me this chat" (the listener is set up once).
+  const openChatRef = useRef<(chat: string) => void>(() => {});
   // Chats whose agent is working right now → since when.
   const [working, setWorking] = useState<Map<string, number>>(new Map());
   const tabsRef = useRef<Record<string, TermTab[]>>({});
@@ -649,6 +651,7 @@ export default function App() {
             setSettingsOpen(true);
           }),
           listen<QuickAsk>("quick:ask", (e) => quickAskRef.current(e.payload)),
+          listen<string>("tray:open-chat", (e) => openChatRef.current(e.payload)),
         ]).then((fns) => {
           if (cancelled) fns.forEach((fn) => fn());
           else unlisten = () => fns.forEach((fn) => fn());
@@ -1266,6 +1269,24 @@ export default function App() {
     const parts = [workingCount && `⟳ ${workingCount}`, attention.size && `● ${attention.size}`].filter(Boolean);
     void invokeTauri("set_tray_title", { title: parts.join("  ") });
   }, [workingCount, attention.size]);
+  // Menu bar menu: chats that need you (input first), then agents working.
+  const trayChats = config
+    ? [
+        ...[...attention]
+          .filter(([chat]) => tabs[chat]?.length && config.repos[wsOf(chat)])
+          .sort(([, a], [, b]) => Number(b === "input") - Number(a === "input"))
+          .map(([chat, status]) => ({ chat, status })),
+        ...[...working.keys()]
+          .filter((chat) => tabs[chat]?.length && config.repos[wsOf(chat)] && !attention.has(chat))
+          .map((chat) => ({ chat, status: "working" })),
+      ]
+        .slice(0, 12)
+        .map(({ chat, status }) => ({ chat, status, label: `${chatTitle(chat)} · ${config.repos[wsOf(chat)].label}` }))
+    : [];
+  const trayKey = JSON.stringify(trayChats);
+  useEffect(() => {
+    void invokeTauri("set_tray_chats", { chats: JSON.parse(trayKey) });
+  }, [trayKey]);
   // Working, but no output for 45 s (interrupted, or the tab closed): not working.
   useEffect(() => {
     if (!working.size) return;
@@ -1329,6 +1350,11 @@ export default function App() {
     const ws = wsOf(chat);
     setView(ws);
     setActiveChat((prev) => ({ ...prev, [ws]: chat }));
+  };
+  openChatRef.current = (chat) => {
+    if (!tabs[chat]) return;
+    openChat(chat);
+    setChatsShown(wsOf(chat), true);
   };
 
   // A new chat is a new screen in the workspace with one terminal / agent.
