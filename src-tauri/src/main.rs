@@ -27,6 +27,11 @@ fn server_running() -> bool {
     TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_millis(300)).is_ok()
 }
 
+/// The user's home folder: HOME on macOS / Linux, USERPROFILE on Windows.
+pub(crate) fn home_dir() -> String {
+    std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_else(|_| "/".into())
+}
+
 /// The bundled Node binary in ql-runtime (scripts/bundle-server.mjs).
 #[cfg(windows)]
 const NODE_BIN: &str = "node.exe";
@@ -68,7 +73,7 @@ fn spawn_server(app: &tauri::App) -> Option<Child> {
         .map(|dir| dir.join("ql-runtime"))
         .filter(|root| root.join(NODE_BIN).exists() && root.join("server/dist/index.mjs").exists());
 
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/".into());
+    let home = crate::home_dir();
     let mut cmd = match bundled {
         Some(root) => {
             let mut c = Command::new(root.join(NODE_BIN));
@@ -301,7 +306,7 @@ async fn restart_app(app: tauri::AppHandle) {
 #[tauri::command]
 async fn request_folder_access() -> Vec<(String, bool)> {
     tauri::async_runtime::spawn_blocking(|| {
-        let home = std::env::var("HOME").unwrap_or_default();
+        let home = crate::home_dir();
         ["Documents", "Desktop", "Downloads"]
             .iter()
             .map(|name| (name.to_string(), std::fs::read_dir(format!("{home}/{name}")).is_ok()))

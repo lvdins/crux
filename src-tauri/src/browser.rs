@@ -440,28 +440,29 @@ pub fn keep_logins(app: AppHandle) {
 }
 
 fn cookie_backup_path() -> std::path::PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/".into());
+    let home = crate::home_dir();
     std::env::var("CRUX_HOME")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| std::path::Path::new(&home).join(".crux"))
         .join("browser-cookies.txt")
 }
 
-/// Write via a temp file + rename (never half a jar), mode 0600.
+/// Write via a temp file + rename (never half a jar), mode 0600 on Unix
+/// (Windows: the user profile folder is private already).
 fn write_private(path: &std::path::Path, text: &str) {
     use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
     let tmp = path.with_extension("tmp");
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
-    let ok = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(&tmp)
-        .and_then(|mut f| f.write_all(text.as_bytes()));
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let ok = opts.open(&tmp).and_then(|mut f| f.write_all(text.as_bytes()));
     if ok.is_ok() {
         let _ = std::fs::rename(&tmp, path);
     }
