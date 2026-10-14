@@ -41,7 +41,7 @@ await build({
 
 step("copying agent browser MCP server");
 fs.mkdirSync(path.join(out, "server", "mcp"), { recursive: true });
-fs.copyFileSync(path.join(repo, "server", "mcp", "browser-mcp.mjs"), path.join(out, "server", "mcp", "browser-mcp.mjs"));
+for (const f of ["browser-mcp.mjs", "agents-mcp.mjs"]) fs.copyFileSync(path.join(repo, "server", "mcp", f), path.join(out, "server", "mcp", f));
 
 step("writing default data files");
 // Never ship personal repo paths: teammates start with no workspaces.

@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { BROWSER_SUPPORTED, config } from "./config.js";
 import { CRUX_HOME, SERVER_URL, rootPath } from "./paths.js";
+import { leadMcpConfig } from "./orchestrator.js";
 
 /**
  * Gives claude / codex started in a Crux terminal the
@@ -106,6 +107,13 @@ export function hookDetail(event: string, hook: Record<string, unknown>): string
   return text ? oneLine(text) : "";
 }
 
+/** Claude's whole last reply (Stop hook), for an orchestrator lead to read. */
+export function fullReply(hook: Record<string, unknown>): string {
+  const msg = typeof hook.last_assistant_message === "string" ? hook.last_assistant_message : "";
+  const transcript = typeof hook.transcript_path === "string" ? hook.transcript_path : "";
+  return msg || (transcript && lastReply(transcript));
+}
+
 export function writeMcpConfig(ws: string): void {
   fs.mkdirSync(MCP_DIR, { recursive: true });
   const cfg = {
@@ -181,7 +189,8 @@ exec "$real" "$@"
 `;
 
 // Windows (PowerShell / cmd): claude.cmd runs the real claude (the next one
-// on PATH after ours) with Crux's hooks. No browser tools there, so no codex one.
+// on PATH after ours) with Crux's hooks, and an orchestrator lead's tools. No
+// browser tools there, so no codex one.
 const CLAUDE_CMD = `@echo off
 rem Crux: claude with Crux's hooks. Made by Crux; rewritten on start.
 setlocal
@@ -196,10 +205,14 @@ if not defined REAL (
 for %%a in (mcp config update doctor install setup-token migrate-installer plugin plugins auth -v --version -h --help) do (
   if /i "%~1"=="%%a" goto plain
 )
+set "EXTRA="
+if defined CRUX_MCP_CONFIG if exist "%CRUX_MCP_CONFIG%" set EXTRA=--mcp-config "%CRUX_MCP_CONFIG%"
 if exist "%CRUX_HOOKS%" (
-  "%REAL%" --settings "%CRUX_HOOKS%" %*
+  "%REAL%" --settings "%CRUX_HOOKS%" %EXTRA% %*
   exit /b
 )
+"%REAL%" %EXTRA% %*
+exit /b
 :plain
 "%REAL%" %*
 `;
@@ -232,12 +245,18 @@ export function agentEnv(ws: string, shell: string, term: string): Record<string
     CRUX_HOOKS: hooksSupported ? HOOKS_PATH : "",
     CRUX_URL: SERVER_URL,
     // No in-app browser off macOS: agents get no crux-browser tools there.
-    CRUX_MCP_CONFIG: BROWSER_SUPPORTED ? mcpConfigPath(ws) : "",
+    // An orchestrator lead gets its own config with the crux-agents tools.
+    CRUX_MCP_CONFIG: leadMcpConfig(term) || (BROWSER_SUPPORTED ? mcpConfigPath(ws) : ""),
     QL_NODE: process.execPath,
     QL_BROWSER_MCP: BROWSER_MCP,
   };
   if (path.basename(shell) === "zsh") {
-    env.QL_USER_ZDOTDIR = process.env.ZDOTDIR || os.homedir();
+    // Crux started from a Crux terminal (e.g. a dev copy) inherits that
+    // terminal's ZDOTDIR: Crux's own forwarding files, which would then
+    // forward to themselves forever. Use the user's real one behind it.
+    const inherited = process.env.ZDOTDIR;
+    const ours = !!inherited && fs.existsSync(path.join(inherited, ".zshrc")) && fs.readFileSync(path.join(inherited, ".zshrc"), "utf8").startsWith("# Crux shell integration");
+    env.QL_USER_ZDOTDIR = (ours ? process.env.QL_USER_ZDOTDIR : inherited) || os.homedir();
     env.ZDOTDIR = ZSH_DIR;
   } else {
     // bash, fish, PowerShell, …: the wrappers in ~/.crux/bin come first on PATH.

@@ -101,3 +101,16 @@ export function TerminalIcon() {
     </svg>
   );
 }
+
+/** Orchestrator: one lead node fanning out to workers. */
+export function OrchestrateIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+      <circle cx="8" cy="3.5" r="2" />
+      <circle cx="3" cy="12.5" r="1.6" />
+      <circle cx="8" cy="12.5" r="1.6" />
+      <circle cx="13" cy="12.5" r="1.6" />
+      <path d="M8 5.5v5.4M6.9 5.2 3.8 11M9.1 5.2l3.1 5.8" />
+    </svg>
+  );
+}

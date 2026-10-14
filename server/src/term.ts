@@ -7,6 +7,7 @@ import type { WebSocket } from "ws";
 import { config } from "./config.js";
 import { agentEnv, writeMcpConfig } from "./agent-setup.js";
 import { findCodexSession, forgetTerm, loadTerm, pruneTerms, saveTerm } from "./sessions.js";
+import { cwdFor, takeBoot } from "./orchestrator.js";
 
 /**
  * PTYs are keyed by client-chosen terminal id (a workspace can hold several
@@ -25,6 +26,8 @@ interface Entry {
   codexSession?: string;
   /** Output since the last save. */
   dirty: boolean;
+  /** When it last printed anything. */
+  lastData: number;
 }
 
 const terms = new Map<string, Entry>();
@@ -54,7 +57,7 @@ function windowsShell(): string {
 export function attachTerm(
   id: string,
   repo: string,
-  ws: WebSocket,
+  ws: WebSocket | null,
   cols: number,
   rows: number,
   fresh: boolean,
@@ -83,6 +86,10 @@ export function attachTerm(
     // Reopened after Crux quit: Codex picks its conversation back up.
     if (safeBoot === "codex" && saved?.codexSession && /^[0-9a-f-]{36}$/i.test(saved.codexSession)) safeBoot = `codex resume ${saved.codexSession}`;
     const resumes = !!safeBoot && /^(claude --resume|codex resume) /.test(safeBoot);
+    // Orchestrator lead / worker, first start: its brief and task (via env).
+    const plan = takeBoot(id);
+    if (plan && safeBoot && !resumes) safeBoot += plan.append;
+    const cwd = plan?.cwd ?? cwdFor(id) ?? repoCfg.path;
     const args = WIN
       ? safeBoot
         ? ["-NoLogo", "-NoExit", "-Command", safeBoot] // runs the command, then stays a normal prompt
@@ -95,8 +102,8 @@ export function attachTerm(
       name: "xterm-256color",
       cols: cols || 100,
       rows: rows || 30,
-      cwd: repoCfg.path,
-      env: { ...env, ...agentEnv(repo, shell, id), TERM: "xterm-256color" },
+      cwd: fs.existsSync(cwd) ? cwd : repoCfg.path,
+      env: { ...env, ...agentEnv(repo, shell, id), ...(plan && !resumes ? plan.env : {}), TERM: "xterm-256color" },
     });
     // A resumed conversation redraws itself; anything else shows its last screen.
     const restored = saved?.output && !resumes ? `${saved.output}\x1b[?1049l\x1b[0m\r\n\x1b[2m── reopened · output above is from before Crux quit ──\x1b[0m\r\n` : "";
@@ -104,14 +111,16 @@ export function attachTerm(
       pty: proc,
       buffer: restored,
       subs: new Set(),
-      cwd: repoCfg.path,
+      cwd,
       startedAt: Date.now(),
       codex: !!safeBoot?.startsWith("codex"),
       codexSession: safeBoot?.startsWith("codex resume ") ? saved?.codexSession : undefined,
       dirty: !!restored,
+      lastData: Date.now(),
     };
     proc.onData((data) => {
       e.dirty = true;
+      e.lastData = Date.now();
       e.buffer = (e.buffer + data).slice(-MAX_BUFFER);
       for (const sub of e.subs) send(sub, { type: "term:data", id, data });
     });
@@ -124,6 +133,7 @@ export function attachTerm(
   } else if (cols && rows) {
     entry.pty.resize(cols, rows);
   }
+  if (!ws) return;
   entry.subs.add(ws);
   if (fresh && entry.buffer) {
     send(ws, { type: "term:data", id, data: entry.buffer });
@@ -152,6 +162,12 @@ function resumeIfSaved(cmd: string): string {
 export function termProcess(id: string): string | null {
   const entry = terms.get(id);
   return entry ? entry.pty.process : null;
+}
+
+/** Screen output so far and how long it has been quiet (orchestrator). */
+export function termTail(id: string): { text: string; quietMs: number; alive: boolean } {
+  const e = terms.get(id);
+  return e ? { text: e.buffer.slice(-20_000), quietMs: Date.now() - e.lastData, alive: true } : { text: "", quietMs: Infinity, alive: false };
 }
 
 export function termInput(id: string, data: string): void {

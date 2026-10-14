@@ -1629,3 +1629,37 @@ html.tray-window, html.tray-window body, html.tray-window #root { background: tr
 .home-state.working { color: var(--accent-ink); }
 .home-state.input { color: var(--warn); }
 .home-state.done { color: var(--ink-soft); }
+
+/* ---------- orchestrator ---------- */
+.chat-modal-icon.orch { color: var(--accent-ink); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+.orch-modal { width: min(460px, 100%); }
+.orch-task { min-height: 92px; resize: vertical; line-height: 1.45; }
+.orch-field { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--ink-soft); }
+.orch-field > span:first-child { width: 64px; flex: none; }
+.orch-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.orch-seg button {
+  display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; border-left: 1px solid var(--line);
+  padding: 5px 11px; color: var(--ink-soft); font: inherit; font-size: 12.5px; cursor: pointer; min-width: 34px; justify-content: center;
+}
+.orch-seg button:first-child { border-left: 0; }
+.orch-seg button:hover { color: var(--ink); background: var(--surface-2); }
+.orch-seg button.on { color: var(--ink); background: var(--surface-2); box-shadow: inset 0 -2px 0 var(--accent); }
+.orch-seg svg { width: 12px; height: 12px; }
+.orch-check { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-soft); cursor: pointer; }
+.orch-check input { accent-color: var(--accent); }
+.orch-note { font-size: 11.5px; color: var(--ink-faint); line-height: 1.45; margin: -6px 0 0; }
+/* workers of an orchestrator chat, in Home / menu bar rows */
+.team-strip { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.team-chip {
+  display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px 1px 5px; border-radius: 999px;
+  border: 1px solid var(--line); font-size: 11px; color: var(--ink-soft); background: var(--surface-2); max-width: 140px;
+}
+.team-chip > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.team-chip svg { width: 10px; height: 10px; flex: none; }
+.team-chip i { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--ink-faint); }
+.team-chip.working i { background: var(--accent); animation: team-pulse 1.2s ease-in-out infinite; }
+.team-chip.input i { background: var(--warn); }
+.team-chip.done i { background: var(--accent); }
+.team-chip.closed { opacity: 0.5; }
+@keyframes team-pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .team-chip.working i { animation: none; } }

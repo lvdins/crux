@@ -11,6 +11,33 @@ export interface TrayAgent {
   waiting?: "input" | "stop";
   /** Latest line from Claude's hooks: prompt, tool, question or reply. */
   detail?: string;
+  /** Orchestrator chat: its worker agents. */
+  team?: TeamMember[];
+}
+
+export interface TeamMember {
+  id: string;
+  name: string;
+  kind: string;
+  status: "working" | "input" | "done" | "closed";
+  detail?: string;
+}
+
+const STATUS = { working: "working", input: "needs input", done: "done", closed: "closed" };
+
+/** An orchestrator's workers as small chips: name and a status dot. */
+export function TeamStrip({ team }: { team: TeamMember[] }) {
+  return (
+    <span className="team-strip">
+      {team.map((m) => (
+        <span key={m.id} className={`team-chip ${m.status}`} title={`${m.name} · ${STATUS[m.status]}${m.detail ? ` · ${m.detail}` : ""}`}>
+          <i />
+          {kindIcon(m.kind)}
+          <span>{m.name}</span>
+        </span>
+      ))}
+    </span>
+  );
 }
 
 const kindIcon = (k: string) => (k === "claude" ? <ClaudeLogo /> : k === "codex" ? <CodexLogo /> : <TerminalIcon />);
@@ -140,6 +167,7 @@ export default function TrayPanel() {
                     )}
                   </span>
                   {a.detail && <span className="tray-detail">{a.detail}</span>}
+                  {a.team?.length ? <TeamStrip team={a.team} /> : null}
                 </span>
                 {a.workingSince && <span className="agent-spin" />}
                 <span className="home-go">Open</span>

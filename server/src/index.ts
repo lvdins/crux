@@ -9,10 +9,11 @@ import path from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
 import { BROWSER_SUPPORTED, currentSettings, DEFAULT_CHATS, MODE_PRESETS, PREF_KEYS, SETTING_KEYS, type Settings } from "./config.js";
 import { config, saveConfig, userConfigPath, addWorkspace, updateWorkspace, removeWorkspace, detectKind, expandHome } from "./config.js";
-import { attachTerm, termInput, termResize, killTerm, detachAll, killAllTerms, openLog, termProcess } from "./term.js";
+import { attachTerm, termInput, termResize, killTerm, detachAll, killAllTerms, openLog, termProcess, termTail } from "./term.js";
+import { allTeams, initOrchestrator, noteTermClosed, noteWorkerEvent, runTool, startTeam } from "./orchestrator.js";
 import { startPreview, stopPreview, stopAllPreviews, previewStatus } from "./preview.js";
 import { buildTree, sharedEndpoints } from "./tree.js";
-import { hookDetail, installAgentSetup } from "./agent-setup.js";
+import { fullReply, hookDetail, installAgentSetup } from "./agent-setup.js";
 import { latestRelease, installRelease, isNewer } from "./update.js";
 import { guardHttp, wsAllowed } from "./security.js";
 import { pipelinesFor } from "./pipelines.js";
@@ -130,6 +131,8 @@ app.post("/api/agent-event", (req, res) => {
   const event = String(req.query.event ?? req.body?.event ?? "");
   if (!term || !["stop", "input", "working"].includes(event)) return void res.status(400).json({ error: "Bad event" });
   const detail = req.query.term ? hookDetail(event, req.body ?? {}) : "";
+  // Orchestrator workers report to their lead; the team's row shows them.
+  if (noteWorkerEvent(term, event, detail, event === "stop" ? fullReply(req.body ?? {}) : "")) return void res.json({ ok: true });
   const msg = JSON.stringify({ type: "agent:event", id: term, event, detail });
   for (const client of wss.clients) if (client.readyState === WebSocket.OPEN) client.send(msg);
   res.json({ ok: true });
@@ -420,6 +423,16 @@ app.post("/api/agent-browser/:ws", async (req, res) => {
   res.status(result.ok ? 200 : 400).json(result);
 });
 
+// Orchestrator mode: the lead's crux-agents MCP tools (see orchestrator.ts).
+app.post("/api/orch/:lead/:tool", async (req, res) => {
+  try {
+    const text = await runTool(req.params.lead, String(req.headers["x-crux-team"] ?? ""), req.params.tool, req.body?.args ?? {});
+    res.json({ ok: true, text });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: String((err as Error)?.message ?? err) });
+  }
+});
+
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: "/ws", verifyClient: (info: { req: http.IncomingMessage }) => wsAllowed(info.req) });
 
@@ -452,6 +465,22 @@ wss.on("connection", (ws: WebSocket) => {
           break;
         case "term:kill":
           killTerm(String(msg.id));
+          noteTermClosed(String(msg.id));
+          break;
+        case "orch:start":
+          startTeam({
+            ws: String(msg.ws),
+            chat: String(msg.chat),
+            lead: String(msg.lead),
+            max: Number(msg.max),
+            kind: String(msg.kind),
+            model: String(msg.model ?? ""),
+            approve: msg.approve !== false,
+            task: String(msg.task ?? ""),
+          });
+          break;
+        case "orch:hello":
+          allTeams();
           break;
         case "browser:host":
           browserHosts.add(ws);
@@ -479,6 +508,22 @@ wss.on("connection", (ws: WebSocket) => {
 });
 
 installAgentSetup();
+initOrchestrator({
+  broadcast: (msg) => {
+    const data = JSON.stringify(msg);
+    let sent = false;
+    for (const client of wss.clients) {
+      if (client.readyState !== WebSocket.OPEN) continue;
+      client.send(data);
+      sent = true;
+    }
+    return sent;
+  },
+  startTerm: (id, ws, bootCmd) => attachTerm(id, ws, null, 120, 32, false, bootCmd),
+  writeTerm: termInput,
+  stopTerm: killTerm,
+  tailOf: termTail,
+});
 
 // Loopback only: nothing else on the network can reach the terminals.
 server.listen(PORT, "127.0.0.1", () => {

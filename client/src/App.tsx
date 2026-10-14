@@ -23,7 +23,8 @@ import { useModalKeys } from "./useModalKeys";
 import SettingsModal, { type Page as SettingsPage } from "./components/SettingsModal";
 import { notify } from "./notify";
 import { IS_MAC, KEY, isAppShortcut } from "./platform";
-import type { TrayAgent } from "./components/TrayPanel";
+import type { TeamMember, TrayAgent } from "./components/TrayPanel";
+import OrchestrateModal, { type OrchestrateOpts } from "./components/OrchestrateModal";
 import "./components/settings.css";
 import FirstSetup from "./components/onboarding/FirstSetup";
 import PermissionsStep from "./components/onboarding/PermissionsStep";
@@ -47,7 +48,7 @@ import {
   type PaneNode,
 } from "./paneLayout";
 import ContextMenu, { MenuIcons } from "./components/ContextMenu";
-import { WebIcon, ClaudeLogo, CodexLogo, GlobeIcon, TerminalIcon } from "./components/icons";
+import { WebIcon, ClaudeLogo, CodexLogo, GlobeIcon, OrchestrateIcon, TerminalIcon } from "./components/icons";
 
 const CHIP_COLORS: Record<string, string> = {
   mkdocs: "#d9a05b",
@@ -112,6 +113,8 @@ interface TermTab {
   title: string;
   agent?: string; // set when a launcher button started claude/codex here
   bootCmd?: string;
+  /** Orchestrator mode: the lead chat's agent, or a worker it started. */
+  role?: "lead" | "worker";
 }
 
 let tabSeq = 1;
@@ -452,6 +455,10 @@ export default function App() {
   // Latest line about each chat from Claude's hooks: your prompt, the tool
   // it's running, what it needs, or its last reply (shown in the menu bar).
   const [chatDetail, setChatDetail] = useState<Map<string, string>>(new Map());
+  // Orchestrator chats → their workers (from the server), and the dialog.
+  const [teams, setTeams] = useState<Map<string, { lead: string; workers: TeamMember[] }>>(new Map());
+  const [orchestrate, setOrchestrate] = useState<string | null>(null);
+  const orchRef = useRef<(msg: any) => void>(() => {});
   // Menu bar menu → "show me this chat" / "pick who gets this screenshot"
   // (the listeners are set up once).
   const openChatRef = useRef<(chat: string) => void>(() => {});
@@ -572,6 +579,7 @@ export default function App() {
         // The desktop window owns the native browser panes: offer to run
         // agent browser commands for the server.
         if ("__TAURI_INTERNALS__" in window) ws.send(JSON.stringify({ type: "browser:host" }));
+        ws.send(JSON.stringify({ type: "orch:hello" }));
       };
       ws.onclose = () => {
         setConnected(false);
@@ -584,6 +592,10 @@ export default function App() {
           runAgentCommand(msg.ws, msg.op, msg.args ?? {})
             .then((result) => ws.send(JSON.stringify({ type: "browser:result", id: msg.id, ok: true, result })))
             .catch((err) => ws.send(JSON.stringify({ type: "browser:result", id: msg.id, ok: false, error: String(err?.message ?? err) })));
+          return;
+        }
+        if (typeof msg.type === "string" && msg.type.startsWith("orch:")) {
+          orchRef.current(msg);
           return;
         }
         if (msg.type === "agent:event") {
@@ -731,11 +743,13 @@ export default function App() {
     };
   }, []);
 
-  const createTab = useCallback((repo: string, title = "shell", agent?: string, bootCmd?: string) => {
-    const id = newTabId(repo);
-    setTabs((prev) => ({ ...prev, [repo]: [...(prev[repo] ?? []), { id, title, agent, bootCmd }] }));
-    return id;
-  }, []);
+  const createTab = useCallback(
+    (repo: string, title = "shell", agent?: string, bootCmd?: string, id = newTabId(repo), role?: TermTab["role"]) => {
+      setTabs((prev) => ({ ...prev, [repo]: [...(prev[repo] ?? []), { id, title, agent, bootCmd, ...(role && { role }) }] }));
+      return id;
+    },
+    [],
+  );
 
   const addTab = useCallback(
     (repo: string, title = "shell", agent?: string, bootCmd?: string) => {
@@ -1248,6 +1262,8 @@ export default function App() {
     const chat = Object.keys(tabs).find((k) => tabs[k].some((t) => t.id === term));
     if (!chat) return;
     const tab = tabs[chat].find((t) => t.id === term)!;
+    // Workers report to their lead (and the team chips), not as the chat.
+    if (tab.role === "worker") return;
     // Hooks report Claude; the output guess is only for Codex.
     if (event.startsWith("codex") !== (tab.agent === "codex")) return;
     if (detail) setChatDetail((d) => (d.get(chat) === detail ? d : new Map(d).set(chat, detail)));
@@ -1326,6 +1342,7 @@ export default function App() {
           workingSince: working.get(chat),
           waiting: attention.get(chat),
           detail: chatDetail.get(chat),
+          team: teams.get(chat)?.workers,
         }))
     : [];
   const trayKey = JSON.stringify(trayChats);
@@ -1417,6 +1434,49 @@ export default function App() {
     setActiveChat((prev) => ({ ...prev, [key]: chat }));
     setView(key);
     setChatsShown(key, true);
+  };
+
+  // Orchestrator mode: a new chat whose Claude leads a team. The server learns
+  // about the lead before its terminal opens (same socket, sent first).
+  const startOrchestrator = (key: string, opts: OrchestrateOpts) => {
+    if (wsRef.current?.readyState !== WebSocket.OPEN) return setToast("Not connected to the Crux server");
+    const chat = newChatKey(key);
+    const title = opts.task.split(/\s+/).slice(0, 4).join(" ").slice(0, 32) || "orchestrator";
+    const id = addTab(chat, title, "claude", agentBoot("claude"));
+    setTabs((prev) => ({ ...prev, [chat]: (prev[chat] ?? []).map((t) => (t.id === id ? { ...t, role: "lead" } : t)) }));
+    send({ type: "orch:start", ws: key, chat, lead: id, max: opts.max, kind: opts.kind, model: opts.model, approve: opts.approve, task: opts.task });
+    setChatTitles((prev) => ({ ...prev, [chat]: title }));
+    setActiveChat((prev) => ({ ...prev, [key]: chat }));
+    setView(key);
+    setChatsShown(key, true);
+  };
+
+  // Server → orchestrator events: a worker started (a pane next to the lead,
+  // stacked on the right), closed, or the team's status changed.
+  orchRef.current = (msg) => {
+    if (msg.type === "orch:team") {
+      setTeams((prev) => {
+        const next = new Map(prev);
+        for (const [c, t] of prev) if (t.lead === msg.lead) next.delete(c);
+        if (msg.chat) next.set(String(msg.chat), { lead: String(msg.lead), workers: Array.isArray(msg.workers) ? msg.workers : [] });
+        return next;
+      });
+    } else if (msg.type === "orch:spawn") {
+      const chat = String(msg.chat);
+      const id = String(msg.id);
+      if (!tabs[chat] || tabs[chat].some((t) => t.id === id)) return;
+      createTab(chat, String(msg.name), String(msg.kind), String(msg.bootCmd), id, "worker");
+      setLayouts((prev) => {
+        const root = prev[chat] ?? rootLayout();
+        const panes = leafIds(root).filter((p) => p !== MAIN);
+        const last = panes[panes.length - 1];
+        const next = !last ? insertAt(root, MAIN, "right", id) : panes.length + 1 < MAX_PANES ? insertAt(root, last, "bottom", id) : addTabToPane(root, last, id);
+        return { ...prev, [chat]: next };
+      });
+    } else if (msg.type === "orch:close") {
+      const chat = String(msg.chat);
+      if (tabs[chat]?.some((t) => t.id === msg.id)) closeTab(chat, String(msg.id));
+    }
   };
 
   // Close a whole chat: every terminal in it.
@@ -2029,7 +2089,7 @@ export default function App() {
               .map(([chat, event]) => ({ ...chatRow(chat), event }))}
             agents={Object.keys(tabs)
               .filter((chat) => config.repos[wsOf(chat)] && tabs[chat].some((t) => t.agent))
-              .map((chat) => ({ ...chatRow(chat), workingSince: working.get(chat), waiting: attention.get(chat) }))
+              .map((chat) => ({ ...chatRow(chat), workingSince: working.get(chat), waiting: attention.get(chat), team: teams.get(chat)?.workers }))
               // Working first (longest running on top), then waiting, then idle.
               .sort((a, b) => (a.workingSince ?? Infinity) - (b.workingSince ?? Infinity) || Number(!!b.waiting) - Number(!!a.waiting))}
             pipelines={Object.entries(pipeInfo)
@@ -2146,6 +2206,9 @@ export default function App() {
                       </button>
                       <button onClick={() => askChatName(view, "shell")}>
                         <TerminalIcon /> New terminal
+                      </button>
+                      <button onClick={() => setOrchestrate(view)}>
+                        <OrchestrateIcon /> Orchestrate
                       </button>
                     </div>
                   </div>
@@ -2302,6 +2365,7 @@ export default function App() {
               { label: "New Codex chat", icon: <CodexLogo />, onSelect: () => askChatName(chatMenu.key, "codex") },
               { label: "New terminal", icon: <TerminalIcon />, onSelect: () => askChatName(chatMenu.key, "shell") },
             ],
+            [{ label: "Orchestrate…", icon: <OrchestrateIcon />, onSelect: () => setOrchestrate(chatMenu.key) }],
           ]}
         />
       )}
@@ -2394,6 +2458,16 @@ export default function App() {
           />
         );
       })()}
+      {orchestrate && config.repos[orchestrate] && (
+        <OrchestrateModal
+          wsLabel={config.repos[orchestrate].label}
+          onClose={() => setOrchestrate(null)}
+          onStart={(opts) => {
+            startOrchestrator(orchestrate, opts);
+            setOrchestrate(null);
+          }}
+        />
+      )}
       {nameChat && config.repos[nameChat.key] && (
         <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && setNameChat(null)}>
           <form

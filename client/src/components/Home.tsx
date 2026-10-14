@@ -4,6 +4,7 @@ import { KEY } from "../platform";
 import type { PastChat } from "./ChatSearch";
 import { ClaudeLogo, CodexLogo, TerminalIcon } from "./icons";
 import { checkPrompt, type PipelineInfo } from "./PipelinesPanel";
+import { TeamStrip, type TeamMember } from "./TrayPanel";
 
 export interface InboxMr {
   source: "gitlab";
@@ -68,7 +69,7 @@ export default function Home({
 }: {
   userName: string;
   needs: (ChatRow & { event: "input" | "stop" })[];
-  agents: (ChatRow & { workingSince?: number; waiting?: "input" | "stop" })[];
+  agents: (ChatRow & { workingSince?: number; waiting?: "input" | "stop"; team?: TeamMember[] })[];
   pipelines: { ws: string; wsLabel: string; info: PipelineInfo }[];
   workspaces: { ws: string; label: string }[];
   onOpenChat: (chat: string) => void;
@@ -261,6 +262,7 @@ export default function Home({
                         "Idle"
                       )}
                     </span>
+                    {a.team?.length ? <TeamStrip team={a.team} /> : null}
                   </span>
                   {a.workingSince && <span className="agent-spin" />}
                   <span className="home-go">Open</span>
