@@ -95,7 +95,8 @@ if (!fs.existsSync(tarPath)) {
 }
 // The zip / tarball holds node.exe at its root on Windows, bin/node elsewhere.
 const inside = isWin ? `${dist}/node.exe` : `${dist}/bin/node`;
-execFileSync("tar", ["-xf", tarPath, "-C", cache, inside]);
+// Windows: its own bsdtar (reads zip); a Git Bash tar on PATH would not.
+execFileSync(isWin ? "C:\\Windows\\System32\\tar.exe" : "tar", ["-xf", tarPath, "-C", cache, inside]);
 fs.copyFileSync(path.join(cache, inside), path.join(out, nodeBin));
 if (!isWin) fs.chmodSync(path.join(out, nodeBin), 0o755);
 

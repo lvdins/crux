@@ -1,3 +1,5 @@
+// First: on Windows every child process must start hidden (see winproc.ts).
+import "./winproc.js";
 import express from "express";
 import http from "node:http";
 import { execFile } from "node:child_process";
@@ -277,6 +279,17 @@ app.get("/api/workspaces/:key/branches", (req, res) => {
 app.post("/api/workspaces/:key/trash", (req, res) => {
   const repo = config.repos[req.params.key];
   if (!repo) return void res.status(404).json({ error: "Unknown workspace" });
+  if (process.platform === "win32") {
+    // Windows: the Recycle Bin, through .NET (no Trash folder to move into).
+    const ps = `Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($env:CRUX_TRASH, 'OnlyErrorDialogs', 'SendToRecycleBin')`;
+    return void execFile("powershell.exe", ["-NoProfile", "-Command", ps], { env: { ...process.env, CRUX_TRASH: repo.path } }, (err) => {
+      if (err) return void res.status(400).json({ error: `Could not move to the Recycle Bin: ${err.message}` });
+      stopPreview(req.params.key);
+      removeWorkspace(req.params.key);
+      invalidate();
+      res.json({ ok: true });
+    });
+  }
   const trashDir =
     process.platform === "darwin" ? path.join(os.homedir(), ".Trash") : path.join(os.homedir(), ".local/share/Trash/files");
   try {
@@ -479,3 +492,9 @@ function shutdown() {
 }
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+// Windows has no SIGTERM to send: the desktop app asks over HTTP instead
+// (local programs only: see security.ts), so chats are saved before quitting.
+app.post("/api/quit", (_req, res) => {
+  res.json({ ok: true });
+  setTimeout(shutdown, 50);
+});

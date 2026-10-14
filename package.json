@@ -7,7 +7,7 @@
     "client"
   ],
   "scripts": {
-    "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true",
+    "postinstall": "node -e \"const fs=require('fs'),p='node_modules/node-pty/prebuilds';try{for(const d of fs.readdirSync(p))try{fs.chmodSync(p+'/'+d+'/spawn-helper',0o755)}catch{}}catch{}\"",
     "dev": "concurrently -n server,client -c green,cyan \"npm run dev -w server\" \"npm run dev -w client\"",
     "dev:server": "npm run dev -w server",
     "dev:client": "npm run dev -w client",

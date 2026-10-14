@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -36,6 +37,20 @@ function send(ws: WebSocket, payload: unknown) {
   if (ws.readyState === 1) ws.send(JSON.stringify(payload));
 }
 
+const WIN = process.platform === "win32";
+let winShell: string | null = null;
+/** PowerShell 7 (pwsh) when installed, else Windows PowerShell. */
+function windowsShell(): string {
+  if (!winShell) {
+    try {
+      winShell = execFileSync("where", ["pwsh"], { encoding: "utf8", timeout: 3000 }).split(/\r?\n/)[0].trim() || "powershell.exe";
+    } catch {
+      winShell = "powershell.exe";
+    }
+  }
+  return winShell;
+}
+
 export function attachTerm(
   id: string,
   repo: string,
@@ -51,8 +66,8 @@ export function attachTerm(
   if (openLog.length > 50) openLog.shift();
   let entry = terms.get(id);
   if (!entry) {
-    // macOS defaults to zsh, Linux to bash.
-    const shell = process.env.SHELL || (process.platform === "darwin" ? "/bin/zsh" : "/bin/bash");
+    // macOS defaults to zsh, Linux to bash, Windows to PowerShell.
+    const shell = WIN ? windowsShell() : process.env.SHELL || (process.platform === "darwin" ? "/bin/zsh" : "/bin/bash");
     // Strip Claude-session markers: if the Crux server itself was started
     // from a Claude Code session, child shells would otherwise be treated as
     // nested sessions (transcript saving off, etc.).
@@ -68,7 +83,13 @@ export function attachTerm(
     // Reopened after Crux quit: Codex picks its conversation back up.
     if (safeBoot === "codex" && saved?.codexSession && /^[0-9a-f-]{36}$/i.test(saved.codexSession)) safeBoot = `codex resume ${saved.codexSession}`;
     const resumes = !!safeBoot && /^(claude --resume|codex resume) /.test(safeBoot);
-    const args = safeBoot ? ["-il", "-c", `${safeBoot}; exec ${shell} -il`] : ["-l"];
+    const args = WIN
+      ? safeBoot
+        ? ["-NoLogo", "-NoExit", "-Command", safeBoot] // runs the command, then stays a normal prompt
+        : ["-NoLogo"]
+      : safeBoot
+        ? ["-il", "-c", `${safeBoot}; exec ${shell} -il`]
+        : ["-l"];
     writeMcpConfig(repo); // workspace may have been added since startup
     const proc = pty.spawn(shell, args, {
       name: "xterm-256color",

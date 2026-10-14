@@ -1,0 +1,77 @@
+# Linux and Windows builds of Crux (the macOS one is built and signed locally).
+# Linux: an AppImage (updates itself) and a .deb. Windows: an NSIS installer.
+# Runs for every published release and attaches the files to it, or by hand
+# from the Actions tab (and on pushes to `linux`) to check the builds.
+name: Linux + Windows builds
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+  push:
+    branches: [linux]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            name: linux
+            files: |
+              src-tauri/target/release/bundle/appimage/*.AppImage
+              src-tauri/target/release/bundle/deb/*.deb
+          - os: windows-latest
+            name: windows
+            files: |
+              src-tauri/target/release/bundle/nsis/*-setup.exe
+    runs-on: ${{ matrix.os }}
+    env:
+      # Linux: linuxdeploy (AppImage) without FUSE, and without stripping newer libs.
+      APPIMAGE_EXTRACT_AND_RUN: "1"
+      NO_STRIP: "true"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: System packages (WebKitGTK, tray, node-pty build tools)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
+            libxdo-dev libssl-dev patchelf libfuse2 build-essential python3 file
+
+      # Linux also compiles node-pty here (it ships no Linux prebuilds).
+      - run: npm ci
+
+      # scripts/bundle-server.mjs smoke-tests the bundled server + node-pty.
+      - name: Build (server bundle, UI, installers)
+        run: npm run app:build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: crux-${{ matrix.name }}
+          path: ${{ matrix.files }}
+
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" --clobber ${{ matrix.name == 'linux' && 'src-tauri/target/release/bundle/appimage/*.AppImage src-tauri/target/release/bundle/deb/*.deb' || 'src-tauri/target/release/bundle/nsis/*-setup.exe' }}

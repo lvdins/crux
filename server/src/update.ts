@@ -1,7 +1,7 @@
 import { execFile, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { CRUX_HOME, ROOT } from "./paths.js";
+import { CRUX_HOME, PORT, ROOT } from "./paths.js";
 
 /** Releases (with the .dmg attached) are published here; read with the user's `gh` login. */
 const REPO = "lvdins/crux";
@@ -31,7 +31,7 @@ export function latestRelease(): Promise<string | null> {
  */
 export function installRelease(tag: string): void {
   if (process.platform === "linux") return installAppImage(tag);
-  if (process.platform !== "darwin") throw new Error("Download the new version from GitHub releases");
+  if (process.platform === "win32") return installWindows(tag);
   // Packaged server lives in <App>.app/Contents/Resources/ql-runtime.
   const app = path.resolve(ROOT, "../../..");
   if (!app.endsWith(".app")) throw new Error("Not running from an installed Crux.app");
@@ -100,5 +100,33 @@ nohup "$APPIMAGE" >/dev/null 2>&1 &
     detached: true,
     stdio: ["ignore", out, out],
     env: { ...process.env, TAG: tag, REPO, APPIMAGE: appImage, APP_PID: String(process.ppid) },
+  }).unref();
+}
+
+/**
+ * Windows: run the release's installer (NSIS, per user) silently. Closing the
+ * app doesn't stop this server there, so it's asked to save and quit first.
+ */
+function installWindows(tag: string): void {
+  const log = path.join(CRUX_HOME, "update.log");
+  const script = `$ErrorActionPreference = 'Stop'
+$T = Join-Path $env:TEMP ('crux-update-' + [guid]::NewGuid())
+New-Item -ItemType Directory $T | Out-Null
+gh release download $env:TAG -R $env:REPO -p '*-setup.exe' -D $T
+$setup = Get-ChildItem $T -Filter '*-setup.exe' | Select-Object -First 1
+$app = (Get-Process -Id $env:APP_PID).Path
+try { Invoke-RestMethod -Method Post "http://127.0.0.1:$env:CRUX_PORT/api/quit" | Out-Null } catch {}
+Start-Sleep -Seconds 2
+Stop-Process -Id $env:APP_PID -Force -ErrorAction SilentlyContinue
+Start-Process $setup.FullName -ArgumentList '/S' -Wait
+Start-Process $app
+Remove-Item $T -Recurse -Force
+`;
+  fs.mkdirSync(CRUX_HOME, { recursive: true });
+  const out = fs.openSync(log, "w");
+  spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], {
+    detached: true,
+    stdio: ["ignore", out, out],
+    env: { ...process.env, TAG: tag, REPO, APP_PID: String(process.ppid), CRUX_PORT: String(PORT) },
   }).unref();
 }

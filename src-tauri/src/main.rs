@@ -33,6 +33,27 @@ const NODE_BIN: &str = "node.exe";
 #[cfg(not(windows))]
 const NODE_BIN: &str = "node";
 
+/// Windows: no console window for a helper process (the app has none).
+fn hide_console(cmd: &mut Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let _ = cmd;
+}
+
+/// Windows has no SIGTERM: ask the server over HTTP to save every chat and quit.
+#[cfg(not(unix))]
+fn ask_server_to_quit() {
+    use std::io::Write;
+    let addr = format!("127.0.0.1:{}", server_port());
+    if let Ok(mut s) = TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_millis(300)) {
+        let _ = s.write_all(b"POST /api/quit HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+    }
+}
+
 /// Packaged app: run the bundled Node + server from Resources/ql-runtime.
 /// Development: fall back to `npm run start -w server` in the repo.
 fn spawn_server(app: &tauri::App) -> Option<Child> {
@@ -70,6 +91,7 @@ fn spawn_server(app: &tauri::App) -> Option<Child> {
             cmd.stdout(log).stderr(err);
         }
     }
+    hide_console(&mut cmd);
     match cmd.spawn() {
         Ok(child) => {
             // Give the server a moment to bind before the UI starts polling.
@@ -520,8 +542,25 @@ fi"#;
     }
 }
 
+/// Windows: the Snipping Tool overlay (Win+Shift+S) puts the snip on the
+/// clipboard; wait for it (clipboard cleared first) and save it as a PNG.
 #[cfg(target_os = "windows")]
-fn region_capture(_file: &std::path::Path) {}
+fn region_capture(file: &std::path::Path) {
+    const SNIP: &str = r#"Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+[Windows.Forms.Clipboard]::Clear()
+Start-Process 'ms-screenclip:'
+for ($i = 0; $i -lt 240; $i++) {
+  Start-Sleep -Milliseconds 250
+  if ([Windows.Forms.Clipboard]::ContainsImage()) {
+    [Windows.Forms.Clipboard]::GetImage().Save($env:CRUX_SHOT, [Drawing.Imaging.ImageFormat]::Png)
+    break
+  }
+}"#;
+    let mut cmd = Command::new("powershell.exe");
+    cmd.args(["-NoProfile", "-STA", "-Command", SNIP]).env("CRUX_SHOT", file);
+    hide_console(&mut cmd);
+    let _ = cmd.status();
+}
 
 /// Menu bar icon: a click opens the agents panel; right-click a small menu
 /// (closing the window only hides Crux).
@@ -685,7 +724,7 @@ fn main() {
                     #[cfg(unix)]
                     let _ = Command::new("kill").args(["-TERM", &child.id().to_string()]).status();
                     #[cfg(not(unix))]
-                    let _ = child.kill();
+                    ask_server_to_quit();
                     for _ in 0..20 {
                         if matches!(child.try_wait(), Ok(Some(_))) {
                             return;

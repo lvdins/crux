@@ -180,12 +180,40 @@ esac
 exec "$real" "$@"
 `;
 
+// Windows (PowerShell / cmd): claude.cmd runs the real claude (the next one
+// on PATH after ours) with Crux's hooks. No browser tools there, so no codex one.
+const CLAUDE_CMD = `@echo off
+rem Crux: claude with Crux's hooks. Made by Crux; rewritten on start.
+setlocal
+set "REAL="
+for /f "delims=" %%i in ('where claude 2^>nul') do (
+  if /i not "%%~dpi"=="%~dp0" if not defined REAL set "REAL=%%i"
+)
+if not defined REAL (
+  echo claude: not found on PATH 1>&2
+  exit /b 127
+)
+for %%a in (mcp config update doctor install setup-token migrate-installer plugin plugins auth -v --version -h --help) do (
+  if /i "%~1"=="%%a" goto plain
+)
+if exist "%CRUX_HOOKS%" (
+  "%REAL%" --settings "%CRUX_HOOKS%" %*
+  exit /b
+)
+:plain
+"%REAL%" %*
+`;
+
 export function installAgentSetup(): void {
   fs.mkdirSync(BIN_DIR, { recursive: true });
-  for (const name of ["claude", "codex"] as const) {
-    const file = path.join(BIN_DIR, name);
-    fs.writeFileSync(file, binWrapper(name));
-    fs.chmodSync(file, 0o755);
+  if (process.platform === "win32") {
+    fs.writeFileSync(path.join(BIN_DIR, "claude.cmd"), CLAUDE_CMD.replace(/\n/g, "\r\n"));
+  } else {
+    for (const name of ["claude", "codex"] as const) {
+      const file = path.join(BIN_DIR, name);
+      fs.writeFileSync(file, binWrapper(name));
+      fs.chmodSync(file, 0o755);
+    }
   }
   fs.mkdirSync(ZSH_DIR, { recursive: true });
   fs.writeFileSync(path.join(ZSH_DIR, ".zshenv"), forward(".zshenv"));
@@ -211,9 +239,10 @@ export function agentEnv(ws: string, shell: string, term: string): Record<string
   if (path.basename(shell) === "zsh") {
     env.QL_USER_ZDOTDIR = process.env.ZDOTDIR || os.homedir();
     env.ZDOTDIR = ZSH_DIR;
-  } else if (process.platform !== "win32") {
-    // bash, fish, …: the wrappers in ~/.crux/bin come first on PATH.
-    env.PATH = `${BIN_DIR}${path.delimiter}${process.env.PATH ?? ""}`;
+  } else {
+    // bash, fish, PowerShell, …: the wrappers in ~/.crux/bin come first on PATH.
+    const key = Object.keys(process.env).find((k) => k.toUpperCase() === "PATH") ?? "PATH";
+    env[key] = `${BIN_DIR}${path.delimiter}${process.env[key] ?? ""}`;
   }
   return env;
 }
