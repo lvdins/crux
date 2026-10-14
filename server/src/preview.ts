@@ -72,7 +72,7 @@ export function startPreview(key: string): void {
   });
   proc.on("error", (err) => {
     p.state = "error";
-    p.log.push(String(err).includes("ENOENT") ? "uv not found — install it: brew install uv" : String(err));
+    p.log.push(String(err).includes("ENOENT") ? `uv not found — install it: ${process.platform === "darwin" ? "brew install uv" : "curl -LsSf https://astral.sh/uv/install.sh | sh"}` : String(err));
     p.proc = null;
   });
 }

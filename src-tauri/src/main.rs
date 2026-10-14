@@ -571,6 +571,12 @@ fn install_tray(app: &mut tauri::App) -> tauri::Result<()> {
 }
 
 fn main() {
+    // WebKitGTK's DMA-BUF renderer leaves the window blank on some GPU
+    // drivers (NVIDIA); the plain renderer works everywhere.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
     let server: std::sync::Arc<Mutex<Option<Child>>> = Default::default();
     let server_for_setup = server.clone();
 

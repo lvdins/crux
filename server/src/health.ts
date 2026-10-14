@@ -62,10 +62,13 @@ async function check(
   return { name, needed, required, path, version, login: { ok: l.ok, detail: l.detail }, fix: l.ok ? null : l.fix };
 }
 
+/** Install command for this OS: Homebrew on macOS, apt on Linux. */
+const pick = (mac: string, linux: string) => (process.platform === "darwin" ? mac : linux);
+
 export async function checkSetup(): Promise<ToolHealth[]> {
   const hosts = await gitlabHosts();
   return Promise.all([
-    check("git", "Branches, cloning repos", true, "xcode-select --install"),
+    check("git", "Branches, cloning repos", true, pick("xcode-select --install", "sudo apt install -y git")),
     check("claude", "Claude chats", true, "npm install -g @anthropic-ai/claude-code", async () => {
       const r = await run("claude", ["auth", "status"]);
       // Older CLIs have no `auth status`: don't call that logged out.
@@ -78,12 +81,12 @@ export async function checkSetup(): Promise<ToolHealth[]> {
       const ok = r.code === 0 && /logged in/i.test(r.out);
       return { ok, detail: ok ? r.out.split("\n")[0] : "Not logged in", fix: "codex login" };
     }),
-    check("gh", "Crux updates (private GitHub releases)", true, "brew install gh", async () => {
+    check("gh", "Crux updates (private GitHub releases)", true, pick("brew install gh", "sudo apt install -y gh"), async () => {
       const r = await run("gh", ["auth", "status", "--hostname", "github.com"]);
       const user = /account (\S+)/.exec(r.out)?.[1];
       return { ok: r.code === 0, detail: r.code === 0 ? `github.com${user ? ` as ${user}` : ""}` : "Not logged in to github.com", fix: "gh auth login" };
     }),
-    check("glab", "Pipelines tab (GitLab)", hosts.length > 0, "brew install glab", async () => {
+    check("glab", "Pipelines tab (GitLab)", hosts.length > 0, pick("brew install glab", "sudo apt install -y glab"), async () => {
       if (!hosts.length) return { ok: true, detail: "No GitLab workspaces", fix: "" };
       // A GITLAB_TOKEN for another host overrides the saved login (see pipelines.ts).
       const { GITLAB_TOKEN: _t, ...noToken } = process.env;
@@ -98,7 +101,7 @@ export async function checkSetup(): Promise<ToolHealth[]> {
         fix: `glab auth login --hostname ${bad[0] ?? hosts[0]}`,
       };
     }),
-    check("node", "Running Playwright tests", false, "brew install node"),
-    check("uv", "Docs preview (MkDocs)", false, "brew install uv"),
+    check("node", "Running Playwright tests", false, pick("brew install node", "sudo apt install -y nodejs npm")),
+    check("uv", "Docs preview (MkDocs)", false, pick("brew install uv", "curl -LsSf https://astral.sh/uv/install.sh | sh")),
   ]);
 }

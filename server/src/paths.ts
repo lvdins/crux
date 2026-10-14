@@ -28,7 +28,7 @@ export const SERVER_URL = `http://127.0.0.1:${PORT}`;
  */
 export function adoptLoginShellPath(): void {
   if (process.env.PATH?.includes("/opt/homebrew/bin") || process.env.PATH?.includes("/usr/local/bin")) return;
-  const shell = process.env.SHELL || "/bin/zsh";
+  const shell = process.env.SHELL || (process.platform === "darwin" ? "/bin/zsh" : "/bin/bash");
   try {
     const out = execFileSync(shell, ["-ilc", 'printf "\\n__QLPATH__%s\\n" "$PATH"'], {
       encoding: "utf8",
@@ -52,12 +52,13 @@ export interface ToolStatus {
   install: string;
 }
 
+const MAC = process.platform === "darwin";
 const TOOLS: Omit<ToolStatus, "path" | "version">[] = [
-  { name: "git", needed: "Branch names, cloning repos", install: "xcode-select --install" },
+  { name: "git", needed: "Branch names, cloning repos", install: MAC ? "xcode-select --install" : "sudo apt install -y git" },
   { name: "claude", needed: "Claude button and agent terminals", install: "npm install -g @anthropic-ai/claude-code" },
   { name: "codex", needed: "Codex button", install: "npm install -g @openai/codex" },
-  { name: "uv", needed: "Docs preview (MkDocs)", install: "brew install uv" },
-  { name: "node", needed: "Running Playwright tests", install: "brew install node" },
+  { name: "uv", needed: "Docs preview (MkDocs)", install: MAC ? "brew install uv" : "curl -LsSf https://astral.sh/uv/install.sh | sh" },
+  { name: "node", needed: "Running Playwright tests", install: MAC ? "brew install node" : "sudo apt install -y nodejs npm" },
 ];
 
 export function checkTools(): ToolStatus[] {
