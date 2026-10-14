@@ -22,6 +22,7 @@ import ModeStep from "./components/onboarding/ModeStep";
 import { useModalKeys } from "./useModalKeys";
 import SettingsModal, { type Page as SettingsPage } from "./components/SettingsModal";
 import { notify } from "./notify";
+import { IS_MAC, KEY, isAppShortcut } from "./platform";
 import type { TrayAgent } from "./components/TrayPanel";
 import "./components/settings.css";
 import FirstSetup from "./components/onboarding/FirstSetup";
@@ -511,7 +512,7 @@ export default function App() {
         setConfig(c);
         if (!c.onboarded) setOnboarding("intro");
         // Set up before the Permissions step existed: show it once.
-        else if (IN_TAURI && !localStorage.getItem(PERMS_SEEN)) {
+        else if (IN_TAURI && IS_MAC && !localStorage.getItem(PERMS_SEEN)) {
           permsAlone.current = true;
           setOnboarding("permissions");
         }
@@ -657,10 +658,22 @@ export default function App() {
     return () => window.removeEventListener("ql:browser-tabs", onTabs);
   }, []);
 
-  // ⌘S — toggle the sidebar; ⌘B — toggle the right panel. In the desktop app the native menu owns the
-  // shortcut (it works even with a terminal/browser pane focused) and tells
-  // us via an event; in a plain browser tab we catch the key ourselves.
+  // ⌘S — toggle the sidebar; ⌘B — toggle the right panel; ⌘K — search (Ctrl+Shift+… on
+  // Linux / Windows). In the macOS app the native menu owns these (they work
+  // even with a browser pane focused) and tells us via an event; elsewhere,
+  // and in a plain browser tab, we catch the keys ourselves.
   useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const hit = (["s", "b", "k"] as const).find((k) => isAppShortcut(e, k));
+      if (!hit) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (hit === "k") setSearchOpen(true);
+      else (hit === "s" ? toggleSideRef : toggleRightRef).current();
+    };
+    const ownKeys = !IN_TAURI || !IS_MAC;
+    if (ownKeys) window.addEventListener("keydown", onKey, true);
+    const dropKeys = () => ownKeys && window.removeEventListener("keydown", onKey, true);
     if ("__TAURI_INTERNALS__" in window) {
       let unlisten: (() => void) | undefined;
       let cancelled = false;
@@ -685,29 +698,17 @@ export default function App() {
       return () => {
         cancelled = true;
         unlisten?.();
+        dropKeys();
       };
     }
-    const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
-      const key = e.key.toLowerCase();
-      if (key === "s" || key === "b") {
-        e.preventDefault();
-        e.stopPropagation();
-        (key === "s" ? toggleSideRef : toggleRightRef).current();
-      } else if (key === "k") {
-        e.preventDefault();
-        e.stopPropagation();
-        setSearchOpen(true);
-      }
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
+    return dropKeys;
   }, []);
 
-  // ⌘⇧⌫ — delete the active workspace (asks first).
+  // ⌘⇧⌫ (Ctrl+Shift+Backspace elsewhere) — delete the active workspace (asks first).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey && e.shiftKey && e.key === "Backspace" && config?.repos[viewRef.current]) {
+      const mod = IS_MAC ? e.metaKey : e.ctrlKey && !e.metaKey;
+      if (mod && e.shiftKey && e.key === "Backspace" && config?.repos[viewRef.current]) {
         e.preventDefault();
         e.stopPropagation();
         setDeleteError("");
@@ -984,7 +985,7 @@ export default function App() {
           label: "Delete",
           icon: MenuIcons.trash,
           danger: true,
-          shortcut: "⌘⇧⌫",
+          shortcut: KEY.deleteWs,
           onSelect: () => {
             setDeleteError("");
             setConfirmDelete(key);
@@ -1006,6 +1007,7 @@ export default function App() {
     const ws = viewRef.current;
     const jira = ws === "jira";
     if (!jira && (!ws || isSpecial(ws) || !config?.repos[ws])) return setToast("Open a workspace or Jira first");
+    if (config?.browserSupported === false) return setToast("Marking issues needs the browser, which is macOS-only for now");
     if (!jira && !settings.browser) return setToast("Turn on the browser panel in Settings to mark issues");
     const { invoke } = await import("@tauri-apps/api/core");
     const label = activeBrowserLabel(ws);
@@ -1650,7 +1652,7 @@ export default function App() {
           <span className="brand-name">Crux</span>
           {import.meta.env.DEV && <span className="brand-dev" title="Development build (npm run app:dev)">DEV</span>}
         </span>
-        <button className="side-toggle" title={sideHidden ? "Show sidebar (⌘S)" : "Hide sidebar (⌘S)"} onClick={toggleSide}>
+        <button className="side-toggle" title={sideHidden ? `Show sidebar (${KEY.sidebar})` : `Hide sidebar (${KEY.sidebar})`} onClick={toggleSide}>
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
             <rect x="1.5" y="2.5" width="13" height="11" rx="2" />
             <path d="M6 2.5v11" />
@@ -1697,7 +1699,7 @@ export default function App() {
               <path d="m10.5 10.5 3 3" />
             </svg>
             Search chats
-            <kbd>⌘K</kbd>
+            <kbd>{KEY.search}</kbd>
           </button>
           <button className={`side-item view-item side-home ${view === "home" ? "active" : ""}`} onClick={() => setView("home")} title="Home: what needs you">
             <span className="avatar view-icon">
@@ -2046,7 +2048,8 @@ export default function App() {
             onResume={resumePast}
             onOpenUrl={(url) => {
               if (!settings.jira) {
-                if (IN_TAURI) return setToast("Turn on the Browser view in Settings → Tabs & views");
+                // No in-app browser on Linux / Windows: open it outside Crux.
+                if (IN_TAURI && config.browserSupported !== false) return setToast("Turn on the Browser view in Settings → Tabs & views");
                 return void window.open(url, "_blank", "noopener");
               }
               setBrowserOpen({ url, nonce: Date.now() });
@@ -2167,7 +2170,7 @@ export default function App() {
                           {name}
                         </button>
                       ))}
-                      <button className="pane-collapse" title="Hide panel (⌘B)" onClick={() => hideRight(true)}>»</button>
+                      <button className="pane-collapse" title={`Hide panel (${KEY.panel})`} onClick={() => hideRight(true)}>»</button>
                     </nav>
                     {panelTab === "preview" && <Preview key={view} wsKey={view} />}
                     {panelTab === "tree" && <TestTree repo={view} />}
@@ -2191,7 +2194,7 @@ export default function App() {
               </section>
             }
             {rightHidden && hasPanel && (
-              <button className="pane-reopen" title="Show panel (⌘B)" onClick={() => hideRight(false)}>
+              <button className="pane-reopen" title={`Show panel (${KEY.panel})`} onClick={() => hideRight(false)}>
                 «
               </button>
             )}
@@ -2342,6 +2345,7 @@ export default function App() {
             setSettingsOpen(false);
             setOnboarding("intro");
           }}
+          browserSupported={config.browserSupported !== false}
           onPermissions={() => {
             setSettingsOpen(false);
             permsAlone.current = true;
@@ -2489,7 +2493,7 @@ export default function App() {
           onDone={(mode) => {
             if (mode !== settings.mode) saveSettings({ mode });
             // Permissions are macOS prompts: only in the desktop app.
-            setOnboarding(IN_TAURI ? "permissions" : "welcome");
+            setOnboarding(IN_TAURI && IS_MAC ? "permissions" : "welcome");
           }}
         />
       )}

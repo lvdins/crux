@@ -51,7 +51,8 @@ export function attachTerm(
   if (openLog.length > 50) openLog.shift();
   let entry = terms.get(id);
   if (!entry) {
-    const shell = process.env.SHELL || "/bin/zsh";
+    // macOS defaults to zsh, Linux to bash.
+    const shell = process.env.SHELL || (process.platform === "darwin" ? "/bin/zsh" : "/bin/bash");
     // Strip Claude-session markers: if the Crux server itself was started
     // from a Claude Code session, child shells would otherwise be treated as
     // nested sessions (transcript saving off, etc.).

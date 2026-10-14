@@ -73,12 +73,19 @@ export const MODE_PRESETS: Record<Settings["mode"], Settings> = {
   regular: { mode: "regular", ...views(false), ...PREFS },
 };
 
+/**
+ * The in-app browser (panes, the agents' crux-browser tools, ⌘⇧C, the
+ * Browser view) is built on macOS's WebKit: elsewhere it's always off.
+ */
+export const BROWSER_SUPPORTED = process.platform === "darwin";
+const NO_BROWSER = { browser: false, network: false, picker: false, jira: false } as const;
+
 /** Saved settings over the mode's preset (existing users default to QA). */
 export function currentSettings(): Settings {
   const { qaPanels, ...saved } = (config.settings ?? {}) as Partial<Settings> & { qaPanels?: boolean };
   // Before 0.1.11 one "QA panels" switch covered these tabs.
   const legacy = qaPanels === false ? { docPreview: false, tests: false, coverage: false, pipelines: false } : {};
-  return { ...MODE_PRESETS[saved.mode ?? "qa"], ...legacy, ...saved };
+  return { ...MODE_PRESETS[saved.mode ?? "qa"], ...legacy, ...saved, ...(BROWSER_SUPPORTED ? {} : NO_BROWSER) };
 }
 
 // Bundled defaults (the original Giraffe360 setup); used only to seed a

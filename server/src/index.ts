@@ -5,7 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
-import { currentSettings, DEFAULT_CHATS, MODE_PRESETS, PREF_KEYS, SETTING_KEYS, type Settings } from "./config.js";
+import { BROWSER_SUPPORTED, currentSettings, DEFAULT_CHATS, MODE_PRESETS, PREF_KEYS, SETTING_KEYS, type Settings } from "./config.js";
 import { config, saveConfig, userConfigPath, addWorkspace, updateWorkspace, removeWorkspace, detectKind, expandHome } from "./config.js";
 import { attachTerm, termInput, termResize, killTerm, detachAll, killAllTerms, openLog, termProcess } from "./term.js";
 import { startPreview, stopPreview, stopAllPreviews, previewStatus } from "./preview.js";
@@ -48,6 +48,7 @@ app.get("/api/config", (_req, res) => {
     onboarded: !!config.onboarded,
     userName: config.userName ?? "",
     settings: currentSettings(),
+    browserSupported: BROWSER_SUPPORTED,
   });
 });
 

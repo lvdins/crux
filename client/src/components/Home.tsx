@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../net";
+import { KEY } from "../platform";
 import type { PastChat } from "./ChatSearch";
 import { ClaudeLogo, CodexLogo, TerminalIcon } from "./icons";
 import { checkPrompt, type PipelineInfo } from "./PipelinesPanel";
@@ -290,7 +291,9 @@ export default function Home({
             )}
           </div>
         </div>
-        <p className="home-foot">⌥Space from any app: ask an agent without opening Crux · ⌘K: search chats</p>
+        <p className="home-foot">
+          {KEY.quickAsk} from any app: ask an agent without opening Crux · {KEY.search}: search chats
+        </p>
       </div>
     </section>
   );

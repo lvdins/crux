@@ -27,6 +27,12 @@ fn server_running() -> bool {
     TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_millis(300)).is_ok()
 }
 
+/// The bundled Node binary in ql-runtime (scripts/bundle-server.mjs).
+#[cfg(windows)]
+const NODE_BIN: &str = "node.exe";
+#[cfg(not(windows))]
+const NODE_BIN: &str = "node";
+
 /// Packaged app: run the bundled Node + server from Resources/ql-runtime.
 /// Development: fall back to `npm run start -w server` in the repo.
 fn spawn_server(app: &tauri::App) -> Option<Child> {
@@ -39,12 +45,12 @@ fn spawn_server(app: &tauri::App) -> Option<Child> {
         .resource_dir()
         .ok()
         .map(|dir| dir.join("ql-runtime"))
-        .filter(|root| root.join("node").exists() && root.join("server/dist/index.mjs").exists());
+        .filter(|root| root.join(NODE_BIN).exists() && root.join("server/dist/index.mjs").exists());
 
     let home = std::env::var("HOME").unwrap_or_else(|_| "/".into());
     let mut cmd = match bundled {
         Some(root) => {
-            let mut c = Command::new(root.join("node"));
+            let mut c = Command::new(root.join(NODE_BIN));
             c.arg(root.join("server/dist/index.mjs")).env("CRUX_ROOT", &root).current_dir(&home);
             c
         }
@@ -84,6 +90,7 @@ fn spawn_server(app: &tauri::App) -> Option<Child> {
 
 /// Default macOS menu plus View → Toggle Sidebar (⌘S) / Right Panel (⌘B). A menu accelerator
 /// fires even when a terminal or a native browser pane has keyboard focus.
+#[cfg(target_os = "macos")]
 fn install_menu(app: &mut tauri::App) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItemBuilder, MenuItemKind, SubmenuBuilder};
     let toggle = MenuItemBuilder::with_id("toggle-sidebar", "Toggle Sidebar")
@@ -233,6 +240,10 @@ fn screen_permission() -> &'static str {
     if unsafe { CGPreflightScreenCaptureAccess() } {
         return "granted";
     }
+    // No such permission on Linux / Windows.
+    #[cfg(not(target_os = "macos"))]
+    return "granted";
+    #[allow(unreachable_code)]
     if SCREEN_ASKED.load(Ordering::Relaxed) { "restart" } else { "unknown" }
 }
 
@@ -253,7 +264,7 @@ fn request_screen_permission() -> bool {
         granted
     }
     #[cfg(not(target_os = "macos"))]
-    false
+    true
 }
 
 /// Quit and reopen Crux (a new Screen Recording grant needs it). Async, so it
@@ -293,6 +304,9 @@ fn open_privacy(pane: String) {
 /// (a DMG or quarantined Downloads copy runs from a temporary folder).
 #[tauri::command]
 fn in_applications() -> bool {
+    #[cfg(not(target_os = "macos"))]
+    return true;
+    #[allow(unreachable_code)]
     std::env::current_exe()
         .map(|p| p.starts_with("/Applications") || p.to_string_lossy().contains("/Users/") && p.to_string_lossy().contains("/Applications/"))
         .unwrap_or(false)
@@ -312,7 +326,11 @@ fn main_show(app: tauri::AppHandle) {
 
 fn quick_shortcut() -> tauri_plugin_global_shortcut::Shortcut {
     use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut};
-    Shortcut::new(Some(Modifiers::ALT), Code::Space)
+    // ⌥Space on macOS; Alt+Space opens the window menu on Linux / Windows.
+    #[cfg(target_os = "macos")]
+    return Shortcut::new(Some(Modifiers::ALT), Code::Space);
+    #[cfg(not(target_os = "macos"))]
+    Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::Space)
 }
 
 /// Agent chats for the menu bar panel, as the main window last sent them (JSON).
@@ -321,6 +339,23 @@ static TRAY_CHATS: Mutex<String> = Mutex::new(String::new());
 /// blurs it first, and that same click must not open it again.
 static TRAY_HIDDEN_AT: AtomicU64 = AtomicU64::new(0);
 const TRAY_WIDTH: f64 = 380.0;
+/// Bottom edge the panel grows up from, when it opened above a bottom taskbar.
+static TRAY_BOTTOM: Mutex<Option<f64>> = Mutex::new(None);
+
+/// Where the panel goes when the icon's position is unknown (Linux sends no
+/// tray click events): the top-right corner of the main screen.
+fn tray_anchor(app: &tauri::AppHandle) -> Option<tauri::Rect> {
+    if let Some(rect) = app.tray_by_id("crux").and_then(|t| t.rect().ok().flatten()) {
+        return Some(rect);
+    }
+    let m = app.primary_monitor().ok().flatten()?;
+    let scale = m.scale_factor();
+    let (x, y) = (m.position().x as f64 + m.size().width as f64 - 60.0 * scale, m.position().y as f64);
+    Some(tauri::Rect {
+        position: tauri::Position::Physical(tauri::PhysicalPosition::new(x as i32, y as i32)),
+        size: tauri::Size::Physical(tauri::PhysicalSize::new((40.0 * scale) as u32, (32.0 * scale) as u32)),
+    })
+}
 
 fn now_ms() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
@@ -342,7 +377,15 @@ fn tray_chats() -> serde_json::Value {
 #[tauri::command]
 fn tray_fit(app: tauri::AppHandle, height: f64) {
     if let Some(w) = app.get_webview_window("tray") {
-        let _ = w.set_size(tauri::LogicalSize::new(TRAY_WIDTH, height.clamp(60.0, 620.0)));
+        let h = height.clamp(60.0, 620.0);
+        let _ = w.set_size(tauri::LogicalSize::new(TRAY_WIDTH, h));
+        // Opened above a bottom taskbar: grow upward, keep the bottom edge.
+        if let Some(bottom) = *TRAY_BOTTOM.lock().unwrap() {
+            let scale = w.scale_factor().unwrap_or(1.0);
+            if let Ok(pos) = w.outer_position() {
+                let _ = w.set_position(tauri::PhysicalPosition::new(pos.x as f64, bottom - h * scale));
+            }
+        }
     }
 }
 
@@ -399,11 +442,20 @@ fn place_tray(app: &tauri::AppHandle, win: &tauri::WebviewWindow, rect: tauri::R
     let size = rect.size.to_physical::<f64>(scale);
     let width = TRAY_WIDTH * scale;
     let mut x = icon.x + size.width / 2.0 - width / 2.0;
+    let mut y = icon.y + size.height;
+    *TRAY_BOTTOM.lock().unwrap() = None;
     if let Ok(Some(m)) = app.monitor_from_point(icon.x, icon.y) {
         let (left, right) = (m.position().x as f64, m.position().x as f64 + m.size().width as f64);
         x = x.min(right - width - 8.0 * scale).max(left + 8.0 * scale);
+        // Taskbar at the bottom (Windows): open above the icon instead.
+        if icon.y > m.position().y as f64 + m.size().height as f64 / 2.0 {
+            let bottom = icon.y - 4.0 * scale;
+            let h = win.outer_size().map(|s| s.height as f64).unwrap_or(240.0 * scale);
+            *TRAY_BOTTOM.lock().unwrap() = Some(bottom);
+            y = bottom - h;
+        }
     }
-    let _ = win.set_position(tauri::PhysicalPosition::new(x, icon.y + size.height));
+    let _ = win.set_position(tauri::PhysicalPosition::new(x, y));
     let _ = win.show();
     if focus {
         let _ = win.set_focus();
@@ -434,7 +486,7 @@ fn capture_screen(app: &tauri::AppHandle) {
     std::thread::spawn(move || {
         use base64::Engine;
         let file = std::env::temp_dir().join(format!("crux-shot-{}.png", now_ms()));
-        let _ = Command::new("/usr/sbin/screencapture").args(["-i", "-x"]).arg(&file).status();
+        region_capture(&file);
         // No file: cancelled.
         let Ok(png) = std::fs::read(&file) else { return };
         let _ = std::fs::remove_file(&file);
@@ -443,16 +495,50 @@ fn capture_screen(app: &tauri::AppHandle) {
     });
 }
 
+/// Drag a box, save it to `file` (no file: cancelled).
+#[cfg(target_os = "macos")]
+fn region_capture(file: &std::path::Path) {
+    let _ = Command::new("/usr/sbin/screencapture").args(["-i", "-x"]).arg(file).status();
+}
+
+/// Linux: whichever region screenshot tool the desktop has.
+#[cfg(target_os = "linux")]
+fn region_capture(file: &std::path::Path) {
+    const PICK: &str = r#"f="$1"
+if command -v gnome-screenshot >/dev/null; then gnome-screenshot -a -f "$f"
+elif command -v spectacle >/dev/null; then spectacle -b -n -r -o "$f"
+elif command -v grim >/dev/null && command -v slurp >/dev/null; then g=$(slurp) && grim -g "$g" "$f"
+elif command -v flameshot >/dev/null; then flameshot gui --raw > "$f"
+elif command -v maim >/dev/null; then maim -s "$f"
+elif command -v scrot >/dev/null; then scrot -s "$f"
+elif command -v import >/dev/null; then import "$f"
+fi"#;
+    let _ = Command::new("sh").args(["-c", PICK, "crux-capture"]).arg(file).status();
+    // An empty file (cancelled flameshot) is no screenshot.
+    if std::fs::metadata(file).map(|m| m.len() == 0).unwrap_or(false) {
+        let _ = std::fs::remove_file(file);
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn region_capture(_file: &std::path::Path) {}
+
 /// Menu bar icon: a click opens the agents panel; right-click a small menu
 /// (closing the window only hides Crux).
 fn install_tray(app: &mut tauri::App) -> tauri::Result<()> {
     use tauri::menu::{MenuBuilder, MenuItemBuilder};
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+    // Linux sends no tray clicks: the panel is a menu item there.
+    let agents = MenuItemBuilder::with_id("tray-panel", "Agents…").build(app)?;
     let open = MenuItemBuilder::with_id("tray-open", "Open Crux").build(app)?;
     let quick = MenuItemBuilder::with_id("tray-quick", "Quick Ask…").accelerator("Alt+Space").build(app)?;
     let updates = MenuItemBuilder::with_id("tray-updates", "Check for Updates…").build(app)?;
     let quit = MenuItemBuilder::with_id("tray-quit", "Quit Crux").accelerator("CmdOrCtrl+Q").build(app)?;
-    let menu = MenuBuilder::new(app).item(&open).item(&quick).item(&updates).separator().item(&quit).build()?;
+    let mut menu = MenuBuilder::new(app);
+    if cfg!(target_os = "linux") {
+        menu = menu.item(&agents);
+    }
+    let menu = menu.item(&open).item(&quick).item(&updates).separator().item(&quit).build()?;
     let mut tray = TrayIconBuilder::with_id("crux")
         .tooltip("Crux")
         .menu(&menu)
@@ -465,6 +551,11 @@ fn install_tray(app: &mut tauri::App) -> tauri::Result<()> {
                 let _ = app.emit_to("main", "menu:check-updates", ());
             }
             "tray-quit" => app.exit(0),
+            "tray-panel" => {
+                if let Some(rect) = tray_anchor(app) {
+                    toggle_tray(app, rect);
+                }
+            }
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
@@ -498,6 +589,9 @@ fn main() {
         .setup(move |app| {
             browser::keep_logins(app.handle().clone());
             *server_for_setup.lock().unwrap() = spawn_server(app);
+            // macOS menu bar (⌘S, ⌘B, …). On Linux / Windows the page handles
+            // Ctrl+Shift+S / B / K itself, so terminals keep their Ctrl keys.
+            #[cfg(target_os = "macos")]
             install_menu(app)?;
             install_tray(app)?;
             // Started at login: stay in the menu bar until opened.
@@ -582,7 +676,10 @@ fn main() {
                 if let Some(mut child) = server.lock().unwrap().take() {
                     // Ask first, so the server saves every chat's screen for
                     // reopening; force it if it hasn't stopped after 2 s.
+                    #[cfg(unix)]
                     let _ = Command::new("kill").args(["-TERM", &child.id().to_string()]).status();
+                    #[cfg(not(unix))]
+                    let _ = child.kill();
                     for _ in 0..20 {
                         if matches!(child.try_wait(), Ok(Some(_))) {
                             return;

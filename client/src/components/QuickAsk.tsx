@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../net";
+import { KEY } from "../platform";
 
 type Repo = { label: string };
 
@@ -108,7 +109,7 @@ export default function QuickAsk() {
           </select>
         )}
         <span className="quick-hint" data-tauri-drag-region>
-          <kbd>Enter</kbd> ask · <kbd>⌘Enter</kbd> ask &amp; open · <kbd>⌘K</kbd> search chats · <kbd>Esc</kbd> close
+          <kbd>Enter</kbd> ask · <kbd>{KEY.askOpen}</kbd> ask &amp; open · <kbd>{KEY.quickSearch}</kbd> search chats · <kbd>Esc</kbd> close
         </span>
       </div>
     </div>

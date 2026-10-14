@@ -12,6 +12,8 @@ export interface AppConfig {
   onboarded?: boolean;
   userName?: string;
   settings?: Settings;
+  /** The in-app browser needs macOS's WebKit; off (and hidden) on Linux and Windows. */
+  browserSupported?: boolean;
 }
 
 export interface TestCase {

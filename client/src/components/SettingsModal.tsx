@@ -3,6 +3,7 @@ import { api } from "../net";
 import { notify, notifyAllowed } from "../notify";
 import type { Settings } from "../types";
 import { useModalKeys } from "../useModalKeys";
+import { IS_MAC, KEY } from "../platform";
 import SetupChecklist, { type ToolHealth } from "./SetupChecklist";
 
 type Key = Exclude<keyof Settings, "mode" | "defaultChat" | "jiraProject">;
@@ -14,6 +15,9 @@ interface Toggle {
   parent?: Key;
 }
 type Group = { title: string; toggles: Toggle[] };
+
+/** Toggles that need the in-app browser (macOS only). */
+const BROWSER_KEYS: Key[] = ["browser", "network", "picker", "jira"];
 
 const VIEW_GROUPS: Group[] = [
   {
@@ -77,12 +81,12 @@ const DEFAULT_CHAT: { value: Settings["defaultChat"]; label: string }[] = [
 ];
 
 const SHORTCUTS: [string, string][] = [
-  ["⌘ S", "Show / hide the sidebar"],
-  ["⌘ B", "Show / hide the workspace panel"],
-  ["⌘ K", "Search chats and past conversations"],
-  ["⌥ Space", "Quick ask, from any app (desktop app)"],
-  ["⌘ ⇧ C", "Mark an issue in the browser"],
-  ["⌘ ⇧ ⌫", "Delete the open workspace"],
+  [KEY.sidebar, "Show / hide the sidebar"],
+  [KEY.panel, "Show / hide the workspace panel"],
+  [KEY.search, "Search chats and past conversations"],
+  [KEY.quickAsk, "Quick ask, from any app (desktop app)"],
+  [KEY.mark, "Mark an issue in the browser"],
+  [KEY.deleteWs, "Delete the open workspace"],
   ["⇧ Enter", "New line in a chat"],
   ["Enter / Esc", "Confirm / cancel a dialog"],
 ];
@@ -123,12 +127,15 @@ export default function SettingsModal({
   onSetupChecked,
   onFix,
   initialPage = "profile",
+  browserSupported = true,
 }: {
   settings: Settings;
   onChange: (patch: Partial<Settings>) => void;
   onClose: () => void;
   /** Replays the intro + welcome + setup guide. */
   onReplayIntro: () => void;
+  /** False on Linux / Windows: the browser toggles and ⌘⇧C are left out. */
+  browserSupported?: boolean;
   /** Opens the Permissions step (notifications, screen recording, folders). */
   onPermissions: () => void;
   userName: string;
@@ -277,11 +284,11 @@ export default function SettingsModal({
                   onBlur={() => jira.trim() !== settings.jiraProject && onChange({ jiraProject: jira.trim() })}
                 />
                 <p className="settings-note">
-                  Used by “File as Jira bug” after you mark an issue with ⌘⇧C. The agent files it with its own Jira access.
+                  Used by “File as Jira bug” after you mark an issue with {KEY.mark}. The agent files it with its own Jira access.
                 </p>
                 <div className="settings-section">Getting started</div>
                 <div className="settings-list">
-                  {IN_TAURI && (
+                  {IN_TAURI && IS_MAC && (
                     <div className="settings-row static">
                       <span className="settings-text">
                         <b>Permissions</b>
@@ -349,7 +356,17 @@ export default function SettingsModal({
               </>
             )}
 
-            {page === "tabs" && VIEW_GROUPS.map(toggles)}
+            {page === "tabs" && (
+              <>
+                {!browserSupported && (
+                  <p className="settings-note first">The browser (and the agents' browser tools) is macOS-only for now.</p>
+                )}
+                {(browserSupported
+                  ? VIEW_GROUPS
+                  : VIEW_GROUPS.map((g) => ({ ...g, toggles: g.toggles.filter((t) => !BROWSER_KEYS.includes(t.key)) }))
+                ).map(toggles)}
+              </>
+            )}
 
             {page === "chats" && (
               <>
@@ -430,7 +447,7 @@ export default function SettingsModal({
               <>
                 <div className="settings-section">Keyboard shortcuts</div>
                 <div className="settings-list">
-                  {SHORTCUTS.map(([keys, what]) => (
+                  {SHORTCUTS.filter(([keys]) => browserSupported || keys !== KEY.mark).map(([keys, what]) => (
                     <div key={keys} className="settings-row static">
                       <span className="settings-text">
                         <b>{what}</b>

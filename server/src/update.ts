@@ -30,6 +30,8 @@ export function latestRelease(): Promise<string | null> {
  * Runs as a detached script so it survives Crux (and this server) quitting.
  */
 export function installRelease(tag: string): void {
+  if (process.platform === "linux") return installAppImage(tag);
+  if (process.platform !== "darwin") throw new Error("Download the new version from GitHub releases");
   // Packaged server lives in <App>.app/Contents/Resources/ql-runtime.
   const app = path.resolve(ROOT, "../../..");
   if (!app.endsWith(".app")) throw new Error("Not running from an installed Crux.app");
@@ -68,5 +70,35 @@ rm -rf "$T"
     detached: true,
     stdio: ["ignore", out, out],
     env: { ...process.env, TAG: tag, REPO, APP: app },
+  }).unref();
+}
+
+/**
+ * Linux: the AppImage is one file ($APPIMAGE, set by its runtime). Download
+ * the release's AppImage, quit Crux, put the new file in its place, reopen.
+ * A .deb install updates through its package instead.
+ */
+function installAppImage(tag: string): void {
+  const appImage = process.env.APPIMAGE;
+  if (!appImage) throw new Error("Only the AppImage updates itself: install the new .deb from GitHub releases");
+  const log = path.join(CRUX_HOME, "update.log");
+  const script = `set -e
+T=$(mktemp -d -t crux-update.XXXXXX)
+gh release download "$TAG" -R "$REPO" -p '*.AppImage' -D "$T"
+NEW=$(ls "$T"/*.AppImage | head -1)
+chmod +x "$NEW"
+kill -TERM "$APP_PID" 2>/dev/null || true
+for i in $(seq 1 50); do kill -0 "$APP_PID" 2>/dev/null || break; sleep 0.2; done
+mv -f "$NEW" "$APPIMAGE"
+rm -rf "$T"
+nohup "$APPIMAGE" >/dev/null 2>&1 &
+`;
+  fs.mkdirSync(CRUX_HOME, { recursive: true });
+  const out = fs.openSync(log, "w");
+  // The desktop app started this server: its pid is ours to stop.
+  spawn("/bin/bash", ["-c", script], {
+    detached: true,
+    stdio: ["ignore", out, out],
+    env: { ...process.env, TAG: tag, REPO, APPIMAGE: appImage, APP_PID: String(process.ppid) },
   }).unref();
 }

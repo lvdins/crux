@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { api } from "../net";
+import { IS_MAC } from "../platform";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
@@ -111,6 +112,14 @@ export default function Term({
       // Shift+Enter = new line, not send: Ctrl+J is the newline key Claude
       // Code and Codex both accept in any terminal.
       term.attachCustomKeyEventHandler((e) => {
+        // Linux / Windows: Ctrl+Shift+C / V copy and paste (plain Ctrl+C stops the program).
+        if (!IS_MAC && e.ctrlKey && e.shiftKey && !e.altKey && (e.code === "KeyC" || e.code === "KeyV")) {
+          if (e.type === "keydown") {
+            if (e.code === "KeyC") void navigator.clipboard?.writeText(term.getSelection()).catch(() => undefined);
+            else void navigator.clipboard?.readText().then((t) => t && term.paste(t)).catch(() => undefined);
+          }
+          return false;
+        }
         if (e.key !== "Enter" || !e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return true;
         if (e.type === "keydown") send({ type: "term:input", id, data: "\n" });
         return false;

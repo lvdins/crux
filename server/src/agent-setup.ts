@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { config } from "./config.js";
+import { BROWSER_SUPPORTED, config } from "./config.js";
 import { CRUX_HOME, SERVER_URL, rootPath } from "./paths.js";
 
 /**
@@ -11,12 +11,16 @@ import { CRUX_HOME, SERVER_URL, rootPath } from "./paths.js";
  *
  * zsh shells get ZDOTDIR pointed at ~/.crux/zsh, whose startup files
  * source the user's own files first and then wrap `claude` / `codex` with
- * the MCP config. Nothing in the user's dotfiles or repos is modified.
+ * the MCP config. Other shells (bash on Linux, fish, …) get the same through
+ * small `claude` / `codex` scripts in ~/.crux/bin, put first on PATH.
+ * Nothing in the user's dotfiles or repos is modified.
  */
 
 const home = CRUX_HOME;
 export const ZSH_DIR = path.join(home, "zsh");
 const MCP_DIR = path.join(home, "mcp");
+/** `claude` / `codex` wrappers for shells other than zsh. */
+export const BIN_DIR = path.join(home, "bin");
 export const BROWSER_MCP = rootPath("server", "mcp", "browser-mcp.mjs");
 
 export const mcpConfigPath = (ws: string) => path.join(MCP_DIR, `${ws}.json`);
@@ -127,18 +131,22 @@ unset __ql_zdotdir
 `;
 
 const ZSHRC = `${forward(".zshrc")}
-# claude / codex get the crux-browser tools for this workspace.
-if [[ -n "$CRUX_MCP_CONFIG" && -f "$CRUX_MCP_CONFIG" ]]; then
+# claude / codex in a Crux terminal: Crux's hooks (finished / needs input) and,
+# where the in-app browser exists (macOS), the crux-browser tools.
+if [[ -n "$CRUX_TERM" ]]; then
   claude() {
     case "$1" in
       mcp|config|update|doctor|install|setup-token|migrate-installer|plugin|plugins|auth|-v|--version|-h|--help)
         command claude "$@" ;;
       *)
-        local hooks=()
-        [[ -f "$CRUX_HOOKS" ]] && hooks=(--settings "$CRUX_HOOKS")
-        command claude --mcp-config "$CRUX_MCP_CONFIG" "\${hooks[@]}" "$@" ;;
+        local extra=()
+        [[ -n "$CRUX_MCP_CONFIG" && -f "$CRUX_MCP_CONFIG" ]] && extra+=(--mcp-config "$CRUX_MCP_CONFIG")
+        [[ -f "$CRUX_HOOKS" ]] && extra+=(--settings "$CRUX_HOOKS")
+        command claude "\${extra[@]}" "$@" ;;
     esac
   }
+fi
+if [[ -n "$CRUX_MCP_CONFIG" && -f "$CRUX_MCP_CONFIG" ]]; then
   codex() {
     command codex \\
       -c "mcp_servers.crux_browser.command=\\"$QL_NODE\\"" \\
@@ -149,7 +157,36 @@ if [[ -n "$CRUX_MCP_CONFIG" && -f "$CRUX_MCP_CONFIG" ]]; then
 fi
 `;
 
+// POSIX sh: run the real claude / codex (the next one on PATH after ours)
+// with Crux's hooks and, on macOS, the crux-browser tools.
+const binWrapper = (name: "claude" | "codex") => `#!/bin/sh
+# Crux: ${name === "claude" ? "claude with Crux's hooks and, on macOS, its browser tools" : "codex with Crux's browser tools on macOS"}. Made by Crux; rewritten on start.
+here=$(cd "$(dirname "$0")" && pwd)
+real=$(PATH=$(printf %s "$PATH" | tr ':' '\n' | grep -vx "$here" | paste -sd: -) command -v ${name})
+[ -n "$real" ] || { echo "${name}: not found on PATH" >&2; exit 127; }
+${
+  name === "claude"
+    ? `case "$1" in
+  mcp|config|update|doctor|install|setup-token|migrate-installer|plugin|plugins|auth|-v|--version|-h|--help) exec "$real" "$@" ;;
+esac
+[ -f "$CRUX_HOOKS" ] && set -- --settings "$CRUX_HOOKS" "$@"
+[ -n "$CRUX_MCP_CONFIG" ] && [ -f "$CRUX_MCP_CONFIG" ] && set -- --mcp-config "$CRUX_MCP_CONFIG" "$@"`
+    : `[ -n "$CRUX_MCP_CONFIG" ] && [ -f "$CRUX_MCP_CONFIG" ] && set -- \\
+  -c "mcp_servers.crux_browser.command=\\"$QL_NODE\\"" \\
+  -c "mcp_servers.crux_browser.args=[\\"$QL_BROWSER_MCP\\"]" \\
+  -c "mcp_servers.crux_browser.env={CRUX_WORKSPACE=\\"$CRUX_WORKSPACE\\",CRUX_URL=\\"$CRUX_URL\\"}" \\
+  "$@"`
+}
+exec "$real" "$@"
+`;
+
 export function installAgentSetup(): void {
+  fs.mkdirSync(BIN_DIR, { recursive: true });
+  for (const name of ["claude", "codex"] as const) {
+    const file = path.join(BIN_DIR, name);
+    fs.writeFileSync(file, binWrapper(name));
+    fs.chmodSync(file, 0o755);
+  }
   fs.mkdirSync(ZSH_DIR, { recursive: true });
   fs.writeFileSync(path.join(ZSH_DIR, ".zshenv"), forward(".zshenv"));
   fs.writeFileSync(path.join(ZSH_DIR, ".zprofile"), forward(".zprofile"));
@@ -166,13 +203,17 @@ export function agentEnv(ws: string, shell: string, term: string): Record<string
     CRUX_TERM: term,
     CRUX_HOOKS: hooksSupported ? HOOKS_PATH : "",
     CRUX_URL: SERVER_URL,
-    CRUX_MCP_CONFIG: mcpConfigPath(ws),
+    // No in-app browser off macOS: agents get no crux-browser tools there.
+    CRUX_MCP_CONFIG: BROWSER_SUPPORTED ? mcpConfigPath(ws) : "",
     QL_NODE: process.execPath,
     QL_BROWSER_MCP: BROWSER_MCP,
   };
   if (path.basename(shell) === "zsh") {
     env.QL_USER_ZDOTDIR = process.env.ZDOTDIR || os.homedir();
     env.ZDOTDIR = ZSH_DIR;
+  } else if (process.platform !== "win32") {
+    // bash, fish, …: the wrappers in ~/.crux/bin come first on PATH.
+    env.PATH = `${BIN_DIR}${path.delimiter}${process.env.PATH ?? ""}`;
   }
   return env;
 }
