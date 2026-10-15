@@ -20,6 +20,7 @@ import { pipelinesFor } from "./pipelines.js";
 import { checkSetup } from "./health.js";
 import { inboxMrs } from "./inbox.js";
 import { pastChats } from "./sessions.js";
+import { importCookies, importSites, importSources } from "./browserImport.js";
 import { adoptLoginShellPath, checkTools, CRUX_HOME, PACKAGED, PORT, rootPath } from "./paths.js";
 
 adoptLoginShellPath();
@@ -424,6 +425,35 @@ app.post("/api/agent-browser/:ws", async (req, res) => {
 });
 
 app.get("/api/codex-models", (_req, res) => res.json(codexModels()));
+
+// Import logins from Arc / Chrome (see browserImport.ts). Decrypted cookies
+// only go to the Crux window: requests must carry its Origin, so other local
+// programs (which send none) can't fetch them.
+const fromUi = (req: express.Request, res: express.Response) => {
+  if (req.headers.origin) return true;
+  res.status(403).json({ error: "Only the Crux window can import logins" });
+  return false;
+};
+app.get("/api/browser-import/sources", (req, res) => {
+  if (fromUi(req, res)) res.json(importSources());
+});
+app.get("/api/browser-import/sites", async (req, res) => {
+  if (!fromUi(req, res)) return;
+  try {
+    res.json(await importSites(String(req.query.browser ?? ""), String(req.query.profile ?? "")));
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+app.post("/api/browser-import/cookies", async (req, res) => {
+  if (!fromUi(req, res)) return;
+  try {
+    const sites = Array.isArray(req.body?.sites) ? req.body.sites.map(String) : [];
+    res.json(await importCookies(String(req.body?.browser ?? ""), String(req.body?.profile ?? ""), sites));
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
 
 // Orchestrator mode: the lead's crux-agents MCP tools (see orchestrator.ts).
 app.post("/api/orch/:lead/:tool", async (req, res) => {

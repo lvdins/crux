@@ -439,6 +439,45 @@ pub fn keep_logins(app: AppHandle) {
     });
 }
 
+/// Logins imported from Arc / Chrome (Set-Cookie lines from the server's
+/// browserImport.ts) go into the browser's cookie store, and into Crux's
+/// copy of the jar so keep_logins puts them back if no pane is open yet.
+#[tauri::command]
+pub async fn browser_import_cookies(app: AppHandle, cookies: Vec<String>) -> Result<usize, String> {
+    use tauri::webview::cookie::Cookie;
+    // Lines whose domain-wide cookies say "Domain=..site" (the parser drops one dot).
+    let (lines_in, parsed): (Vec<&String>, Vec<Cookie<'static>>) =
+        cookies.iter().filter_map(|l| Cookie::parse(l.clone()).ok().map(|c| (l, c))).unzip();
+    let view = app.webviews().into_iter().find(|(l, _)| l.starts_with("browser-")).map(|(_, v)| v);
+    let mut set = 0;
+    if let Some(view) = &view {
+        for c in &parsed {
+            if view.set_cookie(c.clone()).is_ok() {
+                set += 1;
+            }
+        }
+        for (label, v) in app.webviews() {
+            if label.starts_with("browser-") {
+                let _ = v.eval("location.reload()");
+            }
+        }
+    }
+    // Also in the backup jar (replacing the same name / domain / path).
+    let backup = cookie_backup_path();
+    let key = |c: &Cookie| format!("{}\t{}\t{}", c.name(), c.domain().unwrap_or("").trim_start_matches('.'), c.path().unwrap_or("/"));
+    let incoming: std::collections::HashSet<String> = parsed.iter().map(|c| key(c)).collect();
+    let mut lines: Vec<String> = std::fs::read_to_string(&backup)
+        .unwrap_or_default()
+        .lines()
+        .filter(|l| Cookie::parse(l.to_string()).map(|c| !incoming.contains(&key(&c))).unwrap_or(false))
+        .map(String::from)
+        .collect();
+    // The lines as given: to_string() would drop the extra dot again.
+    lines.extend(lines_in.iter().map(|l| l.to_string()));
+    write_private(&backup, &(lines.join("\n") + "\n"));
+    Ok(if view.is_some() { set } else { parsed.len() })
+}
+
 fn cookie_backup_path() -> std::path::PathBuf {
     let home = crate::home_dir();
     std::env::var("CRUX_HOME")

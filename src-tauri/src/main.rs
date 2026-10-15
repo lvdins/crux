@@ -725,6 +725,7 @@ fn main() {
             browser::browser_ensure,
             browser::browser_js,
             browser::browser_screenshot,
+            browser::browser_import_cookies,
             browser::browser_devtools,
             set_background,
             set_tray_title,

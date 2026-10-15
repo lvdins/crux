@@ -5,6 +5,7 @@ import type { Settings } from "../types";
 import { useModalKeys } from "../useModalKeys";
 import { IS_MAC, KEY } from "../platform";
 import SetupChecklist, { type ToolHealth } from "./SetupChecklist";
+import ImportLogins from "./ImportLogins";
 
 type Key = Exclude<keyof Settings, "mode" | "defaultChat" | "jiraProject">;
 interface Toggle {
@@ -365,6 +366,16 @@ export default function SettingsModal({
                   ? VIEW_GROUPS
                   : VIEW_GROUPS.map((g) => ({ ...g, toggles: g.toggles.filter((t) => !BROWSER_KEYS.includes(t.key)) }))
                 ).map(toggles)}
+                {browserSupported && IN_TAURI && IS_MAC && (
+                  <>
+                    <div className="settings-section">Browser logins</div>
+                    <p className="settings-note first">
+                      Copy your logins for chosen sites from Arc or Chrome into Crux's browser. A one-time copy: logging out in one doesn't log
+                      out the other. Some sites (Google) may ask you to sign in again.
+                    </p>
+                    <ImportLogins />
+                  </>
+                )}
               </>
             )}
 
