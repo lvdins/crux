@@ -165,6 +165,15 @@ fn show_main(app: &tauri::AppHandle) {
         let _ = w.unminimize();
         let _ = w.set_focus();
     }
+    // set_focus alone doesn't bring Crux in front of the app you were in
+    // (e.g. after the screenshot crosshair hands focus back to it).
+    #[cfg(target_os = "macos")]
+    let _ = app.run_on_main_thread(|| {
+        if let Some(mtm) = objc2::MainThreadMarker::new() {
+            #[allow(deprecated)]
+            objc2_app_kit::NSApplication::sharedApplication(mtm).activateIgnoringOtherApps(true);
+        }
+    });
 }
 
 /// ⌥Space from any app: a small always-on-top box that sends a prompt to an agent.
@@ -509,13 +518,32 @@ fn capture_screen(app: &tauri::AppHandle) {
     if !unsafe { CGPreflightScreenCaptureAccess() } {
         return;
     }
+    // Crux stays out of the way while you pick the area (hiding the panel can
+    // otherwise bring its main window forward, over what you want to capture);
+    // show_main brings it back once the screenshot is taken.
+    #[cfg(target_os = "macos")]
+    let _ = app.run_on_main_thread(|| {
+        if let Some(mtm) = objc2::MainThreadMarker::new() {
+            objc2_app_kit::NSApplication::sharedApplication(mtm).hide(None);
+        }
+    });
     let app = app.clone();
     std::thread::spawn(move || {
         use base64::Engine;
+        #[cfg(target_os = "macos")]
+        std::thread::sleep(std::time::Duration::from_millis(150));
         let file = std::env::temp_dir().join(format!("crux-shot-{}.png", now_ms()));
         region_capture(&file);
-        // No file: cancelled.
-        let Ok(png) = std::fs::read(&file) else { return };
+        // No file: cancelled. Crux comes back where it was, behind your app.
+        let Ok(png) = std::fs::read(&file) else {
+            #[cfg(target_os = "macos")]
+            let _ = app.run_on_main_thread(|| {
+                if let Some(mtm) = objc2::MainThreadMarker::new() {
+                    objc2_app_kit::NSApplication::sharedApplication(mtm).unhideWithoutActivation();
+                }
+            });
+            return;
+        };
         let _ = std::fs::remove_file(&file);
         show_main(&app);
         let _ = app.emit_to("main", "tray:screenshot", base64::engine::general_purpose::STANDARD.encode(png));

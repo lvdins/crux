@@ -1,6 +1,6 @@
 [package]
 name = "crux"
-version = "0.1.28"
+version = "0.1.29"
 description = "Crux desktop app"
 edition = "2021"
 
@@ -24,4 +24,4 @@ objc2 = "0.6"
 block2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSString", "NSError", "NSData", "NSDictionary", "NSArray", "NSUserNotification", "block2"] }
 objc2-web-kit = { version = "0.3", features = ["WKWebView", "WKContentWorld", "WKFrameInfo", "WKSnapshotConfiguration", "block2", "objc2-app-kit"] }
-objc2-app-kit = { version = "0.3", features = ["NSImage", "NSImageRep", "NSBitmapImageRep", "NSResponder", "NSView"] }
+objc2-app-kit = { version = "0.3", features = ["NSImage", "NSImageRep", "NSBitmapImageRep", "NSResponder", "NSView", "NSApplication", "NSRunningApplication"] }
