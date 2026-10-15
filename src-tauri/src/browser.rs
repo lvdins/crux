@@ -56,6 +56,25 @@ pub async fn browser_show(
     Ok(())
 }
 
+/// The page engine is the Mac's own WebKit (the installed Safari's), but an
+/// embedded view leaves "Version/… Safari/…" out of its user agent, so sites
+/// like Google Calendar call it an unsupported browser. Say what it is: the
+/// same string Safari sends (Safari also keeps the OS part at 10_15_7).
+fn safari_user_agent() -> String {
+    static UA: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    UA.get_or_init(|| {
+        let version = std::process::Command::new("/usr/bin/defaults")
+            .args(["read", "/Applications/Safari.app/Contents/Info.plist", "CFBundleShortVersionString"])
+            .output()
+            .ok()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .filter(|v| !v.is_empty() && v.chars().all(|c| c.is_ascii_digit() || c == '.'))
+            .unwrap_or_else(|| "18.0".to_string());
+        format!("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/{version} Safari/605.1.15")
+    })
+    .clone()
+}
+
 fn create(app: &AppHandle, label: &str, url: &str, x: f64, y: f64, w: f64, h: f64) -> Result<(), String> {
     let window = app.get_window("main").ok_or("main window missing")?;
     let events = app.clone();
@@ -66,6 +85,7 @@ fn create(app: &AppHandle, label: &str, url: &str, x: f64, y: f64, w: f64, h: f6
         .devtools(true)
         // Records fetch/XHR from document start for the Network panel.
         .initialization_script(include_str!("../../client/src/netRecorder.js"))
+        .user_agent(&safari_user_agent())
         .on_page_load(move |_view, payload| {
         let _ = events.emit_to(
             "main",
