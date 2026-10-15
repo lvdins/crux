@@ -10,7 +10,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { BROWSER_SUPPORTED, currentSettings, DEFAULT_CHATS, MODE_PRESETS, PREF_KEYS, SETTING_KEYS, type Settings } from "./config.js";
 import { config, saveConfig, userConfigPath, addWorkspace, updateWorkspace, removeWorkspace, detectKind, expandHome } from "./config.js";
 import { attachTerm, termInput, termResize, killTerm, detachAll, killAllTerms, openLog, termProcess, termTail } from "./term.js";
-import { allTeams, initOrchestrator, noteTermClosed, noteWorkerEvent, runTool, startTeam } from "./orchestrator.js";
+import { allTeams, codexModels, initOrchestrator, noteTermClosed, noteWorkerEvent, runTool, startTeam } from "./orchestrator.js";
 import { startPreview, stopPreview, stopAllPreviews, previewStatus } from "./preview.js";
 import { buildTree, sharedEndpoints } from "./tree.js";
 import { fullReply, hookDetail, installAgentSetup } from "./agent-setup.js";
@@ -423,6 +423,8 @@ app.post("/api/agent-browser/:ws", async (req, res) => {
   res.status(result.ok ? 200 : 400).json(result);
 });
 
+app.get("/api/codex-models", (_req, res) => res.json(codexModels()));
+
 // Orchestrator mode: the lead's crux-agents MCP tools (see orchestrator.ts).
 app.post("/api/orch/:lead/:tool", async (req, res) => {
   try {
@@ -475,6 +477,7 @@ wss.on("connection", (ws: WebSocket) => {
             max: Number(msg.max),
             kind: String(msg.kind),
             model: String(msg.model ?? ""),
+            codexModel: String(msg.codexModel ?? ""),
             approve: msg.approve !== false,
             task: String(msg.task ?? ""),
           });

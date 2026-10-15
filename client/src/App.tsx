@@ -1444,7 +1444,7 @@ export default function App() {
     const title = opts.task.split(/\s+/).slice(0, 4).join(" ").slice(0, 32) || "orchestrator";
     const id = addTab(chat, title, "claude", agentBoot("claude"));
     setTabs((prev) => ({ ...prev, [chat]: (prev[chat] ?? []).map((t) => (t.id === id ? { ...t, role: "lead" } : t)) }));
-    send({ type: "orch:start", ws: key, chat, lead: id, max: opts.max, kind: opts.kind, model: opts.model, approve: opts.approve, task: opts.task });
+    send({ type: "orch:start", ws: key, chat, lead: id, max: opts.max, kind: opts.kind, model: opts.model, codexModel: opts.codexModel, approve: opts.approve, task: opts.task });
     setChatTitles((prev) => ({ ...prev, [chat]: title }));
     setActiveChat((prev) => ({ ...prev, [key]: chat }));
     setView(key);

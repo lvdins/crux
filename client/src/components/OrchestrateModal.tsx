@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { api } from "../net";
 import { IS_MAC } from "../platform";
 import { ClaudeLogo, CodexLogo, OrchestrateIcon } from "./icons";
 
@@ -9,6 +10,8 @@ export interface OrchestrateOpts {
   kind: "claude" | "codex" | "mix";
   /** Claude model alias for the lead and Claude workers; "default" = your Claude setting. */
   model: string;
+  /** Codex model for Codex workers (an id from Codex's model list); "default" = your Codex setting. */
+  codexModel: string;
   /** The lead shows its plan and waits for your OK. */
   approve: boolean;
 }
@@ -28,10 +31,11 @@ const loadPrefs = (): Omit<OrchestrateOpts, "task"> => {
       max: [1, 2, 3, 4, 5].includes(p.max) ? p.max : 3,
       kind: ["claude", "codex", "mix"].includes(p.kind) ? p.kind : "claude",
       model: MODELS.some(([m]) => m === p.model) ? p.model : "opus",
+      codexModel: typeof p.codexModel === "string" && p.codexModel ? p.codexModel : "default",
       approve: p.approve !== false,
     };
   } catch {
-    return { max: 3, kind: "claude", model: "opus", approve: true };
+    return { max: 3, kind: "claude", model: "opus", codexModel: "default", approve: true };
   }
 };
 
@@ -47,14 +51,27 @@ export default function OrchestrateModal({
 }) {
   const [opts, setOpts] = useState<OrchestrateOpts>(() => ({ task: "", ...loadPrefs() }));
   const set = (patch: Partial<OrchestrateOpts>) => setOpts((o) => ({ ...o, ...patch }));
+  // Codex's own model list (what your account offers), best first.
+  const [codexModels, setCodexModels] = useState<{ id: string; label: string }[]>([]);
+  useEffect(() => {
+    void api("/api/codex-models")
+      .then((r) => r.json())
+      .then((list) => Array.isArray(list) && setCodexModels(list.slice(0, 3)))
+      .catch(() => {});
+  }, []);
+  const codexChoices = [...codexModels, { id: "default", label: "Default" }];
+  const usesClaude = opts.kind !== "codex";
+  const usesCodex = opts.kind !== "claude";
   const submit = () => {
     if (!opts.task.trim()) return;
     try {
-      localStorage.setItem(PREFS, JSON.stringify({ max: opts.max, kind: opts.kind, model: opts.model, approve: opts.approve }));
+      localStorage.setItem(PREFS, JSON.stringify({ max: opts.max, kind: opts.kind, model: opts.model, codexModel: opts.codexModel, approve: opts.approve }));
     } catch {
       /* not remembered */
     }
-    onStart({ ...opts, task: opts.task.trim() });
+    // A remembered Codex model your account no longer lists: use Codex's default.
+    const codexModel = codexChoices.some((m) => m.id === opts.codexModel) ? opts.codexModel : "default";
+    onStart({ ...opts, codexModel, task: opts.task.trim() });
   };
 
   return (
@@ -120,7 +137,8 @@ export default function OrchestrateModal({
           </div>
         </div>
         <div className="orch-field">
-          <span>Model</span>
+          {/* The lead is always Claude; this also sets Claude workers' model. */}
+          <span title="The lead is always Claude">{!usesCodex ? "Model" : usesClaude ? "Claude" : "Lead"}</span>
           <div className="orch-seg" role="radiogroup" aria-label="Claude model">
             {MODELS.map(([model, label]) => (
               <button
@@ -137,6 +155,29 @@ export default function OrchestrateModal({
             ))}
           </div>
         </div>
+        {usesCodex && (
+          <div className="orch-field">
+            <span>{usesClaude ? "Codex" : "Workers"}</span>
+            <div className="orch-seg" role="radiogroup" aria-label="Codex model">
+              {codexChoices.map((m) => {
+                const on = opts.codexModel === m.id || (m.id === "default" && !codexChoices.some((c) => c.id === opts.codexModel));
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={on}
+                    className={on ? "on" : ""}
+                    title={m.id === "default" ? "Whatever your Codex is set to" : m.id}
+                    onClick={() => set({ codexModel: m.id })}
+                  >
+                    {m.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
         <label className="orch-check">
           <input type="checkbox" checked={opts.approve} onChange={(e) => set({ approve: e.target.checked })} />
           Show me the plan before agents start

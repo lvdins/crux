@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { BROWSER_SUPPORTED, config } from "./config.js";
 import { BROWSER_MCP } from "./agent-setup.js";
@@ -41,6 +42,8 @@ export interface Team {
   kind: WorkerKind | "mix";
   /** Claude model alias for the lead and Claude workers ("" = your Claude default). */
   model?: string;
+  /** Codex model for Codex workers ("" = your Codex default). */
+  codexModel?: string;
   approve: boolean;
   token: string;
   workers: Worker[];
@@ -170,7 +173,7 @@ const workerBrief = (team: Team, w: Worker, repo: string) =>
   ].join("\n");
 
 /** The Orchestrate dialog: registers the lead before its terminal opens. */
-export function startTeam(opts: { ws: string; chat: string; lead: string; max: number; kind: string; model: string; approve: boolean; task: string }) {
+export function startTeam(opts: { ws: string; chat: string; lead: string; max: number; kind: string; model: string; codexModel: string; approve: boolean; task: string }) {
   const repo = config.repos[opts.ws];
   if (!repo || !opts.lead || !opts.task.trim()) throw new Error("Bad team");
   const team: Team = {
@@ -180,6 +183,7 @@ export function startTeam(opts: { ws: string; chat: string; lead: string; max: n
     max: Math.min(Math.max(opts.max | 0, 1), 5),
     kind: opts.kind === "codex" || opts.kind === "claude" ? opts.kind : "mix",
     model: /^[\w.-]{1,40}$/.test(opts.model) && opts.model !== "default" ? opts.model : "",
+    codexModel: /^[\w.-]{1,60}$/.test(opts.codexModel) && opts.codexModel !== "default" ? opts.codexModel : "",
     approve: opts.approve,
     token: crypto.randomBytes(18).toString("hex"),
     workers: [],
@@ -257,6 +261,20 @@ function publish(team: Team) {
   });
 }
 
+/** Codex's own model list (its cache of what your account offers), best first. */
+export function codexModels(): { id: string; label: string }[] {
+  try {
+    const file = path.join(process.env.CODEX_HOME || path.join(os.homedir(), ".codex"), "models_cache.json");
+    const models = JSON.parse(fs.readFileSync(file, "utf8")).models as { slug: string; display_name?: string; visibility?: string; priority?: number }[];
+    return models
+      .filter((m) => m.visibility === "list" && /^[\w.-]{1,60}$/.test(m.slug))
+      .sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99))
+      .map((m) => ({ id: m.slug, label: m.display_name || m.slug }));
+  } catch {
+    return [];
+  }
+}
+
 /** Every team, for windows that (re)connect. */
 export function allTeams() {
   for (const t of teams.values()) publish(t);
@@ -326,7 +344,7 @@ function spawn(team: Team, args: Record<string, unknown>) {
     append:
       kind === "claude"
         ? `${team.model ? ` --model ${team.model}` : ""}${branch ? " --permission-mode acceptEdits" : ""} --append-system-prompt ${envRef("CRUX_BRIEF")} ${envRef("CRUX_TASK")}`
-        : ` ${envRef("CRUX_TASK")}`,
+        : `${team.codexModel ? ` -m ${team.codexModel}` : ""} ${envRef("CRUX_TASK")}`,
   });
   team.workers.push(w);
   save();

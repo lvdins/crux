@@ -1632,7 +1632,7 @@ html.tray-window, html.tray-window body, html.tray-window #root { background: tr
 
 /* ---------- orchestrator ---------- */
 .chat-modal-icon.orch { color: var(--accent-ink); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
-.orch-modal { width: min(460px, 100%); }
+.orch-modal { width: min(520px, 100%); }
 .orch-task { min-height: 92px; resize: vertical; line-height: 1.45; }
 .orch-field { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--ink-soft); }
 .orch-field > span:first-child { width: 64px; flex: none; }
