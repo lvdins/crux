@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { DEFAULT_BROWSER_URL, browserLabel, setActiveBrowserLabel } from "../agentBrowser";
+import ContextMenu, { MenuIcons, type MenuItem } from "./ContextMenu";
 import { CANCEL_PICK_SCRIPT, PICK_SCRIPT, type PickedElement } from "../elementPicker";
 import NetworkPanel from "./NetworkPanel";
 
@@ -43,7 +44,7 @@ function normalise(input: string): string {
   if (/^[a-z]+:\/\//i.test(t)) return t;
   if (/^(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/.test(t)) return `http://${t}`;
   if (/^[\w-]+(\.[\w-]+)+(:\d+)?(\/|$)/.test(t)) return `https://${t}`;
-  return `https://duckduckgo.com/?q=${encodeURIComponent(t)}`;
+  return `https://www.google.com/search?q=${encodeURIComponent(t)}`;
 }
 
 /** Same page, ignoring query, hash and trailing slash. */
@@ -60,6 +61,7 @@ const samePage = (a: string, b: string) => {
 };
 
 const shortTitle = (t: Tab, marks: Bookmark[] = []) => {
+  if (t.name) return t.name;
   if (t.title) return t.title;
   const mark = marks.find((b) => samePage(b.url, t.url));
   if (mark) return mark.name;
@@ -74,6 +76,10 @@ interface Tab {
   id: number;
   url: string;
   title: string;
+  /** Your own name for the tab (double-click to rename); else the page title. */
+  name?: string;
+  /** Page zoom (1 = actual size). */
+  zoom?: number;
 }
 
 export default function Browser({
@@ -167,6 +173,22 @@ export default function Browser({
   const slotRef = useRef<HTMLDivElement>(null);
   const opened = useRef(new Set<string>());
   const editing = useRef(false);
+  const urlRef = useRef<HTMLInputElement>(null);
+  // Tab being renamed (double-click), and the name typed so far.
+  const [renaming, setRenaming] = useState<{ id: number; name: string } | null>(null);
+  // Bookmark being renamed (by URL).
+  const [renamingMark, setRenamingMark] = useState<{ url: string; name: string } | null>(null);
+  // Right-click menu on a tab or bookmark. The page is a native view drawn on
+  // top of everything, so it steps aside while a menu is open.
+  const [menu, setMenu] = useState<{ x: number; y: number; groups: MenuItem[][] } | null>(null);
+  // ⌘F find bar.
+  const [find, setFind] = useState<string | null>(null);
+  const findRef = useRef<HTMLInputElement>(null);
+  // Recently closed tabs, for ⌘⇧T.
+  const closedTabs = useRef<{ url: string; name?: string }[]>([]);
+  // Tab / bookmark being dragged to a new place.
+  const dragTab = useRef<number | null>(null);
+  const dragMark = useRef<string | null>(null);
   const activeRef = useRef(active);
   activeRef.current = active;
   const tabsRef = useRef(tabs);
@@ -214,9 +236,10 @@ export default function Browser({
       .catch((err) => setError(String(err)));
   }, [label]);
 
+  const pageShown = visible && !menu;
   useLayoutEffect(() => {
     if (!isTauri) return;
-    if (!visible) {
+    if (!pageShown) {
       void invoke("browser_hide", { label });
       return;
     }
@@ -260,7 +283,7 @@ export default function Browser({
       document.removeEventListener("transitionrun", schedule, true);
       void invoke("browser_hide", { label });
     };
-  }, [visible, label, place]);
+  }, [pageShown, label, place]);
 
   // URL / loading / title updates from every tab's native view.
   useEffect(() => {
@@ -313,6 +336,8 @@ export default function Browser({
 
   const closeTabRef = useRef<(id: number) => void>(() => {});
   const closeTab = (id: number) => {
+    const gone = tabs.find((t) => t.id === id);
+    if (gone) closedTabs.current = [...closedTabs.current.slice(-19), { url: gone.url, name: gone.name }];
     const l = labelFor(id);
     if (isTauri) void invoke("browser_close", { label: l }).catch(() => undefined);
     opened.current.delete(l);
@@ -320,7 +345,7 @@ export default function Browser({
     const rest = tabs.filter((t) => t.id !== id);
     if (rest.length === 0) {
       const fresh = Math.max(...tabs.map((t) => t.id)) + 1;
-      setTabs([{ id: fresh, url: defaultUrl ?? DEFAULT_BOOKMARKS[0].url, title: "" }]);
+      setTabs([{ id: fresh, url: defaultUrl ?? DEFAULT_BROWSER_URL, title: "" }]);
       setActiveId(fresh);
       return;
     }
@@ -328,6 +353,163 @@ export default function Browser({
     if (id === active.id) setActiveId(rest[Math.min(idx, rest.length - 1)].id);
   };
   closeTabRef.current = closeTab;
+
+  // ⌘T: a new Google tab with the address bar ready; ⌘L: the address bar.
+  const focusUrl = () =>
+    setTimeout(() => {
+      urlRef.current?.focus();
+      urlRef.current?.select();
+    }, 60);
+  const keyRef = useRef<(op: string) => void>(() => {});
+  const setZoom = (tab: Tab, zoom: number) => {
+    const z = Math.round(Math.min(3, Math.max(0.3, zoom)) * 100) / 100;
+    updateTab(tab.id, { zoom: z === 1 ? undefined : z });
+    if (isTauri) void invoke("browser_zoom", { label: labelFor(tab.id), scale: z }).catch(() => undefined);
+  };
+  const ZOOMS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+  const stepZoom = (dir: 1 | -1) => {
+    const now = active.zoom ?? 1;
+    const next = dir > 0 ? ZOOMS.find((z) => z > now + 0.001) : [...ZOOMS].reverse().find((z) => z < now - 0.001);
+    if (next) setZoom(active, next);
+  };
+  const duplicate = (t: Tab) => {
+    const id = Math.max(0, ...tabsRef.current.map((x) => x.id)) + 1;
+    setTabs((prev) => {
+      const i = prev.findIndex((x) => x.id === t.id);
+      const next = [...prev];
+      next.splice(i + 1, 0, { id, url: t.url, title: t.title, name: t.name });
+      return next;
+    });
+    setActiveId(id);
+  };
+  const showTab = (i: number) => {
+    const t = tabsRef.current[(i + tabsRef.current.length) % tabsRef.current.length];
+    if (t) setActiveId(t.id);
+  };
+  keyRef.current = (op) => {
+    if (!visible) return;
+    const at = tabs.findIndex((t) => t.id === active.id);
+    if (op === "new-tab" || op === "url") {
+      if (op === "new-tab") addTab(defaultUrl ?? DEFAULT_BROWSER_URL);
+      if (chromeHidden) toggleChrome();
+      focusUrl();
+    } else if (op === "reopen") {
+      const last = closedTabs.current.pop();
+      if (last) {
+        addTab(last.url);
+        if (last.name) setTimeout(() => updateTab(Math.max(...tabsRef.current.map((t) => t.id)), { name: last.name }), 0);
+      }
+    } else if (op === "close") closeTab(active.id);
+    else if (op === "reload" || op === "back" || op === "forward") action(op);
+    else if (op === "find") {
+      setFind((f) => f ?? "");
+      setTimeout(() => {
+        findRef.current?.focus();
+        findRef.current?.select();
+      }, 30);
+    } else if (op === "bookmark") toggleBookmark();
+    else if (op === "duplicate") duplicate(active);
+    else if (op === "zoom-in") stepZoom(1);
+    else if (op === "zoom-out") stepZoom(-1);
+    else if (op === "zoom-reset") setZoom(active, 1);
+    else if (op === "next-tab" || op === "next-tab-ctrl") showTab(at + 1);
+    else if (op === "prev-tab" || op === "prev-tab-ctrl") showTab(at - 1);
+    else if (op.startsWith("tab-")) {
+      const n = Number(op.slice(4));
+      showTab(n === 9 ? tabs.length - 1 : n - 1);
+    }
+  };
+  const runFind = (backwards = false) => {
+    if (!find || !isTauri) return;
+    const script = `return window.find(${JSON.stringify(find)}, false, ${backwards}, true, false, false, false)`;
+    void invoke("browser_js", { label, script }).catch(() => undefined);
+  };
+  const closeFind = () => {
+    setFind(null);
+    if (isTauri) void invoke("browser_js", { label, script: "window.getSelection()?.removeAllRanges(); return true" }).catch(() => undefined);
+  };
+  // A tab's zoom comes back when its page view is (re)created.
+  useEffect(() => {
+    if (isTauri && active.zoom) void invoke("browser_zoom", { label, scale: active.zoom }).catch(() => undefined);
+  }, [label, active.zoom, active.url]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const tabMenu = (e: React.MouseEvent, t: Tab) => {
+    e.preventDefault();
+    setMenu({
+      x: e.clientX,
+      y: e.clientY,
+      groups: [
+        [
+          { label: "Rename", icon: MenuIcons.rename, onSelect: () => setRenaming({ id: t.id, name: t.name ?? shortTitle(t, bookmarks) }) },
+          { label: "Duplicate", icon: MenuIcons.copy, onSelect: () => duplicate(t), shortcut: "⌘⇧D" },
+          { label: "Reload", icon: MenuIcons.read, onSelect: () => (t.id === active.id ? action("reload") : setActiveId(t.id)) },
+          { label: "Copy link", icon: MenuIcons.copy, onSelect: () => copy(t.url) },
+        ],
+        [
+          { label: "Close tab", icon: MenuIcons.remove, onSelect: () => closeTab(t.id), shortcut: "⌘W" },
+          ...(tabs.length > 1
+            ? [{ label: "Close other tabs", icon: MenuIcons.trash, danger: true, onSelect: () => tabs.filter((x) => x.id !== t.id).forEach((x) => closeTabRef.current(x.id)) }]
+            : []),
+        ],
+      ],
+    });
+  };
+  const saveMarks = (next: Bookmark[]) => {
+    setSavedBookmarks(next);
+    localStorage.setItem("crux.bookmarks", JSON.stringify(next));
+  };
+  const finishMarkRename = () => {
+    if (!renamingMark) return;
+    const name = renamingMark.name.trim();
+    if (name) saveMarks(savedBookmarks.map((b) => (b.url === renamingMark.url ? { ...b, name } : b)));
+    setRenamingMark(null);
+  };
+  const markMenu = (e: React.MouseEvent, b: Bookmark) => {
+    e.preventDefault();
+    if (fixedBookmarks) return;
+    setMenu({
+      x: e.clientX,
+      y: e.clientY,
+      groups: [
+        [
+          { label: "Open in new tab", icon: MenuIcons.copy, onSelect: () => addTab(b.url) },
+          { label: "Rename", icon: MenuIcons.rename, onSelect: () => setRenamingMark({ url: b.url, name: b.name }) },
+          { label: "Copy link", icon: MenuIcons.copy, onSelect: () => copy(b.url) },
+        ],
+        [{ label: "Delete bookmark", icon: MenuIcons.trash, danger: true, onSelect: () => saveMarks(savedBookmarks.filter((x) => x.url !== b.url)) }],
+      ],
+    });
+  };
+  const moveTab = (from: number, to: number) =>
+    setTabs((prev) => {
+      const a = prev.findIndex((t) => t.id === from);
+      const b = prev.findIndex((t) => t.id === to);
+      if (a < 0 || b < 0 || a === b) return prev;
+      const next = [...prev];
+      const [t] = next.splice(a, 1);
+      next.splice(b, 0, t);
+      return next;
+    });
+  const moveMark = (from: string, to: string) => {
+    const a = savedBookmarks.findIndex((m) => m.url === from);
+    const b = savedBookmarks.findIndex((m) => m.url === to);
+    if (a < 0 || b < 0 || a === b) return;
+    const next = [...savedBookmarks];
+    const [m] = next.splice(a, 1);
+    next.splice(b, 0, m);
+    saveMarks(next);
+  };
+  useEffect(() => {
+    const onKey = (e: Event) => keyRef.current(String((e as CustomEvent<string>).detail));
+    window.addEventListener("ql:browser-key", onKey);
+    return () => window.removeEventListener("ql:browser-key", onKey);
+  }, []);
+
+  const finishRename = () => {
+    if (!renaming) return;
+    updateTab(renaming.id, { name: renaming.name.trim() || undefined });
+    setRenaming(null);
+  };
 
   // Sidebar asks to activate / close one of our tabs.
   useEffect(() => {
@@ -416,8 +598,40 @@ export default function Browser({
             title={t.url}
             onClick={() => setActiveId(t.id)}
             onAuxClick={(e) => e.button === 1 && closeTab(t.id)}
+            onDoubleClick={() => setRenaming({ id: t.id, name: t.name ?? shortTitle(t, bookmarks) })}
+            onContextMenu={(e) => tabMenu(e, t)}
+            draggable={renaming?.id !== t.id}
+            onDragStart={(e) => {
+              dragTab.current = t.id;
+              e.dataTransfer.effectAllowed = "move";
+            }}
+            onDragOver={(e) => dragTab.current !== null && e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (dragTab.current !== null) moveTab(dragTab.current, t.id);
+              dragTab.current = null;
+            }}
+            onDragEnd={() => (dragTab.current = null)}
           >
-            <span>{shortTitle(t, bookmarks)}</span>
+            {renaming?.id === t.id ? (
+              <input
+                className="browser-tab-rename"
+                value={renaming.name}
+                autoFocus
+                spellCheck={false}
+                placeholder="Tab name (empty: page title)"
+                onFocus={(e) => e.currentTarget.select()}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => setRenaming({ id: t.id, name: e.target.value })}
+                onBlur={finishRename}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") finishRename();
+                  if (e.key === "Escape") setRenaming(null);
+                }}
+              />
+            ) : (
+              <span title="Double-click to rename">{shortTitle(t, bookmarks)}</span>
+            )}
             <button
               title="Close tab"
               onClick={(e) => {
@@ -429,7 +643,14 @@ export default function Browser({
             </button>
           </div>
         ))}
-        <button className="browser-tab-add" title="New tab" onClick={() => addTab(defaultUrl ?? bookmarks[0]?.url ?? DEFAULT_BOOKMARKS[0].url)}>
+        <button
+          className="browser-tab-add"
+          title="New tab (⌘T)"
+          onClick={() => {
+            addTab(defaultUrl ?? DEFAULT_BROWSER_URL);
+            focusUrl();
+          }}
+        >
           +
         </button>
       </div>
@@ -455,6 +676,7 @@ export default function Browser({
           }}
         >
           <input
+            ref={urlRef}
             value={input}
             spellCheck={false}
             onFocus={(e) => {
@@ -467,6 +689,11 @@ export default function Browser({
             }}
             onChange={(e) => setInput(e.target.value)}
           />
+          {active.zoom && (
+            <button type="button" className="browser-zoom" title="Reset zoom (⌘0)" onClick={() => setZoom(active, 1)}>
+              {Math.round(active.zoom * 100)}%
+            </button>
+          )}
         </form>
         {picker && (
         <button
@@ -500,11 +727,45 @@ export default function Browser({
       </div>
       {bookmarks.length > 0 && (
         <div className="browser-marks">
-          {bookmarks.map((b) => (
-            <button key={b.url} className={samePage(active.url, b.url) ? "on" : ""} onClick={() => go(b.url)} title={b.url}>
-              {b.name}
-            </button>
-          ))}
+          {bookmarks.map((b) =>
+            renamingMark?.url === b.url ? (
+              <input
+                key={b.url}
+                className="browser-tab-rename"
+                value={renamingMark.name}
+                autoFocus
+                spellCheck={false}
+                onFocus={(e) => e.currentTarget.select()}
+                onChange={(e) => setRenamingMark({ url: b.url, name: e.target.value })}
+                onBlur={finishMarkRename}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") finishMarkRename();
+                  if (e.key === "Escape") setRenamingMark(null);
+                }}
+              />
+            ) : (
+              <button
+                key={b.url}
+                className={samePage(active.url, b.url) ? "on" : ""}
+                onClick={(e) => (e.metaKey || e.ctrlKey ? addTab(b.url) : go(b.url))}
+                onAuxClick={(e) => e.button === 1 && addTab(b.url)}
+                onDoubleClick={() => !fixedBookmarks && setRenamingMark({ url: b.url, name: b.name })}
+                onContextMenu={(e) => markMenu(e, b)}
+                title={`${b.url}\nRight-click to rename or delete · ⌘-click: new tab`}
+                draggable={!fixedBookmarks}
+                onDragStart={() => (dragMark.current = b.url)}
+                onDragOver={(e) => dragMark.current !== null && e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (dragMark.current) moveMark(dragMark.current, b.url);
+                  dragMark.current = null;
+                }}
+                onDragEnd={() => (dragMark.current = null)}
+              >
+                {b.name}
+              </button>
+            ),
+          )}
         </div>
       )}
       </div>
@@ -553,6 +814,25 @@ export default function Browser({
           ))}
         </div>
       )}
+      {find !== null && (
+        <div className="browser-find">
+          <input
+            ref={findRef}
+            value={find}
+            placeholder="Find in page"
+            spellCheck={false}
+            onChange={(e) => setFind(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") runFind(e.shiftKey);
+              if (e.key === "Escape") closeFind();
+            }}
+          />
+          <button title="Previous (⇧↵)" onClick={() => runFind(true)}>‹</button>
+          <button title="Next (↵)" onClick={() => runFind(false)}>›</button>
+          <button title="Close (Esc)" onClick={closeFind}>×</button>
+        </div>
+      )}
+      {menu && <ContextMenu x={menu.x} y={menu.y} groups={menu.groups} onClose={() => setMenu(null)} />}
       {loading && <div className="browser-progress" />}
       {error && <div className="browser-error">{error}</div>}
       <div className="browser-slot" ref={slotRef}>

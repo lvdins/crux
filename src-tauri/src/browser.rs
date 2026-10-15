@@ -342,6 +342,13 @@ async fn tokio_sleep(ms: u64) {
     let _ = tauri::async_runtime::spawn_blocking(move || std::thread::sleep(std::time::Duration::from_millis(ms))).await;
 }
 
+/// Page zoom for one browser tab (1.0 = actual size).
+#[tauri::command]
+pub async fn browser_zoom(app: AppHandle, label: String, scale: f64) -> Result<(), String> {
+    let view = app.get_webview(&label).ok_or("No such browser tab")?;
+    view.set_zoom(scale.clamp(0.3, 3.0)).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn browser_hide(app: AppHandle, label: String) -> Result<(), String> {
     if let Some(view) = app.get_webview(&label) {

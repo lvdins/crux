@@ -281,6 +281,7 @@ export default function App() {
   const toggleRightRef = useRef<() => void>(() => {});
   const quickAskRef = useRef<(q: QuickAsk) => void>(() => {});
   // ⌘⇧C (app menu, so it works while the page has focus): mark an issue.
+  const browserKeyRef = useRef<(op: string) => void>(() => {});
   const reportIssueRef = useRef<() => void>(() => {});
   const markingRef = useRef(false);
   // Scheduled-pipeline health per E2E / API workspace (sidebar dot).
@@ -699,6 +700,7 @@ export default function App() {
           listen("menu:toggle-sidebar", () => toggleSideRef.current()),
           listen("menu:toggle-right", () => toggleRightRef.current()),
           listen("menu:report-issue", () => reportIssueRef.current()),
+          listen<string>("menu:browser", (e) => browserKeyRef.current(e.payload)),
           listen("menu:search-chats", () => setSearchOpen(true)),
           listen("menu:check-updates", () => {
             setSettingsPage("updates");
@@ -1215,6 +1217,25 @@ export default function App() {
   // Browser tab (pressed again: hide the panel); elsewhere the Browser view
   // (pressed again there: back to where you were). No browser: the panel.
   const lastView = useRef("");
+  // ⌘T / ⌘L: show the browser if it's hidden, then a new tab / the address bar.
+  browserKeyRef.current = (op) => {
+    const v = viewRef.current;
+    if (config?.browserSupported === false) return;
+    const browserShown = v === "jira" || (!!v && !isSpecial(v) && settings.browser && !rightHidden && (panelTabs[v] ?? "") === "browser");
+    // Only ⌘T / ⌘L / ⌘⇧T bring the browser up; the rest act on a browser on screen.
+    if (!browserShown && !["new-tab", "url", "reopen"].includes(op)) {
+      // ⌘W with no browser showing: close the window, as before.
+      if (op === "close") void import("@tauri-apps/api/window").then(({ getCurrentWindow }) => getCurrentWindow().close());
+      return;
+    }
+    if (browserShown) return void window.dispatchEvent(new CustomEvent("ql:browser-key", { detail: op }));
+    if (v && !isSpecial(v) && settings.browser) {
+      if (rightHidden) hideRight(false);
+      if ((panelTabs[v] ?? "") !== "browser") setPanelTab(v, "browser");
+    } else if (v !== "jira" && settings.jira) setView("jira");
+    // After the browser has mounted.
+    setTimeout(() => window.dispatchEvent(new CustomEvent("ql:browser-key", { detail: op })), 120);
+  };
   useEffect(() => {
     if (view && view !== "jira") lastView.current = view;
   }, [view]);

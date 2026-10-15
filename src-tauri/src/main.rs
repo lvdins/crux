@@ -126,6 +126,20 @@ fn install_menu(app: &mut tauri::App) -> tauri::Result<()> {
     let toggle_right = MenuItemBuilder::with_id("toggle-right", "Browser")
         .accelerator("CmdOrCtrl+B")
         .build(app)?;
+    // Browser menu: the usual browser shortcuts for Crux's browser. Menu
+    // accelerators fire even while the web page has keyboard focus.
+    let mut browser = SubmenuBuilder::new(app, "Browser");
+    for (i, (id, label, keys)) in BROWSER_MENU.iter().enumerate() {
+        if [4, 7, 10, 13, 16].contains(&i) {
+            browser = browser.separator();
+        }
+        browser = browser.item(&MenuItemBuilder::with_id(format!("browser:{id}"), *label).accelerator(*keys).build(app)?);
+    }
+    for n in 1..=9 {
+        let label = if n == 9 { "Last Tab".to_string() } else { format!("Tab {n}") };
+        browser = browser.item(&MenuItemBuilder::with_id(format!("browser:tab-{n}"), label).accelerator(format!("CmdOrCtrl+{n}")).build(app)?);
+    }
+    let browser = browser.build()?;
     // ⌘⇧C: mark an issue in the browser pane for the agent to explore.
     let report = MenuItemBuilder::with_id("report-issue", "Mark Issue in Browser")
         .accelerator("CmdOrCtrl+Shift+C")
@@ -152,12 +166,48 @@ fn install_menu(app: &mut tauri::App) -> tauri::Result<()> {
             }
         }
     }
+    // ⌘W closes the browser tab now (Crux's window when no browser is shown):
+    // drop the stock Close Window item that also wants ⌘W.
+    for item in menu.items()? {
+        if let MenuItemKind::Submenu(sub) = item {
+            for entry in sub.items()? {
+                if let MenuItemKind::Predefined(p) = &entry {
+                    if p.text()?.starts_with("Close") {
+                        sub.remove(&entry)?;
+                    }
+                }
+            }
+        }
+    }
+    menu.insert(&browser, 3)?;
     if !placed {
         menu.append(&SubmenuBuilder::new(app, "View").item(&toggle).item(&toggle_right).item(&report).item(&search).build()?)?;
     }
     app.set_menu(menu)?;
     Ok(())
 }
+
+/// Browser menu (id, label, shortcut); Tab 1–9 are added after these.
+#[cfg(target_os = "macos")]
+const BROWSER_MENU: &[(&str, &str, &str)] = &[
+    ("new-tab", "New Tab", "CmdOrCtrl+T"),
+    ("reopen", "Reopen Closed Tab", "CmdOrCtrl+Shift+T"),
+    ("close", "Close Tab", "CmdOrCtrl+W"),
+    ("url", "Open Location…", "CmdOrCtrl+L"),
+    ("reload", "Reload Page", "CmdOrCtrl+R"),
+    ("back", "Back", "CmdOrCtrl+["),
+    ("forward", "Forward", "CmdOrCtrl+]"),
+    ("find", "Find…", "CmdOrCtrl+F"),
+    ("bookmark", "Bookmark This Page", "CmdOrCtrl+D"),
+    ("duplicate", "Duplicate Tab", "CmdOrCtrl+Shift+D"),
+    ("zoom-in", "Zoom In", "CmdOrCtrl+="),
+    ("zoom-out", "Zoom Out", "CmdOrCtrl+-"),
+    ("zoom-reset", "Actual Size", "CmdOrCtrl+0"),
+    ("next-tab", "Show Next Tab", "CmdOrCtrl+Shift+]"),
+    ("prev-tab", "Show Previous Tab", "CmdOrCtrl+Shift+["),
+    ("next-tab-ctrl", "Next Tab", "Ctrl+Tab"),
+    ("prev-tab-ctrl", "Previous Tab", "Ctrl+Shift+Tab"),
+];
 
 fn show_main(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
@@ -706,6 +756,28 @@ fn main() {
                 "report-issue" => {
                     let _ = app.emit_to("main", "menu:report-issue", ());
                 }
+                id if id.starts_with("browser:") => {
+                    let op = &id["browser:".len()..];
+                    let main_focused = app.get_webview_window("main").and_then(|w| w.is_focused().ok()).unwrap_or(false);
+                    if !main_focused {
+                        // Quick Ask / the menu bar panel: ⌘W closes that, the rest is for the main window.
+                        if op == "close" {
+                            for (label, w) in app.webview_windows() {
+                                if label != "main" && w.is_focused().unwrap_or(false) {
+                                    let _ = w.hide();
+                                }
+                            }
+                        }
+                        return;
+                    }
+                    // Keys typed next (address bar, find) go to Crux, not the web page.
+                    if matches!(op, "new-tab" | "url" | "find") {
+                        if let Some(w) = app.get_webview("main") {
+                            let _ = w.set_focus();
+                        }
+                    }
+                    let _ = app.emit_to("main", "menu:browser", op.to_string());
+                }
                 "search-chats" => {
                     let _ = app.emit_to("main", "menu:search-chats", ());
                 }
@@ -726,6 +798,7 @@ fn main() {
             browser::browser_js,
             browser::browser_screenshot,
             browser::browser_import_cookies,
+            browser::browser_zoom,
             browser::browser_devtools,
             set_background,
             set_tray_title,

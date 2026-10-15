@@ -1663,3 +1663,18 @@ html.tray-window, html.tray-window body, html.tray-window #root { background: tr
 .team-chip.closed { opacity: 0.5; }
 @keyframes team-pulse { 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) { .team-chip.working i { animation: none; } }
+
+.browser-tab-rename {
+  width: 120px; min-width: 0; font: inherit; font-size: 12px; color: var(--ink);
+  background: var(--bg); border: 1px solid var(--accent); border-radius: 4px; padding: 1px 5px; outline: none;
+}
+.browser-find {
+  display: flex; align-items: center; justify-content: flex-end; gap: 2px; margin: 4px 10px;
+  padding: 2px 0;
+}
+.browser-find input { width: 180px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; color: var(--ink); font: inherit; font-size: 12.5px; padding: 4px 8px; outline: none; }
+.browser-find input:focus { border-color: var(--accent); }
+.browser-find button { background: none; border: 0; color: var(--ink-soft); font-size: 15px; width: 24px; height: 24px; border-radius: 5px; cursor: pointer; }
+.browser-find button:hover { background: var(--surface-2); color: var(--ink); }
+.browser-zoom { background: var(--surface-2); border: 1px solid var(--line); border-radius: 5px; color: var(--ink-soft); font-size: 11px; padding: 1px 6px; margin-left: 4px; cursor: pointer; }
+.browser-marks input.browser-tab-rename { width: 110px; }
