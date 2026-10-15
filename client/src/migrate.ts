@@ -10,6 +10,21 @@ try {
   /* storage unavailable */
 }
 
+// 0.1.32: the old built-in Giraffe360 bookmarks (Dashboard, Console) leave
+// saved bookmark bars once; bookmarks you added yourself stay.
+try {
+  if (!localStorage.getItem("crux.oldDefaultsRemoved")) {
+    const old = ["https://dashboard.g360lab.com/", "https://console.g360lab.com/"];
+    const saved = JSON.parse(localStorage.getItem("crux.bookmarks") ?? "null");
+    if (Array.isArray(saved)) {
+      localStorage.setItem("crux.bookmarks", JSON.stringify(saved.filter((b: { url?: string }) => !old.includes(b?.url ?? ""))));
+    }
+    localStorage.setItem("crux.oldDefaultsRemoved", "1");
+  }
+} catch {
+  /* storage unavailable */
+}
+
 // The Jira view became a general Browser view (0.1.10): its saved boards move
 // into the browser's bookmark bar once.
 try {
