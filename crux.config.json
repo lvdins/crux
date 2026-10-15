@@ -1,21 +1,5 @@
 {
-  "repos": {
-    "docs": {
-      "label": "Product Docs",
-      "path": "/Users/dins/.superset/projects/G360 Product Docs/product-docs",
-      "kind": "mkdocs"
-    },
-    "e2e": {
-      "label": "Playwright E2E",
-      "path": "/Users/dins/Documents/testing/playwright",
-      "kind": "playwright"
-    },
-    "api": {
-      "label": "API Quality (pytest)",
-      "path": "/Users/dins/.superset/projects/web-service-quality",
-      "kind": "pytest"
-    }
-  },
+  "repos": {},
   "agent": {
     "permissionMode": "bypassPermissions"
   },

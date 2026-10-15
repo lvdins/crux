@@ -83,7 +83,7 @@ const DEFAULT_CHAT: { value: Settings["defaultChat"]; label: string }[] = [
 
 const SHORTCUTS: [string, string][] = [
   [KEY.sidebar, "Show / hide the sidebar"],
-  [KEY.panel, "Show / hide the workspace panel"],
+  [KEY.panel, IS_MAC ? "Browser, from anywhere (shared tabs)" : "Show / hide the workspace panel"],
   [KEY.search, "Search chats and past conversations"],
   [KEY.quickAsk, "Quick ask, from any app (desktop app)"],
   [KEY.mark, "Mark an issue in the browser"],

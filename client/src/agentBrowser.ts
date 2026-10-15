@@ -7,7 +7,7 @@
  */
 
 export const browserLabel = (ws: string) => `browser-${ws.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
-export const DEFAULT_BROWSER_URL = "https://dashboard.g360lab.com/";
+export const DEFAULT_BROWSER_URL = "https://www.google.com/";
 
 // The agent drives whichever browser tab is active in that workspace.
 export function setActiveBrowserLabel(ws: string, label: string): void {

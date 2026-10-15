@@ -132,3 +132,4 @@
 .import-foot button { margin-left: auto; }
 .settings-btn-sm.primary { background: var(--accent); border-color: var(--accent); color: #06140d; font-weight: 600; }
 .settings-btn-sm.primary:disabled { opacity: 0.45; cursor: default; }
+.import-site.import-all { color: var(--ink); font-weight: 500; border-bottom: 1px solid var(--line); border-radius: 6px 6px 0 0; margin-bottom: 2px; }

@@ -56,12 +56,27 @@ export default function ImportLogins() {
       });
   }, [source]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const shown = useMemo(() => {
+  // Sites matching the search (all of them when there's none).
+  const matching = useMemo(() => {
     const f = filter.trim().toLowerCase();
-    const list = sites ?? [];
+    return (sites ?? []).filter((s) => !f || s.site.includes(f));
+  }, [sites, filter]);
+  const shown = useMemo(() => {
     // Picked ones stay visible while filtering.
-    return (f ? list.filter((s) => s.site.includes(f) || picked.has(s.site)) : list).slice(0, 200);
-  }, [sites, filter, picked]);
+    const f = filter.trim().toLowerCase();
+    return (f ? (sites ?? []).filter((s) => s.site.includes(f) || picked.has(s.site)) : matching).slice(0, 200);
+  }, [sites, matching, filter, picked]);
+  const allPicked = matching.length > 0 && matching.every((s) => picked.has(s.site));
+  // Select all: every site matching the search, not just the 200 listed.
+  const pickAll = () =>
+    setPicked((p) => {
+      const next = new Set(p);
+      for (const s of matching) {
+        if (allPicked) next.delete(s.site);
+        else next.add(s.site);
+      }
+      return next;
+    });
 
   const toggle = (site: string) =>
     setPicked((p) => {
@@ -118,13 +133,20 @@ export default function ImportLogins() {
         ) : !shown.length ? (
           <p className="settings-note">No sites{filter ? " match" : ""}.</p>
         ) : (
-          shown.map((s) => (
-            <label key={s.site} className={`import-site ${picked.has(s.site) ? "on" : ""}`}>
-              <input type="checkbox" checked={picked.has(s.site)} onChange={() => toggle(s.site)} />
-              <span>{s.site}</span>
-              <small>{s.cookies}</small>
+          <>
+            <label className="import-site import-all">
+              <input type="checkbox" checked={allPicked} onChange={pickAll} />
+              <span>{filter.trim() ? `Select all matching “${filter.trim()}”` : "Select all"}</span>
+              <small>{matching.length}</small>
             </label>
-          ))
+            {shown.map((s) => (
+              <label key={s.site} className={`import-site ${picked.has(s.site) ? "on" : ""}`}>
+                <input type="checkbox" checked={picked.has(s.site)} onChange={() => toggle(s.site)} />
+                <span>{s.site}</span>
+                <small>{s.cookies}</small>
+              </label>
+            ))}
+          </>
         )}
       </div>
       <div className="import-foot">

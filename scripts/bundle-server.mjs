@@ -49,9 +49,6 @@ fs.writeFileSync(
   path.join(out, "crux.config.json"),
   JSON.stringify({ repos: {}, agent: { permissionMode: "bypassPermissions" }, preview: { port: 8321 } }, null, 2) + "\n",
 );
-for (const f of ["crux.descriptions.json", "crux.features.json"]) {
-  if (fs.existsSync(path.join(repo, f))) fs.copyFileSync(path.join(repo, f), path.join(out, f));
-}
 
 const target = `${process.platform}-${arch}`;
 step(`copying node-pty (${target})`);

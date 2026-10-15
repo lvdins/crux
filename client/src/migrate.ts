@@ -15,11 +15,7 @@ try {
 try {
   const boards = JSON.parse(localStorage.getItem("crux.jiraBoards") ?? "[]");
   if (Array.isArray(boards) && boards.length && !localStorage.getItem("crux.jiraBoardsMoved")) {
-    const fallback = [
-      { name: "Dashboard", url: "https://dashboard.g360lab.com/" },
-      { name: "Console", url: "https://console.g360lab.com/" },
-      { name: "Local :3000", url: "http://localhost:3000/" },
-    ];
+    const fallback = [{ name: "Local :3000", url: "http://localhost:3000/" }];
     const saved = JSON.parse(localStorage.getItem("crux.bookmarks") ?? "null");
     const marks: { name: string; url: string }[] = Array.isArray(saved) ? saved : fallback;
     for (const b of boards) if (b?.url && !marks.some((m) => m.url === b.url)) marks.push({ name: b.name, url: b.url });

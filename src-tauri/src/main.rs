@@ -115,7 +115,7 @@ fn spawn_server(app: &tauri::App) -> Option<Child> {
     }
 }
 
-/// Default macOS menu plus View → Toggle Sidebar (⌘S) / Right Panel (⌘B). A menu accelerator
+/// Default macOS menu plus View → Toggle Sidebar (⌘S) / Browser (⌘B). A menu accelerator
 /// fires even when a terminal or a native browser pane has keyboard focus.
 #[cfg(target_os = "macos")]
 fn install_menu(app: &mut tauri::App) -> tauri::Result<()> {
@@ -123,7 +123,7 @@ fn install_menu(app: &mut tauri::App) -> tauri::Result<()> {
     let toggle = MenuItemBuilder::with_id("toggle-sidebar", "Toggle Sidebar")
         .accelerator("CmdOrCtrl+S")
         .build(app)?;
-    let toggle_right = MenuItemBuilder::with_id("toggle-right", "Toggle Right Panel")
+    let toggle_right = MenuItemBuilder::with_id("toggle-right", "Browser")
         .accelerator("CmdOrCtrl+B")
         .build(app)?;
     // ⌘⇧C: mark an issue in the browser pane for the agent to explore.

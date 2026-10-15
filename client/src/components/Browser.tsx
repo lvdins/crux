@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { browserLabel, setActiveBrowserLabel } from "../agentBrowser";
+import { DEFAULT_BROWSER_URL, browserLabel, setActiveBrowserLabel } from "../agentBrowser";
 import { CANCEL_PICK_SCRIPT, PICK_SCRIPT, type PickedElement } from "../elementPicker";
 import NetworkPanel from "./NetworkPanel";
 
@@ -25,11 +25,7 @@ export interface Bookmark {
   url: string;
 }
 
-const DEFAULT_BOOKMARKS: Bookmark[] = [
-  { name: "Dashboard", url: "https://dashboard.g360lab.com/" },
-  { name: "Console", url: "https://console.g360lab.com/" },
-  { name: "Local :3000", url: "http://localhost:3000/" },
-];
+const DEFAULT_BOOKMARKS: Bookmark[] = [{ name: "Local :3000", url: "http://localhost:3000/" }];
 
 function loadBookmarks(): Bookmark[] {
   try {
@@ -101,7 +97,7 @@ export default function Browser({
   openRequest?: { url: string; nonce: number } | null;
 }) {
   const tabsKey = `crux.browserTabs.${wsKey}`;
-  const startUrl = defaultUrl ?? localStorage.getItem(`crux.browserUrl.${wsKey}`) ?? DEFAULT_BOOKMARKS[0].url;
+  const startUrl = defaultUrl ?? localStorage.getItem(`crux.browserUrl.${wsKey}`) ?? DEFAULT_BROWSER_URL;
   const [tabs, setTabs] = useState<Tab[]>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(tabsKey) ?? "null");

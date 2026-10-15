@@ -155,8 +155,8 @@ app.get("/api/tree", async (_req, res) => {
   } catch {
     // No descriptions file yet — the UI falls back gracefully.
   }
-  // Bundled folder descriptions are written for the Giraffe360 suites; a
-  // teammate's workspace keys differ, so fall back by suite type.
+  // Optional folder descriptions (crux.descriptions.json), keyed by
+  // workspace; other workspaces fall back by suite type.
   for (const t of trees) {
     if (!descriptions[t.key]) {
       const fallback = descriptions[t.kind === "playwright" ? "e2e" : "api"];

@@ -88,8 +88,8 @@ export function currentSettings(): Settings {
   return { ...MODE_PRESETS[saved.mode ?? "qa"], ...legacy, ...saved, ...(BROWSER_SUPPORTED ? {} : NO_BROWSER) };
 }
 
-// Bundled defaults (the original Giraffe360 setup); used only to seed a
-// first-run user config with the repos that exist on this machine.
+// Bundled defaults; used only to seed a first-run user config with the repos
+// that exist on this machine (the packaged app ships none).
 const defaultsPath = rootPath("crux.config.json");
 // Per-user workspaces live outside the app so every teammate has their own.
 export const userConfigPath = process.env.CRUX_CONFIG ?? path.join(CRUX_HOME, "config.json");

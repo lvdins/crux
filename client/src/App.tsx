@@ -87,6 +87,9 @@ interface JiraTab {
   title: string;
 }
 const JIRA_TABS_KEY = "crux.browserTabs.jira";
+/** One browser everywhere: the Browser view, every workspace's panel and the
+ *  agents' browser tools share its tabs (key "jira" for older saved tabs). */
+const SHARED_BROWSER = "jira";
 function readJiraTabs(): { tabs: JiraTab[]; active: number } {
   try {
     const saved = JSON.parse(localStorage.getItem(JIRA_TABS_KEY) ?? "null");
@@ -591,7 +594,7 @@ export default function App() {
         const msg = JSON.parse(event.data);
         if (msg.type === "browser:cmd") {
           revealBrowserRef.current(msg.ws);
-          runAgentCommand(msg.ws, msg.op, msg.args ?? {})
+          runAgentCommand(SHARED_BROWSER, msg.op, msg.args ?? {})
             .then((result) => ws.send(JSON.stringify({ type: "browser:result", id: msg.id, ok: true, result })))
             .catch((err) => ws.send(JSON.stringify({ type: "browser:result", id: msg.id, ok: false, error: String(err?.message ?? err) })));
           return;
@@ -1087,7 +1090,7 @@ export default function App() {
     if (config?.browserSupported === false) return setToast("Marking issues needs the browser, which is macOS-only for now");
     if (!jira && !settings.browser) return setToast("Turn on the browser panel in Settings to mark issues");
     const { invoke } = await import("@tauri-apps/api/core");
-    const label = activeBrowserLabel(ws);
+    const label = activeBrowserLabel(SHARED_BROWSER);
     // Pressed again while marking: cancel.
     if (markingRef.current) {
       void invoke("browser_js", { label, script: CANCEL_REPORT_SCRIPT }).catch(() => undefined);
@@ -1208,8 +1211,25 @@ export default function App() {
     void deliverToAgent(to, prompt, true).catch((err) => setToast(String(err)));
   };
 
+  // ⌘B: the shared browser from anywhere. In a workspace it's the panel's
+  // Browser tab (pressed again: hide the panel); elsewhere the Browser view
+  // (pressed again there: back to where you were). No browser: the panel.
+  const lastView = useRef("");
+  useEffect(() => {
+    if (view && view !== "jira") lastView.current = view;
+  }, [view]);
   toggleRightRef.current = () => {
-    if (viewRef.current && !isSpecial(viewRef.current)) hideRight(!rightHidden);
+    const v = viewRef.current;
+    const ws = !!v && !isSpecial(v);
+    const hasBrowser = config?.browserSupported !== false;
+    if (ws && hasBrowser && settings.browser) {
+      const showing = !rightHidden && (panelTabs[v] ?? "") === "browser";
+      if (showing) return hideRight(true);
+      if (rightHidden) hideRight(false);
+      return setPanelTab(v, "browser");
+    }
+    if (hasBrowser && settings.jira) return setView(v === "jira" ? lastView.current || "home" : "jira");
+    if (ws) hideRight(!rightHidden);
   };
 
   // Browser view tab name: page title (before " - Site"), else the host.
@@ -2304,7 +2324,7 @@ export default function App() {
                           {name}
                         </button>
                       ))}
-                      <button className="pane-collapse" title={`Hide panel (${KEY.panel})`} onClick={() => hideRight(true)}>»</button>
+                      <button className="pane-collapse" title="Hide panel" onClick={() => hideRight(true)}>»</button>
                     </nav>
                     {panelTab === "preview" && <Preview key={view} wsKey={view} />}
                     {panelTab === "tree" && <TestTree repo={view} />}
@@ -2316,8 +2336,8 @@ export default function App() {
                     )}
                     {panelTab === "browser" && (
                       <Browser
-                        key={view}
-                        wsKey={view}
+                        key="shared-browser"
+                        wsKey={SHARED_BROWSER}
                         visible={!panelHidden && !overlayOpen}
                         network={settings.network}
                         picker={settings.picker}
@@ -2328,7 +2348,7 @@ export default function App() {
               </section>
             }
             {rightHidden && hasPanel && (
-              <button className="pane-reopen" title={`Show panel (${KEY.panel})`} onClick={() => hideRight(false)}>
+              <button className="pane-reopen" title="Show panel" onClick={() => hideRight(false)}>
                 «
               </button>
             )}
