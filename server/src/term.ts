@@ -7,7 +7,7 @@ import type { WebSocket } from "ws";
 import { config } from "./config.js";
 import { agentEnv, writeMcpConfig } from "./agent-setup.js";
 import { findCodexSession, forgetTerm, loadTerm, pruneTerms, saveTerm } from "./sessions.js";
-import { cwdFor, takeBoot } from "./orchestrator.js";
+import { codexLeadExtra, cwdFor, takeBoot } from "./orchestrator.js";
 
 /**
  * PTYs are keyed by client-chosen terminal id (a workspace can hold several
@@ -89,6 +89,9 @@ export function attachTerm(
     // Orchestrator lead / worker, first start: its brief and task (via env).
     const plan = takeBoot(id);
     if (plan && safeBoot && !resumes) safeBoot += plan.append;
+    // A Codex lead gets its team tools on every start, resumed ones too.
+    const lead = safeBoot?.startsWith("codex") ? codexLeadExtra(id) : undefined;
+    if (lead && safeBoot) safeBoot = safeBoot.replace(/^codex/, `codex${lead.append}`);
     const cwd = plan?.cwd ?? cwdFor(id) ?? repoCfg.path;
     const args = WIN
       ? safeBoot
@@ -103,7 +106,7 @@ export function attachTerm(
       cols: cols || 100,
       rows: rows || 30,
       cwd: fs.existsSync(cwd) ? cwd : repoCfg.path,
-      env: { ...env, ...agentEnv(repo, shell, id), ...(plan && !resumes ? plan.env : {}), TERM: "xterm-256color" },
+      env: { ...env, ...agentEnv(repo, shell, id), ...(plan && !resumes ? plan.env : {}), ...lead?.env, TERM: "xterm-256color" },
     });
     // A resumed conversation redraws itself; anything else shows its last screen.
     const restored = saved?.output && !resumes ? `${saved.output}\x1b[?1049l\x1b[0m\r\n\x1b[2m── reopened · output above is from before Crux quit ──\x1b[0m\r\n` : "";

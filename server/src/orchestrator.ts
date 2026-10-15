@@ -40,9 +40,11 @@ export interface Team {
   /** Most workers running at once. */
   max: number;
   kind: WorkerKind | "mix";
-  /** Claude model alias for the lead and Claude workers ("" = your Claude default). */
+  /** The lead follows the workers: Codex for a Codex team, else Claude. */
+  leadKind?: WorkerKind;
+  /** Claude model alias for a Claude lead and Claude workers ("" = your Claude default). */
   model?: string;
-  /** Codex model for Codex workers ("" = your Codex default). */
+  /** Codex model for a Codex lead and Codex workers ("" = your Codex default). */
   codexModel?: string;
   approve: boolean;
   token: string;
@@ -103,7 +105,27 @@ const leadMcpPath = (lead: string) => path.join(MCP_DIR, `lead-${lead.replace(/[
 
 export const teamOf = (lead: string) => teams.get(lead);
 export const isLead = (term: string) => teams.has(term);
-export const leadMcpConfig = (term: string) => (teams.has(term) ? leadMcpPath(term) : "");
+/** A Claude lead's MCP config (--mcp-config); Codex leads get theirs as -c settings. */
+export const leadMcpConfig = (term: string) => (teams.has(term) && teams.get(term)!.leadKind !== "codex" ? leadMcpPath(term) : "");
+
+/**
+ * A Codex lead's crux-agents tools, on every start (resumes too): Codex takes
+ * MCP servers as -c settings. The values travel in env vars, never inlined.
+ * Codex stops tool calls after 60 s by default; wait_for_agents needs longer.
+ */
+export function codexLeadExtra(term: string): Omit<BootPlan, "cwd"> | undefined {
+  const team = teams.get(term);
+  if (!team || team.leadKind !== "codex") return;
+  const toml = JSON.stringify;
+  const settings = [
+    `mcp_servers.crux_agents.command=${toml(process.execPath)}`,
+    `mcp_servers.crux_agents.args=[${toml(AGENTS_MCP)}]`,
+    `mcp_servers.crux_agents.env={CRUX_LEAD=${toml(team.lead)},CRUX_TEAM_TOKEN=${toml(team.token)},CRUX_URL=${toml(SERVER_URL)}}`,
+    "mcp_servers.crux_agents.tool_timeout_sec=900",
+  ];
+  const env = Object.fromEntries(settings.map((v, i) => [`CRUX_AGENTS_C${i + 1}`, v]));
+  return { env, append: Object.keys(env).map((k) => ` -c ${envRef(k)}`).join("") };
+}
 const workerOf = (term: string) => {
   for (const t of teams.values()) {
     const w = t.workers.find((x) => x.id === term);
@@ -182,6 +204,7 @@ export function startTeam(opts: { ws: string; chat: string; lead: string; max: n
     chat: opts.chat,
     max: Math.min(Math.max(opts.max | 0, 1), 5),
     kind: opts.kind === "codex" || opts.kind === "claude" ? opts.kind : "mix",
+    leadKind: opts.kind === "codex" ? "codex" : "claude",
     model: /^[\w.-]{1,40}$/.test(opts.model) && opts.model !== "default" ? opts.model : "",
     codexModel: /^[\w.-]{1,60}$/.test(opts.codexModel) && opts.codexModel !== "default" ? opts.codexModel : "",
     approve: opts.approve,
@@ -191,11 +214,20 @@ export function startTeam(opts: { ws: string; chat: string; lead: string; max: n
   };
   teams.set(team.lead, team);
   save();
-  writeLeadMcp(team);
-  boots.set(team.lead, {
-    env: { CRUX_BRIEF: leadBrief(team, repo.path, isGit(repo.path)), CRUX_TASK: opts.task.trim() },
-    append: `${team.model ? ` --model ${team.model}` : ""} --append-system-prompt ${envRef("CRUX_BRIEF")} ${envRef("CRUX_TASK")}`,
-  });
+  const brief = leadBrief(team, repo.path, isGit(repo.path));
+  if (team.leadKind === "codex") {
+    // No system prompt flag in Codex: the brief goes ahead of the task.
+    boots.set(team.lead, {
+      env: { CRUX_TASK: `${brief}\n\nThe user's task:\n${opts.task.trim()}` },
+      append: `${team.codexModel ? ` -m ${team.codexModel}` : ""} ${envRef("CRUX_TASK")}`,
+    });
+  } else {
+    writeLeadMcp(team);
+    boots.set(team.lead, {
+      env: { CRUX_BRIEF: brief, CRUX_TASK: opts.task.trim() },
+      append: `${team.model ? ` --model ${team.model}` : ""} --append-system-prompt ${envRef("CRUX_BRIEF")} ${envRef("CRUX_TASK")}`,
+    });
+  }
   publish(team);
 }
 

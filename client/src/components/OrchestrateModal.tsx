@@ -8,9 +8,9 @@ export interface OrchestrateOpts {
   /** Most workers at once. */
   max: number;
   kind: "claude" | "codex" | "mix";
-  /** Claude model alias for the lead and Claude workers; "default" = your Claude setting. */
+  /** Claude model alias for a Claude lead and Claude workers; "default" = your Claude setting. */
   model: string;
-  /** Codex model for Codex workers (an id from Codex's model list); "default" = your Codex setting. */
+  /** Codex model for a Codex lead and Codex workers (an id from Codex's model list); "default" = your Codex setting. */
   codexModel: string;
   /** The lead shows its plan and waits for your OK. */
   approve: boolean;
@@ -60,8 +60,10 @@ export default function OrchestrateModal({
       .catch(() => {});
   }, []);
   const codexChoices = [...codexModels, { id: "default", label: "Default" }];
+  // The lead follows the workers: a Codex team has a Codex lead; Claude and Mix a Claude one.
   const usesClaude = opts.kind !== "codex";
   const usesCodex = opts.kind !== "claude";
+  const mix = usesClaude && usesCodex;
   const submit = () => {
     if (!opts.task.trim()) return;
     try {
@@ -98,7 +100,7 @@ export default function OrchestrateModal({
           </span>
           <div>
             <div className="chat-modal-title">Orchestrate</div>
-            <div className="chat-modal-sub">A lead Claude splits the task across agents in {wsLabel}</div>
+            <div className="chat-modal-sub">A lead {usesClaude ? "Claude" : "Codex"} splits the task across agents in {wsLabel}</div>
           </div>
         </div>
         <textarea
@@ -136,28 +138,29 @@ export default function OrchestrateModal({
             ))}
           </div>
         </div>
-        <div className="orch-field">
-          {/* The lead is always Claude; this also sets Claude workers' model. */}
-          <span title="The lead is always Claude">{!usesCodex ? "Model" : usesClaude ? "Claude" : "Lead"}</span>
-          <div className="orch-seg" role="radiogroup" aria-label="Claude model">
-            {MODELS.map(([model, label]) => (
-              <button
-                key={model}
-                type="button"
-                role="radio"
-                aria-checked={opts.model === model}
-                className={opts.model === model ? "on" : ""}
-                title={model === "default" ? "Whatever your Claude Code is set to" : `Latest ${label}`}
-                onClick={() => set({ model })}
-              >
-                {label}
-              </button>
-            ))}
+        {usesClaude && (
+          <div className="orch-field">
+            <span title={mix ? "The lead and Claude workers" : undefined}>{mix ? "Claude" : "Model"}</span>
+            <div className="orch-seg" role="radiogroup" aria-label="Claude model">
+              {MODELS.map(([model, label]) => (
+                <button
+                  key={model}
+                  type="button"
+                  role="radio"
+                  aria-checked={opts.model === model}
+                  className={opts.model === model ? "on" : ""}
+                  title={model === "default" ? "Whatever your Claude Code is set to" : `Latest ${label}`}
+                  onClick={() => set({ model })}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
         {usesCodex && (
           <div className="orch-field">
-            <span>{usesClaude ? "Codex" : "Workers"}</span>
+            <span title={mix ? "Codex workers" : undefined}>{mix ? "Codex" : "Model"}</span>
             <div className="orch-seg" role="radiogroup" aria-label="Codex model">
               {codexChoices.map((m) => {
                 const on = opts.codexModel === m.id || (m.id === "default" && !codexChoices.some((c) => c.id === opts.codexModel));

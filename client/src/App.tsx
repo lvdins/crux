@@ -1442,7 +1442,9 @@ export default function App() {
     if (wsRef.current?.readyState !== WebSocket.OPEN) return setToast("Not connected to the Crux server");
     const chat = newChatKey(key);
     const title = opts.task.split(/\s+/).slice(0, 4).join(" ").slice(0, 32) || "orchestrator";
-    const id = addTab(chat, title, "claude", agentBoot("claude"));
+    // The lead follows the workers: Codex for a Codex team, else Claude.
+    const lead = opts.kind === "codex" ? "codex" : "claude";
+    const id = addTab(chat, title, lead, agentBoot(lead));
     setTabs((prev) => ({ ...prev, [chat]: (prev[chat] ?? []).map((t) => (t.id === id ? { ...t, role: "lead" } : t)) }));
     send({ type: "orch:start", ws: key, chat, lead: id, max: opts.max, kind: opts.kind, model: opts.model, codexModel: opts.codexModel, approve: opts.approve, task: opts.task });
     setChatTitles((prev) => ({ ...prev, [chat]: title }));
