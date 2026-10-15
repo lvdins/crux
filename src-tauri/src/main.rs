@@ -758,15 +758,16 @@ fn main() {
                 }
                 id if id.starts_with("browser:") => {
                     let op = &id["browser:".len()..];
-                    let main_focused = app.get_webview_window("main").and_then(|w| w.is_focused().ok()).unwrap_or(false);
-                    if !main_focused {
-                        // Quick Ask / the menu bar panel: ⌘W closes that, the rest is for the main window.
+                    // Quick Ask / the menu bar panel focused: ⌘W closes that, the
+                    // rest is for the main window. (Asking whether "main" is
+                    // focused is unreliable while a browser page has focus.)
+                    let other = app
+                        .webview_windows()
+                        .into_iter()
+                        .find(|(label, w)| label != "main" && w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false));
+                    if let Some((_, w)) = other {
                         if op == "close" {
-                            for (label, w) in app.webview_windows() {
-                                if label != "main" && w.is_focused().unwrap_or(false) {
-                                    let _ = w.hide();
-                                }
-                            }
+                            let _ = w.hide();
                         }
                         return;
                     }

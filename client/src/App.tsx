@@ -723,6 +723,38 @@ export default function App() {
     return dropKeys;
   }, []);
 
+  // Browser shortcuts typed in Crux's own UI (a terminal, a field): WebKit or
+  // xterm can keep some (⌘T, ⌘W) from ever reaching the menu, so catch them
+  // here too. On a web page the Browser menu handles them.
+  useEffect(() => {
+    if (!IN_TAURI || !IS_MAC) return;
+    const keys: Record<string, string> = {
+      t: "new-tab",
+      w: "close",
+      l: "url",
+      r: "reload",
+      f: "find",
+      d: "bookmark",
+      "[": "back",
+      "]": "forward",
+      "=": "zoom-in",
+      "-": "zoom-out",
+      "0": "zoom-reset",
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.metaKey || e.ctrlKey || e.altKey) return;
+      const k = e.key.toLowerCase();
+      let op = e.shiftKey ? ({ t: "reopen", d: "duplicate", "]": "next-tab", "}": "next-tab", "[": "prev-tab", "{": "prev-tab" } as Record<string, string>)[k] : keys[k];
+      if (!op && !e.shiftKey && /^[1-9]$/.test(k)) op = `tab-${k}`;
+      if (!op) return;
+      e.preventDefault();
+      e.stopPropagation();
+      browserKeyRef.current(op);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
+
   // ⌘⇧⌫ (Ctrl+Shift+Backspace elsewhere) — delete the active workspace (asks first).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1218,9 +1250,14 @@ export default function App() {
   // (pressed again there: back to where you were). No browser: the panel.
   const lastView = useRef("");
   // ⌘T / ⌘L: show the browser if it's hidden, then a new tab / the address bar.
+  const lastBrowserKey = useRef({ op: "", at: 0 });
   browserKeyRef.current = (op) => {
     const v = viewRef.current;
     if (config?.browserSupported === false) return;
+    // The menu and the key fallback below can both report one press.
+    const now = Date.now();
+    if (lastBrowserKey.current.op === op && now - lastBrowserKey.current.at < 300) return;
+    lastBrowserKey.current = { op, at: now };
     const browserShown = v === "jira" || (!!v && !isSpecial(v) && settings.browser && !rightHidden && (panelTabs[v] ?? "") === "browser");
     // Only ⌘T / ⌘L / ⌘⇧T bring the browser up; the rest act on a browser on screen.
     if (!browserShown && !["new-tab", "url", "reopen"].includes(op)) {
