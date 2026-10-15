@@ -475,6 +475,8 @@ export default function App() {
   // Codex has no hooks: ≥3 s of output counts as working, then 10 s of quiet as finished.
   const codexQuiet = useRef(new Map<string, { since: number; marked: boolean; timer: ReturnType<typeof setTimeout> }>());
   const [agentDrag, setAgentDrag] = useState<null | { cmd: DragCmd; x: number; y: number; drop: Drop | null }>(null);
+  // A chat tab being dragged to another pane or into a new split.
+  const [tabDrag, setTabDrag] = useState<null | { tab: TermTab; x: number; y: number; drop: Drop | null }>(null);
   const panesRef = useRef<HTMLDivElement>(null);
   const termPaneRef = useRef<HTMLElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -885,6 +887,67 @@ export default function App() {
     },
     [view, ck, dropAt, launchAgent, addTab, spawnTab],
   );
+
+  // Where a dragged tab may go: anywhere but its own pane's middle, and the
+  // main strip keeps at least one tab (an empty main pane would show nothing).
+  const tabDropOk = (tab: TermTab, drop: Drop | null) => {
+    if (!drop) return false;
+    const layout = layouts[ck] ?? rootLayout();
+    const inSplit = splitTabIds(layout).includes(tab.id);
+    const mainTabs = (tabs[ck] ?? []).filter((t) => !splitTabIds(layout).includes(t.id));
+    if (drop.side === "center") {
+      if (drop.paneId === MAIN) return inSplit;
+      const leaf = (function find(n: PaneNode): PaneNode | null {
+        return n.kind === "leaf" ? (n.id === drop.paneId ? n : null) : n.children.map(find).find(Boolean) ?? null;
+      })(layout);
+      return !(leaf?.kind === "leaf" && paneTabs(leaf).includes(tab.id));
+    }
+    // A split pane's only tab can't be split off from itself.
+    const own = drop.paneId !== MAIN && leafIds(layout).includes(drop.paneId) && (function find(n: PaneNode): boolean {
+      return n.kind === "leaf" ? n.id === drop.paneId && paneTabs(n).length === 1 && paneTabs(n)[0] === tab.id : n.children.some(find);
+    })(layout);
+    if (own) return false;
+    return inSplit || mainTabs.length > 1;
+  };
+
+  const startTabDrag = (tab: TermTab) => (e: React.PointerEvent) => {
+    if (e.button !== 0 || (e.target as HTMLElement).closest("button")) return;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    let started = false;
+    const move = (ev: PointerEvent) => {
+      if (!started && Math.hypot(ev.clientX - startX, ev.clientY - startY) > 6) started = true;
+      if (!started) return;
+      const drop = dropAt(ev.clientX, ev.clientY);
+      setTabDrag({ tab, x: ev.clientX, y: ev.clientY, drop: tabDropOk(tab, drop) ? drop : null });
+    };
+    const up = (ev: PointerEvent) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setTabDrag(null);
+      if (!started) return;
+      const drop = dropAt(ev.clientX, ev.clientY);
+      if (!drop || !tabDropOk(tab, drop)) return;
+      setLayouts((prev) => {
+        const root = removeTab(prev[ck] ?? rootLayout(), tab.id);
+        let next = root;
+        if (drop.side !== "center") next = insertAt(root, drop.paneId, drop.side as DropSide, tab.id);
+        else if (drop.paneId !== MAIN) next = addTabToPane(root, drop.paneId, tab.id);
+        return { ...prev, [ck]: next };
+      });
+      // Back in the main strip: show it there. Moved out of it: show another.
+      setActiveTab((prev) => {
+        if (drop.side === "center" && drop.paneId === MAIN) return { ...prev, [ck]: tab.id };
+        if (prev[ck] !== tab.id) return prev;
+        const layout = layouts[ck] ?? rootLayout();
+        const rest = (tabs[ck] ?? []).filter((t) => t.id !== tab.id && !splitTabIds(layout).includes(t.id));
+        return { ...prev, [ck]: rest[rest.length - 1]?.id ?? "" };
+      });
+      setTimeout(() => window.dispatchEvent(new Event("resize")), 50);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
 
   const onWorkspaceAdded = (key: string, repo: RepoInfo) => {
     setConfig((c) => (c ? { ...c, repos: { ...c.repos, [key]: repo } } : c));
@@ -1671,6 +1734,7 @@ export default function App() {
               <span
                 key={t.id}
                 className={`pane-tab ${t.id === shown.id ? "on" : ""}`}
+                onPointerDown={startTabDrag(t)}
                 onClick={() => setLayouts((prev) => ({ ...prev, [ck]: setPaneActive(prev[ck] ?? rootLayout(), node.id, t.id) }))}
               >
                 {t.agent === "claude" && <ClaudeLogo />}
@@ -2148,6 +2212,8 @@ export default function App() {
                     <span
                       key={t.id}
                       className={`term-tab ${activeTab[ck] === t.id ? "active" : ""}`}
+                      title="Drag onto a pane to split"
+                      onPointerDown={startTabDrag(t)}
                       onClick={() => setActiveTab((prev) => ({ ...prev, [ck]: t.id }))}
                     >
                       {t.agent === "claude" && <ClaudeLogo />}
@@ -2218,6 +2284,9 @@ export default function App() {
               </div>
               {agentDrag?.drop && termPaneRef.current && (
                 <DropPreview drop={agentDrag.drop} host={termPaneRef.current.getBoundingClientRect()} />
+              )}
+              {tabDrag?.drop && termPaneRef.current && (
+                <DropPreview drop={tabDrag.drop} host={termPaneRef.current.getBoundingClientRect()} move />
               )}
             </section>
             <div
@@ -2613,6 +2682,11 @@ export default function App() {
           }}
         />
       )}
+      {tabDrag && (
+        <div className="drag-ghost" style={{ left: tabDrag.x, top: tabDrag.y }}>
+          {tabDrag.tab.agent === "claude" ? <ClaudeLogo /> : tabDrag.tab.agent === "codex" ? <CodexLogo /> : <TerminalIcon />} {tabDrag.tab.title}
+        </div>
+      )}
       {agentDrag && (
         <div className="drag-ghost" style={{ left: agentDrag.x, top: agentDrag.y }}>
           {agentDrag.cmd === "claude" ? <ClaudeLogo /> : agentDrag.cmd === "codex" ? <CodexLogo /> : <TerminalIcon />}{" "}
@@ -2632,7 +2706,7 @@ const SIDE_LABEL: Record<DropSide | "center", string> = {
 };
 
 /** Highlights where a dragged agent will land, relative to the terminal area. */
-function DropPreview({ drop, host }: { drop: Drop; host: DOMRect }) {
+function DropPreview({ drop, host, move }: { drop: Drop; host: DOMRect; move?: boolean }) {
   const r = drop.rect;
   const box = { left: r.left - host.left, top: r.top - host.top, width: r.width, height: r.height };
   if (drop.side === "left") box.width /= 2;
@@ -2647,7 +2721,7 @@ function DropPreview({ drop, host }: { drop: Drop; host: DOMRect }) {
   }
   return (
     <div className="drop-preview" style={box}>
-      <span>{SIDE_LABEL[drop.side]}</span>
+      <span>{move && drop.side === "center" ? "Move here" : SIDE_LABEL[drop.side]}</span>
     </div>
   );
 }
