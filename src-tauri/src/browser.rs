@@ -56,6 +56,22 @@ pub async fn browser_show(
     Ok(())
 }
 
+/// Downloads in progress: their URL → where they're being saved.
+static DOWNLOADS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, std::path::PathBuf>>> =
+    std::sync::LazyLock::new(Default::default);
+
+/// "Show in Finder" for a finished download (only files in ~/Downloads).
+#[tauri::command]
+pub fn browser_reveal_download(path: String) -> Result<(), String> {
+    let file = std::path::PathBuf::from(&path);
+    let downloads = std::path::Path::new(&crate::home_dir()).join("Downloads");
+    if !file.starts_with(&downloads) || !file.exists() {
+        return Err("Not a download".into());
+    }
+    std::process::Command::new("/usr/bin/open").arg("-R").arg(&file).spawn().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// The page engine is the Mac's own WebKit (the installed Safari's), but an
 /// embedded view leaves "Version/… Safari/…" out of its user agent, so sites
 /// like Google Calendar call it an unsupported browser. Say what it is: the
@@ -78,6 +94,7 @@ fn safari_user_agent() -> String {
 fn create(app: &AppHandle, label: &str, url: &str, x: f64, y: f64, w: f64, h: f64) -> Result<(), String> {
     let window = app.get_window("main").ok_or("main window missing")?;
     let events = app.clone();
+    let downloads = app.clone();
     let event_label = label.to_string();
     let builder = WebviewBuilder::new(label, WebviewUrl::External(parse(url)?))
         // Web Inspector for the DevTools button (also makes the page
@@ -86,6 +103,28 @@ fn create(app: &AppHandle, label: &str, url: &str, x: f64, y: f64, w: f64, h: f6
         // Records fetch/XHR from document start for the Network panel.
         .initialization_script(include_str!("../../client/src/netRecorder.js"))
         .user_agent(&safari_user_agent())
+        // Downloads go to ~/Downloads (wry picks the name, adding " (1)" when
+        // taken); the window shows a notice when each one finishes.
+        .on_download(move |_view, event| {
+            use tauri::webview::DownloadEvent;
+            let mut pending = DOWNLOADS.lock().unwrap();
+            let (state, path) = match event {
+                DownloadEvent::Requested { url, destination } => {
+                    pending.insert(url.to_string(), destination.clone());
+                    ("started", Some(destination.clone()))
+                }
+                // macOS doesn't report the path here: use the one from the request.
+                DownloadEvent::Finished { url, success, .. } => (if success { "done" } else { "failed" }, pending.remove(url.as_str())),
+                _ => return true,
+            };
+            let name = path.as_ref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+            let _ = downloads.emit_to(
+                "main",
+                "browser:download",
+                serde_json::json!({ "state": state, "name": name, "path": path.map(|p| p.to_string_lossy().to_string()) }),
+            );
+            true
+        })
         .on_page_load(move |_view, payload| {
         let _ = events.emit_to(
             "main",

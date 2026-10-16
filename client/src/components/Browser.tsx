@@ -186,6 +186,29 @@ export default function Browser({
   const findRef = useRef<HTMLInputElement>(null);
   // Recently closed tabs, for ⌘⇧T.
   const closedTabs = useRef<{ url: string; name?: string }[]>([]);
+  // Latest download (saved to ~/Downloads by the native side).
+  const [download, setDownload] = useState<{ state: "started" | "done" | "failed"; name: string; path?: string } | null>(null);
+  useEffect(() => {
+    if (!isTauri) return;
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    let hide: ReturnType<typeof setTimeout>;
+    void import("@tauri-apps/api/event").then(({ listen }) =>
+      listen<{ state: "started" | "done" | "failed"; name: string; path?: string }>("browser:download", (e) => {
+        clearTimeout(hide);
+        setDownload(e.payload);
+        if (e.payload.state !== "started") hide = setTimeout(() => setDownload(null), 12_000);
+      }).then((fn) => {
+        if (cancelled) fn();
+        else unlisten = fn;
+      }),
+    );
+    return () => {
+      cancelled = true;
+      clearTimeout(hide);
+      unlisten?.();
+    };
+  }, []);
   // Tab / bookmark being dragged to a new place.
   const dragTab = useRef<number | null>(null);
   const dragMark = useRef<string | null>(null);
@@ -812,6 +835,20 @@ export default function Browser({
               <button onClick={() => copy(l.code)}>{copied === l.code ? "copied" : "copy"}</button>
             </div>
           ))}
+        </div>
+      )}
+      {download && (
+        <div className={`browser-download ${download.state}`}>
+          <span>
+            {download.state === "started" ? "Downloading" : download.state === "done" ? "Downloaded" : "Download failed:"} <b>{download.name || "file"}</b>
+            {download.state === "done" && <small> · in Downloads</small>}
+          </span>
+          {download.state === "done" && download.path && (
+            <button onClick={() => void invoke("browser_reveal_download", { path: download.path }).catch(() => undefined)}>Show in Finder</button>
+          )}
+          <button className="browser-download-x" title="Dismiss" onClick={() => setDownload(null)}>
+            ×
+          </button>
         </div>
       )}
       {find !== null && (

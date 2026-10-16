@@ -800,6 +800,7 @@ fn main() {
             browser::browser_screenshot,
             browser::browser_import_cookies,
             browser::browser_zoom,
+            browser::browser_reveal_download,
             browser::browser_devtools,
             set_background,
             set_tray_title,
