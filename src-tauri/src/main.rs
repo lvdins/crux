@@ -242,9 +242,12 @@ fn toggle_quick(app: &tauri::AppHandle) {
     }
     let built = tauri::WebviewWindowBuilder::new(app, "quick", tauri::WebviewUrl::App("index.html".into()))
         .title("Quick ask")
-        .inner_size(600.0, 168.0)
+        // Room around the card for its shadow (the window itself is clear).
+        .inner_size(700.0, 340.0)
         .resizable(false)
         .decorations(false)
+        .transparent(true)
+        .shadow(false)
         .always_on_top(true)
         .skip_taskbar(true)
         .visible_on_all_workspaces(true)

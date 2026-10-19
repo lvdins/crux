@@ -7,6 +7,8 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import QuickAsk from "./components/QuickAsk";
 import TrayPanel from "./components/TrayPanel";
+// Roboto, bundled (works offline): the one UI font across the app.
+import "@fontsource-variable/roboto";
 import "./styles.css";
 
 // The ⌥Space window and the menu bar panel load this same page with

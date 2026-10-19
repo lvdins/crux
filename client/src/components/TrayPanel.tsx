@@ -180,7 +180,7 @@ export default function TrayPanel() {
           <button onClick={() => void invoke("tray_action", { action: "quick" })}>
             Quick Ask <kbd>⌥Space</kbd>
           </button>
-          <button title="Take a screenshot and pick the chat it goes to" onClick={() => void screenshot()}>
+          <button className="tray-shot" title="Take a screenshot and pick the chat it goes to" onClick={() => void screenshot()}>
             Screenshot to agent
           </button>
         </div>

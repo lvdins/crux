@@ -10,6 +10,12 @@ export interface SessionTab {
   /** Main kind: the chat's agent, else shell. */
   kind: string;
   status?: "working" | "input" | "done";
+  /** What the agent is doing now (from its hooks): "Bash: npm test", a question… */
+  detail?: string;
+  /** Workspace key: tabs are grouped by it. */
+  group: string;
+  /** Workspace colour, tinting its group. */
+  tint?: string;
 }
 
 const kindIcon = (k: string) => (k === "claude" ? <ClaudeLogo /> : k === "codex" ? <CodexLogo /> : <TerminalIcon />);
@@ -40,6 +46,9 @@ export default function SessionBar({
   onAdd: (e: React.MouseEvent) => void;
 }) {
   const [renaming, setRenaming] = useState<{ chat: string; name: string } | null>(null);
+  // One group per workspace, in the order each first appears; tabs keep their order inside.
+  const groups = [...new Set(tabs.map((t) => t.group))];
+  const ordered = groups.flatMap((g) => tabs.filter((t) => t.group === g));
   const drag = useRef<string | null>(null);
   const strip = useRef<HTMLDivElement>(null);
 
@@ -56,11 +65,12 @@ export default function SessionBar({
   return (
     <div className="session-bar">
       <div className="session-strip" ref={strip}>
-        {tabs.map((t, i) => (
+        {ordered.map((t, i) => (
           <div
             key={t.chat}
-            className={`session-tab ${t.chat === active ? "on" : ""}`}
-            title={`${t.name} · ${t.wsLabel}${t.status ? ` · ${STATUS[t.status]}` : ""}${i < 9 ? ` · ⌘${i + 1}` : ""}\nDouble-click to rename · drag to reorder`}
+            className={`session-tab ${t.chat === active ? "on" : ""} ${i > 0 && ordered[i - 1].group !== t.group ? "group-start" : ""}`}
+            style={t.tint ? ({ "--tint": t.tint } as CSSProperties) : undefined}
+            title={`${t.name} · ${t.wsLabel}${t.status ? ` · ${STATUS[t.status]}` : ""}${i < 9 ? ` · ⌘${i + 1}` : ""}${t.detail ? `\n${t.detail}` : ""}\nDouble-click to rename · drag to reorder`}
             onClick={() => onOpen(t.chat)}
             onAuxClick={(e) => e.button === 1 && onClose(t.chat)}
             onDoubleClick={() => setRenaming({ chat: t.chat, name: t.name })}
@@ -99,7 +109,10 @@ export default function SessionBar({
                 }}
               />
             ) : (
-              <span className="session-name">{t.name}</span>
+              <span className="session-label">
+                <span className="session-name">{t.name}</span>
+                {t.detail && <span className="session-detail">{t.detail}</span>}
+              </span>
             )}
             {t.status === "working" ? <span className="agent-spin session-state" /> : t.status && <span className={`session-dot ${t.status}`} />}
             <button

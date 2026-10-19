@@ -99,7 +99,7 @@ const MODES: { mode: Settings["mode"]; title: string; body: string }[] = [
   { mode: "regular", title: "Regular", body: "Just chats and agents on any folder; everything else off." },
 ];
 
-const PAGES = [
+export const PAGES = [
   ["profile", "Profile"],
   ["updates", "Updates"],
   ["setup", "Setup"],

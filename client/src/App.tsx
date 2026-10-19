@@ -8,7 +8,7 @@ import SuiteCoverage from "./components/SuiteCoverage";
 import Browser from "./components/Browser";
 import { runAgentCommand, browserLabel, activeBrowserLabel } from "./agentBrowser";
 import { CANCEL_REPORT_SCRIPT, REPORT_SCRIPT, cropShot, jiraPrompt, type MarkedIssue } from "./reportIssue";
-import ChatSearch, { type PastChat } from "./components/ChatSearch";
+import ChatSearch, { type PaletteItem, type PastChat } from "./components/ChatSearch";
 import ChatPicker from "./components/ChatPicker";
 import PipelinesPanel, { overallTone, type PipelineInfo } from "./components/PipelinesPanel";
 import FeatureMap from "./components/FeatureMap";
@@ -20,13 +20,14 @@ import Welcome from "./components/onboarding/Welcome";
 import NameStep from "./components/onboarding/NameStep";
 import ModeStep from "./components/onboarding/ModeStep";
 import { useModalKeys } from "./useModalKeys";
-import SettingsModal, { type Page as SettingsPage } from "./components/SettingsModal";
+import SettingsModal, { PAGES as SETTINGS_PAGES, type Page as SettingsPage } from "./components/SettingsModal";
 import { notify } from "./notify";
 import { IS_MAC, KEY, isAppShortcut } from "./platform";
 import type { TeamMember, TrayAgent } from "./components/TrayPanel";
 import OrchestrateModal, { type OrchestrateOpts } from "./components/OrchestrateModal";
 import SessionBar, { type SessionTab } from "./components/SessionBar";
 import SessionsPanel from "./components/SessionsPanel";
+import WorkspaceHome from "./components/WorkspaceHome";
 import "./components/settings.css";
 import FirstSetup from "./components/onboarding/FirstSetup";
 import PermissionsStep from "./components/onboarding/PermissionsStep";
@@ -66,7 +67,7 @@ type View = string | "connections" | "jira" | "home";
 const SPECIAL_VIEWS = new Set(["connections", "jira", "home", "sessions"]);
 const isSpecial = (v: string) => SPECIAL_VIEWS.has(v);
 /** Sent by the ⌥Space quick-ask window. */
-type QuickAsk = { ws: string; text: string };
+type QuickAsk = { ws: string; text: string; agent?: "claude" | "codex" };
 /** From Claude's hooks (working / stop / input) or Codex's output (codex-*). */
 type AgentEvent = "stop" | "input" | "working" | "codex" | "codex-working";
 const IN_TAURI = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -280,12 +281,6 @@ export default function App() {
     });
   // Agent drove the browser of the workspace on screen: show it.
   const revealBrowserRef = useRef<(ws: string) => void>(() => {});
-  const [viewsHidden, setViewsHidden] = useState(() => localStorage.getItem("crux.viewsHidden") === "1");
-  const toggleViews = () =>
-    setViewsHidden((h) => {
-      localStorage.setItem("crux.viewsHidden", h ? "0" : "1");
-      return !h;
-    });
   const toggleSideRef = useRef(toggleSide);
   const toggleRightRef = useRef<() => void>(() => {});
   const quickAskRef = useRef<(q: QuickAsk) => void>(() => {});
@@ -1212,12 +1207,18 @@ export default function App() {
 
   // Put text into an agent's input in a chat (starting Claude there if it
   // has none); `submit` presses Enter too.
-  const deliverToAgent = async (to: { chat: string } | { newIn: string }, text: string, submit: boolean, title = "claude") => {
+  const deliverToAgent = async (
+    to: { chat: string } | { newIn: string },
+    text: string,
+    submit: boolean,
+    title = "claude",
+    kind: "claude" | "codex" = "claude",
+  ) => {
     let chat: string;
     let id: string | undefined;
     if ("newIn" in to) {
       chat = newChatKey(to.newIn);
-      id = addTab(chat, "claude", "claude", agentBoot("claude"));
+      id = addTab(chat, kind, kind, agentBoot(kind));
       setChatTitles((prev) => ({ ...prev, [chat]: title }));
       setChatsShown(to.newIn, true);
     } else {
@@ -1226,13 +1227,13 @@ export default function App() {
     }
     openChat(chat);
     if (!id || "newIn" in to) {
-      id ??= addTab(chat, "claude", "claude", agentBoot("claude"));
-      // Give Claude Code time to start before pasting.
+      id ??= addTab(chat, kind, kind, agentBoot(kind));
+      // Give the agent time to start before pasting.
       for (let i = 0; i < 20; i++) {
         await new Promise((res) => setTimeout(res, 500));
         try {
           const p = await api(`/api/term/${encodeURIComponent(id)}/process`);
-          if (p.ok && /claude/i.test(String((await p.json()).process ?? ""))) break;
+          if (p.ok && new RegExp(kind, "i").test(String((await p.json()).process ?? ""))) break;
         } catch {
           /* keep waiting */
         }
@@ -1587,11 +1588,11 @@ export default function App() {
   }, [working.size]);
 
   // ⌥Space quick ask: a new Claude chat named after the prompt's first words.
-  quickAskRef.current = ({ ws, text }) => {
+  quickAskRef.current = ({ ws, text, agent }) => {
     const target = config?.repos[ws] ? ws : Object.keys(config?.repos ?? {})[0];
     if (!target || !text.trim()) return;
     const title = text.trim().split(/\s+/).slice(0, 4).join(" ").slice(0, 32);
-    void deliverToAgent({ newIn: target }, text.trim(), true, title).catch((err) => setToast(String(err)));
+    void deliverToAgent({ newIn: target }, text.trim(), true, title, agent === "codex" ? "codex" : "claude").catch((err) => setToast(String(err)));
   };
 
   // Setup → "Log in" / "Install": run the fix in a new terminal chat.
@@ -1795,9 +1796,73 @@ export default function App() {
         badge: avatarStyle(r),
         kind: tabs[chat].find((t) => t.agent && t.role !== "worker")?.agent ?? "shell",
         status: working.has(chat) ? "working" : a === "input" ? "input" : a === "stop" ? "done" : undefined,
+        detail: chatDetail.get(chat),
+        group: wsOf(chat),
+        tint: r.color,
       };
     });
+  {
+    // Same grouping as the bar shows (⌘1–9 follow what you see).
+    const groups = [...new Set(sessionTabs.map((t) => t.group))];
+    sessionTabs.splice(0, sessionTabs.length, ...groups.flatMap((g) => sessionTabs.filter((t) => t.group === g)));
+  }
   sessionTabsRef.current = sessionTabs;
+
+  // ⌘K: everything you can jump to or do, besides past conversations.
+  const paletteItems = (): PaletteItem[] => {
+    const repos = Object.entries(config.repos);
+    const here = newSessionWs ?? "";
+    const state = { working: "working", input: "needs you", done: "finished" };
+    const items: PaletteItem[] = sessionTabs.map((t) => ({
+      key: `s:${t.chat}`,
+      section: "Sessions",
+      icon: t.kind === "claude" ? <ClaudeLogo /> : t.kind === "codex" ? <CodexLogo /> : <TerminalIcon />,
+      title: t.name,
+      sub: [t.wsLabel, t.detail].filter(Boolean).join(" · "),
+      hint: t.status ? state[t.status] : "open",
+      keywords: t.kind,
+      run: () => {
+        openChat(t.chat);
+        setChatsShown(wsOf(t.chat), true);
+      },
+    }));
+    if (settings.jira && config.browserSupported !== false) {
+      for (const t of jiraTabs.tabs) {
+        items.push({ key: `b:${t.id}`, section: "Browser tabs", icon: <GlobeIcon />, title: jiraTabName(t), sub: t.url, keywords: "browser tab", run: () => openJiraTab(t.id) });
+      }
+    }
+    const go = (key: string, title: string, icon: React.ReactNode, run: () => void, keywords = "", hint?: string) =>
+      items.push({ key: `g:${key}`, section: "Go to", icon, title, run, keywords, hint });
+    go("home", "Home", <WebIcon />, () => setView("home"), "start dashboard");
+    if (settings.sessionsView !== false) go("sessions", "Sessions", <TerminalIcon />, () => setView("sessions"), "past history");
+    if (settings.jira && config.browserSupported !== false) go("browser", "Browser", <GlobeIcon />, () => setView("jira"), "web", KEY.panel);
+    if (showConnections) go("connections", "Connections", <WebIcon />, () => setView("connections"), "features graph coverage");
+    for (const [key, r] of repos) go(`ws:${key}`, r.label, <span className="avatar search-avatar" style={avatarStyle(r)}>{r.label[0]?.toUpperCase()}</span>, () => setView(key), `workspace ${r.path}`);
+    for (const [page, label] of SETTINGS_PAGES) {
+      go(`set:${page}`, `Settings: ${label}`, MenuIcons.rename, () => {
+        setSettingsPage(page);
+        setSettingsOpen(true);
+      }, "settings preferences");
+    }
+    // Actions: new sessions in the workspace on screen first, then in any workspace.
+    const act = (key: string, title: string, icon: React.ReactNode, run: () => void, keywords = "", hint?: string) =>
+      items.push({ key: `a:${key}`, section: "Actions", icon, title, run, keywords, hint });
+    const ordered = [...repos].sort(([a], [b]) => Number(b === here) - Number(a === here));
+    for (const [key, r] of ordered) {
+      act(`claude:${key}`, `New Claude chat in ${r.label}`, <ClaudeLogo />, () => askChatName(key, "claude"), "new start");
+      act(`codex:${key}`, `New Codex chat in ${r.label}`, <CodexLogo />, () => askChatName(key, "codex"), "new start");
+      act(`shell:${key}`, `New terminal in ${r.label}`, <TerminalIcon />, () => askChatName(key, "shell"), "new shell");
+      act(`orch:${key}`, `Orchestrate in ${r.label}`, <OrchestrateIcon />, () => setOrchestrate(key), "team agents split");
+    }
+    if (closedChats.current.length) act("reopen", "Reopen closed session", MenuIcons.read, reopenClosed, "undo", "⌘⇧T");
+    act("add-ws", "Add workspace…", MenuIcons.folder, () => setAdding(true), "folder repo new");
+    act("updates", "Check for updates", MenuIcons.read, () => {
+      setSettingsPage("updates");
+      setSettingsOpen(true);
+    }, "version");
+    act("sidebar", sideHidden ? "Show sidebar" : "Hide sidebar", MenuIcons.read, toggleSide, "toggle", KEY.sidebar);
+    return items;
+  };
 
   const chatRow = (chat: string) => ({
     chat,
@@ -2004,6 +2069,76 @@ export default function App() {
             <span className="side-label">Home</span>
             {attention.size > 0 && <span className="home-count">{attention.size}</span>}
           </button>
+          {/* Views, right under Home (each can be hidden in Settings → Tabs & views). */}
+          {settings.sessionsView !== false && (
+          <button
+            className={`side-item view-item ${view === "sessions" ? "active" : ""}`}
+            onClick={() => setView("sessions")}
+          >
+            <span className="avatar view-icon"><TerminalIcon /></span>
+            <span className="side-label">Sessions</span>
+          </button>
+          )}
+          {showConnections && (
+          <button
+            className={`side-item view-item ${view === "connections" ? "active" : ""}`}
+            onClick={() => setView("connections")}
+          >
+            <span className="avatar view-icon"><WebIcon /></span>
+            <span className="side-label">Connections</span>
+          </button>
+          )}
+          {settings.jira && (
+          <>
+          <button
+            className={`side-item view-item ${view === "jira" ? "active" : ""}`}
+            onClick={() => setView("jira")}
+          >
+            <span className="avatar view-icon"><GlobeIcon /></span>
+            <span className="side-label">Browser</span>
+            {jiraTabs.tabs.length > 0 && (
+              <span
+                className={`side-sub-toggle ${jiraTabsHidden ? "collapsed" : ""}`}
+                role="button"
+                title={jiraTabsHidden ? "Show open tabs" : "Hide open tabs"}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleJiraTabs();
+                }}
+              >
+                <small>{jiraTabs.tabs.length}</small>
+                <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M2.5 3.75 5 6.25l2.5-2.5" />
+                </svg>
+              </span>
+            )}
+          </button>
+          <div className={`side-sub ${jiraTabsHidden || jiraTabs.tabs.length === 0 ? "collapsed" : ""}`}>
+            <div className="side-sub-inner">
+              {jiraTabs.tabs.map((t) => (
+                <div
+                  key={t.id}
+                  className={`side-sub-item ${view === "jira" && jiraTabs.active === t.id ? "active" : ""}`}
+                  onClick={() => openJiraTab(t.id)}
+                >
+                  <span className="side-sub-dot" />
+                  <span className="side-sub-label">{jiraTabName(t)}</span>
+                  <button
+                    className="side-remove"
+                    title="Close tab"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeJiraTab(t.id);
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+          </>
+          )}
           <div className="side-section side-section-row">
             <span>Workspaces</span>
             <button className="side-add" title="Add workspace" onClick={() => setAdding(true)}>
@@ -2181,96 +2316,6 @@ export default function App() {
               <span className="side-label">Add a repo folder</span>
             </button>
           )}
-          {(showConnections || settings.jira || settings.sessionsView !== false) && (
-          <>
-          <button
-            className={`side-section side-section-toggle ${viewsHidden ? "collapsed" : ""}`}
-            onClick={toggleViews}
-            title={viewsHidden ? "Show views" : "Hide views"}
-          >
-            <span>Views</span>
-            <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M2.5 3.75 5 6.25l2.5-2.5" />
-            </svg>
-          </button>
-          <div className={`side-views ${viewsHidden ? "collapsed" : ""}`}>
-            <div className="side-views-inner">
-              {settings.sessionsView !== false && (
-              <button
-                className={`side-item view-item ${view === "sessions" ? "active" : ""}`}
-                onClick={() => setView("sessions")}
-                tabIndex={viewsHidden ? -1 : 0}
-              >
-                <span className="avatar view-icon"><TerminalIcon /></span>
-                <span className="side-label">Sessions</span>
-              </button>
-              )}
-              {showConnections && (
-              <button
-                className={`side-item view-item ${view === "connections" ? "active" : ""}`}
-                onClick={() => setView("connections")}
-                tabIndex={viewsHidden ? -1 : 0}
-              >
-                <span className="avatar view-icon"><WebIcon /></span>
-                <span className="side-label">Connections</span>
-              </button>
-              )}
-              {settings.jira && (
-              <>
-              <button
-                className={`side-item view-item ${view === "jira" ? "active" : ""}`}
-                onClick={() => setView("jira")}
-                tabIndex={viewsHidden ? -1 : 0}
-              >
-                <span className="avatar view-icon"><GlobeIcon /></span>
-                <span className="side-label">Browser</span>
-                {jiraTabs.tabs.length > 0 && (
-                  <span
-                    className={`side-sub-toggle ${jiraTabsHidden ? "collapsed" : ""}`}
-                    role="button"
-                    title={jiraTabsHidden ? "Show open tabs" : "Hide open tabs"}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleJiraTabs();
-                    }}
-                  >
-                    <small>{jiraTabs.tabs.length}</small>
-                    <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M2.5 3.75 5 6.25l2.5-2.5" />
-                    </svg>
-                  </span>
-                )}
-              </button>
-              <div className={`side-sub ${jiraTabsHidden || jiraTabs.tabs.length === 0 ? "collapsed" : ""}`}>
-                <div className="side-sub-inner">
-                  {jiraTabs.tabs.map((t) => (
-                    <div
-                      key={t.id}
-                      className={`side-sub-item ${view === "jira" && jiraTabs.active === t.id ? "active" : ""}`}
-                      onClick={() => openJiraTab(t.id)}
-                    >
-                      <span className="side-sub-dot" />
-                      <span className="side-sub-label">{jiraTabName(t)}</span>
-                      <button
-                        className="side-remove"
-                        title="Close tab"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          closeJiraTab(t.id);
-                        }}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              </>
-              )}
-            </div>
-          </div>
-          </>
-          )}
           {update && (
             <button
               className={`update-bubble ${update.installing ? "busy" : ""}`}
@@ -2283,8 +2328,12 @@ export default function App() {
             </button>
           )}
           <div className="side-footer">
-            <span className="avatar">{(config.userName || config.user || "?")[0].toUpperCase()}</span>{" "}
-            {config.userName || config.user} · Crux {appVersion}
+            <span className="avatar">{(config.userName || config.user || "?")[0].toUpperCase()}</span>
+            {/* A long name shortens with "…"; the version and the gear always fit. */}
+            <span className="side-footer-name" title={`${config.userName || config.user} · Crux ${appVersion}`}>
+              {config.userName || config.user}
+            </span>
+            <span className="side-footer-version">· {appVersion}</span>
             <button
               className="settings-btn"
               title={setupCount ? `Settings · ${setupCount} setup problem${setupCount === 1 ? "" : "s"}` : "Settings"}
@@ -2470,21 +2519,24 @@ export default function App() {
                   // No chat yet: nothing runs until the user starts one. Still a
                   // drop target, so dragging Claude / Codex here works too.
                   <div className="term-slot chat-empty" data-pane-id={MAIN}>
-                    <p>No chats in {repo?.label ?? "this workspace"} yet</p>
-                    <div className="chat-empty-actions">
-                      <button onClick={() => askChatName(view, "claude")}>
-                        <ClaudeLogo /> New Claude chat
-                      </button>
-                      <button onClick={() => askChatName(view, "codex")}>
-                        <CodexLogo /> New Codex chat
-                      </button>
-                      <button onClick={() => askChatName(view, "shell")}>
-                        <TerminalIcon /> New terminal
-                      </button>
-                      <button onClick={() => setOrchestrate(view)}>
-                        <OrchestrateIcon /> Orchestrate
-                      </button>
-                    </div>
+                    {repo ? (
+                      <WorkspaceHome
+                        ws={view}
+                        label={repo.label}
+                        path={repo.path}
+                        branch={branches[view]}
+                        onNew={(kind) => askChatName(view, kind)}
+                        onOrchestrate={() => setOrchestrate(view)}
+                        onResume={resumePast}
+                        onReview={(mr) => void deliverToAgent({ newIn: view }, reviewPrompt(mr), true, `review !${mr.iid}`).catch((err) => setToast(String(err)))}
+                        onOpenUrl={(url) => {
+                          setBrowserOpen({ url, nonce: Date.now() });
+                          setView("jira");
+                        }}
+                      />
+                    ) : (
+                      <p>No chats yet</p>
+                    )}
                   </div>
                 )}
               </div>
@@ -2636,22 +2688,9 @@ export default function App() {
       )}
       {searchOpen && config && (
         <ChatSearch
-          open={Object.keys(tabs)
-            .filter((chat) => config.repos[wsOf(chat)] && tabs[chat].length)
-            .map((chat) => ({
-              chat,
-              ws: wsOf(chat),
-              wsLabel: config.repos[wsOf(chat)].label,
-              name: chatTitle(chat),
-              kinds: [...new Set(tabs[chat].map((t) => t.agent ?? "shell"))],
-            }))}
+          items={paletteItems()}
           workspaces={searchWorkspaces}
           current={view}
-          onOpen={(chat) => {
-            setSearchOpen(false);
-            openChat(chat);
-            setChatsShown(wsOf(chat), true);
-          }}
           onResume={resumePast}
           onClose={() => setSearchOpen(false)}
         />

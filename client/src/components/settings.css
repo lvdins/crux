@@ -19,7 +19,7 @@
 .settings-row + .settings-row { border-top: 1px solid var(--line); }
 .settings-row.disabled { cursor: default; opacity: 0.55; }
 .settings-text { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.settings-text b { font-size: 13px; color: var(--ink); font-weight: 600; }
+.settings-text b { font-size: 13px; color: var(--ink); font-weight: 700; }
 .settings-text span { font-size: 12px; color: var(--ink-faint); line-height: 1.4; }
 
 /* toggle switch drawn on a native checkbox (keyboard + a11y for free) */
@@ -61,13 +61,13 @@
   color: var(--ink-faint); font: inherit; font-size: 13px; cursor: pointer;
 }
 .modal .settings-nav button:hover { color: var(--ink); background: var(--bg); }
-.modal .settings-nav button.on { color: var(--ink); background: var(--accent-soft); font-weight: 600; }
+.modal .settings-nav button.on { color: var(--ink); background: var(--accent-soft); font-weight: 700; }
 /* Mode sits last and quieter */
 .modal .settings-nav button:last-child { margin-top: auto; font-size: 12px; }
 .settings-page { overflow-y: auto; min-height: 380px; padding-right: 2px; }
 .settings-page > :first-child, .settings-page > div:first-child > .settings-section { margin-top: 0; }
 .settings-row.child { padding-left: 30px; }
-.settings-row.child .settings-text b { font-weight: 500; }
+.settings-row.child .settings-text b { font-weight: 600; }
 .settings-row.static { cursor: default; }
 .settings-modal .settings-note { margin: 12px 0 10px; font-size: 12.5px; color: var(--ink-soft); line-height: 1.5; }
 .settings-modal .settings-note.warn { color: var(--danger, #d9534f); }
@@ -130,6 +130,6 @@
 .import-status { flex: 1; font-size: 11.5px; color: var(--ink-soft); }
 .import-status.error { color: var(--danger, #f0607a); }
 .import-foot button { margin-left: auto; }
-.settings-btn-sm.primary { background: var(--accent); border-color: var(--accent); color: #06140d; font-weight: 600; }
+.settings-btn-sm.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
 .settings-btn-sm.primary:disabled { opacity: 0.45; cursor: default; }
-.import-site.import-all { color: var(--ink); font-weight: 500; border-bottom: 1px solid var(--line); border-radius: 6px 6px 0 0; margin-bottom: 2px; }
+.import-site.import-all { color: var(--ink); font-weight: 600; border-bottom: 1px solid var(--line); border-radius: 6px 6px 0 0; margin-bottom: 2px; }

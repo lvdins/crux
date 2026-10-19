@@ -301,7 +301,7 @@ export default function Home({
   );
 }
 
-function MrRow({
+export function MrRow({
   mr,
   wsLabel,
   onReview,
