@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { CRUX_HOME, DEFAULT_HOME, rootPath } from "./paths.js";
+import type { Appearance } from "./themes.js";
 
 export type RepoKind = "mkdocs" | "playwright" | "pytest" | "frontend" | "backend" | "generic";
 
@@ -58,6 +59,8 @@ export interface Settings {
   sessionsView: boolean;
   /** Jira project key bugs are filed in (blank: the agent asks). */
   jiraProject: string;
+  /** Settings → Appearance (see themes.ts). Absent: Crux's own look. */
+  appearance?: Appearance;
 }
 
 /** Tabs and views: a mode turns these on or off. */

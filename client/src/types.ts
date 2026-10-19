@@ -1,3 +1,5 @@
+import type { Appearance } from "./appearance";
+
 export interface RepoInfo {
   label: string;
   kind: string;
@@ -73,6 +75,8 @@ export interface Settings {
   sessionsView: boolean;
   /** Jira project key bugs are filed in (blank: the agent asks). */
   jiraProject: string;
+  /** Settings → Appearance. Absent: Crux's own look (DEFAULT_APPEARANCE). */
+  appearance?: Appearance;
 }
 
 export const QA_SETTINGS: Settings = {

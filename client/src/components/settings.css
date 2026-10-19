@@ -133,3 +133,21 @@
 .settings-btn-sm.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
 .settings-btn-sm.primary:disabled { opacity: 0.45; cursor: default; }
 .import-site.import-all { color: var(--ink); font-weight: 600; border-bottom: 1px solid var(--line); border-radius: 6px 6px 0 0; margin-bottom: 2px; }
+
+/* Settings → Appearance */
+.appearance-inline { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.appearance-inline.wrap { flex-wrap: wrap; justify-content: flex-end; max-width: 330px; }
+.settings-page > .appearance-inline { display: flex; }
+.appearance-gap { margin-top: 8px; }
+.settings-input.appearance-select { width: auto; padding: 5px 8px; font-size: 12.5px; }
+.settings-input.appearance-num { width: 62px; padding: 5px 8px; font-size: 12.5px; }
+.settings-input.appearance-font { width: 170px; padding: 5px 8px; font-size: 12.5px; }
+.appearance-slider { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.appearance-slider input { width: 130px; accent-color: var(--accent); }
+.appearance-slider output { min-width: 44px; text-align: right; font-size: 12px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.appearance-check { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--ink-soft); cursor: pointer; }
+.appearance-check input { accent-color: var(--accent); margin: 0; }
+.settings-page input[type="color"] {
+  width: 30px; height: 26px; padding: 2px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); cursor: pointer;
+}
+.appearance-override { flex-wrap: wrap; }

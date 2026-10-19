@@ -16,6 +16,7 @@ import { buildTree, sharedEndpoints } from "./tree.js";
 import { fullReply, hookDetail, installAgentSetup } from "./agent-setup.js";
 import { latestRelease, installRelease, isNewer } from "./update.js";
 import { guardHttp, wsAllowed } from "./security.js";
+import { ASSET_EXT, ASSET_PROTOCOL_OK, ASSETS_DIR, MAX_ASSET, THEMES_DIR, assetPath, cleanAppearance, deleteTheme, exportTheme, importTheme, listThemes, safeName, saveAsset, saveTheme } from "./themes.js";
 import { pipelinesFor } from "./pipelines.js";
 import { checkSetup } from "./health.js";
 import { inboxMrs } from "./inbox.js";
@@ -36,7 +37,7 @@ app.options("*", (_req, res) => res.sendStatus(204));
 // Claude hook events carry the hook's JSON, tool output included: allow more.
 const jsonBody = express.json();
 const hookBody = express.json({ limit: "50mb" });
-app.use((req, res, next) => (req.path === "/api/agent-event" ? hookBody : jsonBody)(req, res, next));
+app.use((req, res, next) => (req.path === "/api/agent-event" || req.path === "/api/themes/import" ? hookBody : jsonBody)(req, res, next));
 
 // Serve the built client when it exists, so the desktop app (and plain
 // http://localhost:8787) works without vite.
@@ -103,16 +104,76 @@ app.patch("/api/settings", (req, res) => {
   if (body.mode === "qa" || body.mode === "regular") {
     // A mode resets the tabs and views; personal preferences stay.
     const prefs = Object.fromEntries(PREF_KEYS.map((k) => [k, next[k]]));
-    next = { ...MODE_PRESETS[body.mode], ...prefs, defaultChat: next.defaultChat, jiraProject: next.jiraProject };
+    next = { ...MODE_PRESETS[body.mode], ...prefs, defaultChat: next.defaultChat, jiraProject: next.jiraProject, appearance: next.appearance };
+    if (!next.appearance) delete next.appearance;
   }
   for (const k of SETTING_KEYS) {
     if (typeof body[k] === "boolean") next[k] = body[k];
   }
   if (DEFAULT_CHATS.includes(body.defaultChat as Settings["defaultChat"])) next.defaultChat = body.defaultChat!;
   if (typeof body.jiraProject === "string" && /^[\w -]{0,40}$/.test(body.jiraProject)) next.jiraProject = body.jiraProject.trim();
+  // Appearance is a personal preference: replaced whole, checked key by key; null clears it.
+  const look = (req.body ?? {}).appearance;
+  if (look === null) delete next.appearance;
+  else if (look !== undefined) {
+    const clean = cleanAppearance(look);
+    if (clean) next.appearance = clean;
+  }
   config.settings = next;
   saveConfig();
   res.json(next);
+});
+
+// Theme files (~/.crux/themes) and their backgrounds (~/.crux/themes/assets).
+app.get("/api/themes", (_req, res) => res.json(listThemes()));
+app.get("/api/themes/dir", (_req, res) => res.json({ dir: THEMES_DIR, assets: ASSETS_DIR, assetProtocol: ASSET_PROTOCOL_OK }));
+app.post("/api/themes", (req, res) => {
+  try {
+    res.json(saveTheme(req.body));
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+app.post("/api/themes/import", (req, res) => {
+  try {
+    res.json(importTheme(req.body));
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+// Raw body; the file name comes in ?name= (or an X-File-Name header).
+app.post("/api/themes/assets", express.raw({ type: () => true, limit: MAX_ASSET + 1 }), (req, res) => {
+  const name = String(req.query.name ?? req.headers["x-file-name"] ?? "");
+  try {
+    res.json({ asset: saveAsset(path.basename(name), Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0)) });
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+app.get("/api/themes/assets/:name", (req, res) => {
+  const file = assetPath(req.params.name);
+  if (!file) return void res.status(404).json({ error: "No such file" });
+  res.type(ASSET_EXT[path.extname(file).slice(1).toLowerCase()]).sendFile(file);
+});
+app.get("/api/themes/:name/export", (req, res) => {
+  const t = exportTheme(req.params.name);
+  if (!t) return void res.status(404).json({ error: "No such theme" });
+  const fileName = `${safeName(t.name)}.crux-theme.json`;
+  // The desktop app can't download a blob: ?save=1 puts the file in ~/Downloads.
+  if (req.query.save === "1") {
+    const dir = path.join(os.homedir(), "Downloads");
+    fs.mkdirSync(dir, { recursive: true });
+    let file = path.join(dir, fileName);
+    for (let n = 2; fs.existsSync(file); n++) file = path.join(dir, fileName.replace(/\.crux-theme\.json$/, ` ${n}.crux-theme.json`));
+    fs.writeFileSync(file, JSON.stringify(t, null, 2) + "\n");
+    return void res.json({ path: file });
+  }
+  res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+  res.json(t);
+});
+app.delete("/api/themes/:name", (req, res) => {
+  if (!deleteTheme(req.params.name)) return void res.status(404).json({ error: "No such theme" });
+  res.json({ ok: true });
 });
 
 app.post("/api/profile", (req, res) => {

@@ -6,8 +6,9 @@ import { useModalKeys } from "../useModalKeys";
 import { IS_MAC, KEY } from "../platform";
 import SetupChecklist, { type ToolHealth } from "./SetupChecklist";
 import ImportLogins from "./ImportLogins";
+import AppearanceSettings from "./AppearanceSettings";
 
-type Key = Exclude<keyof Settings, "mode" | "defaultChat" | "jiraProject">;
+type Key = Exclude<keyof Settings, "mode" | "defaultChat" | "jiraProject" | "appearance">;
 interface Toggle {
   key: Key;
   label: string;
@@ -105,6 +106,7 @@ export const PAGES = [
   ["setup", "Setup"],
   ["tabs", "Tabs & views"],
   ["chats", "Chats"],
+  ["appearance", "Appearance"],
   ["notify", "Notifications"],
   ["background", "Background"],
   ["keys", "Shortcuts"],
@@ -399,6 +401,8 @@ export default function SettingsModal({
                 {toggles(CHAT_TOGGLES)}
               </>
             )}
+
+            {page === "appearance" && <AppearanceSettings settings={settings} onChange={onChange} />}
 
             {page === "notify" && (
               <>
