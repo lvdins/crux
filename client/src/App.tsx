@@ -52,6 +52,11 @@ import {
 } from "./paneLayout";
 import ContextMenu, { MenuIcons } from "./components/ContextMenu";
 import { WebIcon, ClaudeLogo, CodexLogo, GlobeIcon, OrchestrateIcon, TerminalIcon } from "./components/icons";
+// --- Appearance (C) ---
+import { APPEARANCE_EVENT, type ChatKind, type TermLook } from "./appearance";
+import { getAppearance } from "./components/Term";
+import { getScheme, listSchemes } from "./terminalThemes";
+// --- end Appearance (C) ---
 
 const CHIP_COLORS: Record<string, string> = {
   mkdocs: "#d9a05b",
@@ -121,7 +126,31 @@ interface TermTab {
   bootCmd?: string;
   /** Orchestrator mode: the lead chat's agent, or a worker it started. */
   role?: "lead" | "worker";
+  // --- Appearance (C) ---
+  /** This terminal's own look (Theme… in the tab menu); saved with the session. */
+  look?: TermLook;
 }
+
+// --- Appearance (C) ---
+const tabKind = (t: TermTab): ChatKind => (t.agent === "claude" || t.agent === "codex" ? t.agent : "shell");
+/** Small dot on tabs with their own scheme: its background ringed by its accent. */
+function TabSchemeDot({ look }: { look?: TermLook }) {
+  if (!look?.scheme) return null;
+  const s = getScheme(look.scheme, getAppearance());
+  return <span className="tab-scheme-dot" title={`Theme: ${s.name}`} style={{ background: s.background, borderColor: s.cursor }} />;
+}
+/** Swatch preview of a scheme for the Theme… menu. */
+function SchemeSwatch({ id }: { id: string }) {
+  const s = getScheme(id, getAppearance());
+  return (
+    <span className="scheme-swatch" style={{ background: s.background, color: s.foreground }}>
+      {[s.red, s.green, s.yellow, s.blue, s.magenta].map((c, i) => (
+        <i key={i} style={{ background: c }} />
+      ))}
+    </span>
+  );
+}
+// --- end Appearance (C) ---
 
 let tabSeq = 1;
 const newTabId = (repo: string) => `${repo}:${tabSeq++}:${Date.now() % 100000}`;
@@ -416,6 +445,29 @@ export default function App() {
   };
   // Right-click menu on a chat in the sidebar, and the chat being renamed.
   const [chatCtx, setChatCtx] = useState<null | { key: string; id: string; name: string; x: number; y: number }>(null);
+  // --- Appearance (C) ---
+  // Terminal tab right-click: the menu, then (pick) the scheme list.
+  const [tabTheme, setTabTheme] = useState<null | { key: string; id: string; x: number; y: number; pick: boolean }>(null);
+  // Re-render tab dots when schemes change (e.g. a custom one re-imported).
+  const [, setAppearanceTick] = useState(0);
+  useEffect(() => {
+    const bump = () => setAppearanceTick((n) => n + 1);
+    window.addEventListener(APPEARANCE_EVENT, bump);
+    return () => window.removeEventListener(APPEARANCE_EVENT, bump);
+  }, []);
+  /** Set (or with undefined, clear) one terminal's own scheme. */
+  const setTabScheme = (key: string, id: string, scheme: string | undefined) =>
+    setTabs((prev) => ({
+      ...prev,
+      [key]: (prev[key] ?? []).map((t) => {
+        if (t.id !== id) return t;
+        const { scheme: _old, ...rest } = t.look ?? {};
+        const look: TermLook = scheme ? { ...rest, scheme } : rest;
+        const { look: _prev, ...tab } = t;
+        return Object.keys(look).length ? { ...tab, look } : tab;
+      }),
+    }));
+  // --- end Appearance (C) ---
   const [renamingChat, setRenamingChat] = useState<string | null>(null);
   // "Are you sure?" before a chat / terminal is closed.
   // id "" = close the whole chat `key`; otherwise one terminal in it.
@@ -1891,7 +1943,7 @@ export default function App() {
   const panelHidden = rightHidden || !hasPanel;
   const panelTab = panelTabList.some(([k]) => k === panelTabs[view]) ? panelTabs[view] : panelTabList[0]?.[0];
   // Native browser views float above HTML: hide them under overlays.
-  const overlayOpen = adding || !!menu || !!confirmDelete || !!agentDrag || dragging || !!gitMenu || !!chatMenu || !!nameChat || !!confirmClose || !!onboarding || !!chatCtx || settingsOpen || !!shotPick || searchOpen;
+  const overlayOpen = adding || !!menu || !!confirmDelete || !!agentDrag || dragging || !!gitMenu || !!chatMenu || !!nameChat || !!confirmClose || !!onboarding || !!chatCtx || !!tabTheme /* Appearance (C) */ || settingsOpen || !!shotPick || searchOpen;
   const viewLayout = (!isSpecialView && layouts[ck]) || rootLayout();
   const viewSplits = splitTabIds(viewLayout);
 
@@ -1949,7 +2001,7 @@ export default function App() {
       const t = (tabs[ck] ?? []).find((x) => x.id === activeTab[ck] && !viewSplits.includes(x.id));
       return (
         <div className={`term-slot ${hasSplits && t && focusedTerm[view] === t.id ? "focused" : ""}`} data-pane-id={MAIN} key={MAIN}>
-          {t && <Term key={t.id} id={t.id} repo={view} bootCmd={t.bootCmd} connected={connected} send={send} subscribe={subscribe} onFocus={noteFocus} />}
+          {t && <Term key={t.id} id={t.id} repo={view} look={t.look} kind={tabKind(t)} bootCmd={t.bootCmd} connected={connected} send={send} subscribe={subscribe} onFocus={noteFocus} />}
         </div>
       );
     }
@@ -1969,9 +2021,15 @@ export default function App() {
                 className={`pane-tab ${t.id === shown.id ? "on" : ""}`}
                 onPointerDown={startTabDrag(t)}
                 onClick={() => setLayouts((prev) => ({ ...prev, [ck]: setPaneActive(prev[ck] ?? rootLayout(), node.id, t.id) }))}
+                // --- Appearance (C) ---
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setTabTheme({ key: ck, id: t.id, x: e.clientX, y: e.clientY, pick: false });
+                }}
               >
                 {t.agent === "claude" && <ClaudeLogo />}
                 {t.agent === "codex" && <CodexLogo />}
+                <TabSchemeDot look={t.look} />
                 <span className="pane-tab-title">{t.title}</span>
                 <button
                   className="term-tab-close"
@@ -1997,7 +2055,7 @@ export default function App() {
             +
           </button>
         </div>
-        <Term key={shown.id} id={shown.id} repo={view} bootCmd={shown.bootCmd} connected={connected} send={send} subscribe={subscribe} onFocus={noteFocus} />
+        <Term key={shown.id} id={shown.id} repo={view} look={shown.look} kind={tabKind(shown)} bootCmd={shown.bootCmd} connected={connected} send={send} subscribe={subscribe} onFocus={noteFocus} />
       </div>
     );
   };
@@ -2470,9 +2528,15 @@ export default function App() {
                       title="Drag onto a pane to split"
                       onPointerDown={startTabDrag(t)}
                       onClick={() => setActiveTab((prev) => ({ ...prev, [ck]: t.id }))}
+                      // --- Appearance (C) ---
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setTabTheme({ key: ck, id: t.id, x: e.clientX, y: e.clientY, pick: false });
+                      }}
                     >
                       {t.agent === "claude" && <ClaudeLogo />}
                       {t.agent === "codex" && <CodexLogo />}
+                      <TabSchemeDot look={t.look} />
                       {t.title}
                       {(
                         <button
@@ -2799,6 +2863,49 @@ export default function App() {
           />
         );
       })()}
+      {/* --- Appearance (C) --- */}
+      {tabTheme && (() => {
+        const t = (tabs[tabTheme.key] ?? []).find((x) => x.id === tabTheme.id);
+        if (!t) return null;
+        const close = () => setTabTheme(null);
+        if (!tabTheme.pick) {
+          return (
+            <ContextMenu
+              key="menu"
+              x={tabTheme.x}
+              y={tabTheme.y}
+              onClose={close}
+              groups={[
+                [{ label: "Theme…", icon: <SchemeSwatch id={t.look?.scheme ?? getAppearance().terminalScheme} />, onSelect: () => setTabTheme({ ...tabTheme, pick: true }) }],
+                [{ label: "Close terminal", icon: MenuIcons.trash, danger: true, onSelect: () => requestClose({ key: tabTheme.key, id: t.id, name: t.title }) }],
+              ]}
+            />
+          );
+        }
+        const a = getAppearance();
+        const pick = (scheme: string | undefined) => () => setTabScheme(tabTheme.key, t.id, scheme);
+        const schemes = listSchemes(a);
+        const item = ({ id, scheme }: { id: string; scheme: { name: string } }) => ({
+          label: scheme.name,
+          icon: <SchemeSwatch id={id} />,
+          shortcut: t.look?.scheme === id ? "✓" : undefined,
+          onSelect: pick(id),
+        });
+        return (
+          <ContextMenu
+            key="pick"
+            x={tabTheme.x}
+            y={tabTheme.y}
+            onClose={close}
+            groups={[
+              [{ label: "Use default", icon: MenuIcons.remove, shortcut: t.look?.scheme ? undefined : "✓", onSelect: pick(undefined) }],
+              schemes.filter((s) => !s.id.startsWith("custom:")).map(item),
+              ...(schemes.some((s) => s.id.startsWith("custom:")) ? [schemes.filter((s) => s.id.startsWith("custom:")).map(item)] : []),
+            ]}
+          />
+        );
+      })()}
+      {/* --- end Appearance (C) --- */}
       {orchestrate && config.repos[orchestrate] && (
         <OrchestrateModal
           wsLabel={config.repos[orchestrate].label}
