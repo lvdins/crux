@@ -29,6 +29,7 @@ import SessionBar, { type SessionTab } from "./components/SessionBar";
 import SessionsPanel from "./components/SessionsPanel";
 import WorkspaceHome from "./components/WorkspaceHome";
 import "./components/settings.css";
+import { emitAppearance, withDefaults } from "./appearance";
 import FirstSetup from "./components/onboarding/FirstSetup";
 import PermissionsStep from "./components/onboarding/PermissionsStep";
 import "./components/onboarding/onboarding.css";
@@ -208,6 +209,21 @@ export default function App() {
       .then((s: Settings) => seq === settingsSeq.current && setConfig((c) => (c ? { ...c, settings: s } : c)))
       .catch(() => undefined);
   };
+  // --- Appearance (A) ---
+  // Tell the themes, terminals and backgrounds the saved look, and hand it to
+  // the Quick Ask / tray windows (they listen to the `storage` event).
+  const appearanceJson = config ? JSON.stringify(config.settings?.appearance ?? null) : "";
+  useEffect(() => {
+    if (!config) return;
+    const look = withDefaults(config.settings?.appearance);
+    emitAppearance(look);
+    try {
+      localStorage.setItem("crux.appearance", JSON.stringify(look));
+    } catch {
+      /* private mode */
+    }
+  }, [appearanceJson]); // eslint-disable-line react-hooks/exhaustive-deps
+  // --- end Appearance (A) ---
   const [view, setView] = useState<View>("");
   // A view switched off in Settings: leave it.
   useEffect(() => {

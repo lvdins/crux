@@ -3,6 +3,7 @@
   "productName": "Crux Dev",
   "identifier": "com.giraffe360.qualitylab.dev",
   "app": {
+    "security": { "assetProtocol": { "enable": true, "scope": ["$HOME/.crux-dev/themes/**"] } },
     "windows": [{ "title": "Crux Dev", "width": 1440, "height": 900, "dragDropEnabled": false, "titleBarStyle": "Overlay", "hiddenTitle": true, "trafficLightPosition": { "x": 16, "y": 22 } }]
   }
 }
