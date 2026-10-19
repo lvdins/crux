@@ -29,6 +29,8 @@ import SessionBar, { type SessionTab } from "./components/SessionBar";
 import SessionsPanel from "./components/SessionsPanel";
 import WorkspaceHome from "./components/WorkspaceHome";
 import "./components/settings.css";
+import TerminalBackground from "./components/TerminalBackground"; // Appearance (D)
+import { TERM_STATE_EVENT, type ChatKind, type TermLook, type TermState, type TermStateDetail } from "./appearance"; // Appearance (D)
 import FirstSetup from "./components/onboarding/FirstSetup";
 import PermissionsStep from "./components/onboarding/PermissionsStep";
 import "./components/onboarding/onboarding.css";
@@ -1508,6 +1510,40 @@ export default function App() {
     sentNotes.current.set(chat, (sentNotes.current.get(chat) ?? new Set()).add(title));
     void notify(title, detail || (event === "input" ? "Needs your input" : "Finished"));
   };
+  // --- Appearance (D) ---
+  // Agent state per terminal for reactive backgrounds. Hook events already
+  // carry the terminal id, so they're forwarded as-is (keyed by terminal, not
+  // chat). `working` is keyed by chat and can also end by going quiet without
+  // an event, so terminals still marked working whose chat left the map go idle.
+  const termStates = useRef(new Map<string, TermState>());
+  const emitTermState = (id: string, state: TermState) => {
+    if (termStates.current.get(id) === state) return;
+    termStates.current.set(id, state);
+    window.dispatchEvent(new CustomEvent<TermStateDetail>(TERM_STATE_EVENT, { detail: { id, state } }));
+  };
+  const baseAgentEvent = agentEventRef.current;
+  agentEventRef.current = (term, event, detail) => {
+    baseAgentEvent(term, event, detail);
+    const tab = Object.values(tabs).flat().find((t) => t.id === term);
+    if (!tab || event.startsWith("codex") !== (tab.agent === "codex")) return;
+    emitTermState(term, event === "working" || event === "codex-working" ? "working" : event === "input" ? "attention" : "finished");
+  };
+  useEffect(() => {
+    for (const [id, state] of termStates.current) {
+      if (state !== "working") continue;
+      const chat = Object.keys(tabs).find((k) => tabs[k].some((t) => t.id === id));
+      if (!chat || !working.has(chat)) emitTermState(id, "idle");
+    }
+  }, [working, tabs]); // eslint-disable-line react-hooks/exhaustive-deps
+  const termBg = (t: TermTab, repo: string) => (
+    <TerminalBackground
+      termId={t.id}
+      repo={repo}
+      kind={(t.agent === "claude" || t.agent === "codex" ? t.agent : "shell") as ChatKind}
+      look={(t as TermTab & { look?: TermLook }).look}
+    />
+  );
+  // --- end Appearance (D) ---
   // Looking at a chat (window focused) clears its "needs you" dot and takes
   // its notification banners down.
   const shownChat = view ? (activeChat[view] && tabs[activeChat[view]] ? activeChat[view] : chatsOf(view)[0]) : undefined;
@@ -1949,6 +1985,7 @@ export default function App() {
       const t = (tabs[ck] ?? []).find((x) => x.id === activeTab[ck] && !viewSplits.includes(x.id));
       return (
         <div className={`term-slot ${hasSplits && t && focusedTerm[view] === t.id ? "focused" : ""}`} data-pane-id={MAIN} key={MAIN}>
+          {t && termBg(t, view)}
           {t && <Term key={t.id} id={t.id} repo={view} bootCmd={t.bootCmd} connected={connected} send={send} subscribe={subscribe} onFocus={noteFocus} />}
         </div>
       );
@@ -1997,6 +2034,7 @@ export default function App() {
             +
           </button>
         </div>
+        {termBg(shown, view)}
         <Term key={shown.id} id={shown.id} repo={view} bootCmd={shown.bootCmd} connected={connected} send={send} subscribe={subscribe} onFocus={noteFocus} />
       </div>
     );
