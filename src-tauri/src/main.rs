@@ -276,6 +276,23 @@ fn set_background(app: tauri::AppHandle, keep_running: bool, quick_ask: bool) {
     }
 }
 
+/// Appearance safe mode: ⌥ held while Crux starts → skip the custom look this run.
+#[tauri::command]
+fn launch_option_held() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        #[link(name = "ApplicationServices", kind = "framework")]
+        extern "C" {
+            fn CGEventSourceFlagsState(state_id: i32) -> u64;
+        }
+        const COMBINED_SESSION_STATE: i32 = 0;
+        const MASK_ALTERNATE: u64 = 0x0008_0000;
+        unsafe { CGEventSourceFlagsState(COMBINED_SESSION_STATE) & MASK_ALTERNATE != 0 }
+    }
+    #[cfg(not(target_os = "macos"))]
+    false
+}
+
 /// Menu bar text next to the icon: agents working / waiting for you (blank when none).
 #[tauri::command]
 fn set_tray_title(app: tauri::AppHandle, title: String) {
@@ -820,6 +837,7 @@ fn main() {
             quick_hide,
             main_show,
             in_applications,
+            launch_option_held,
         ])
         .build(tauri::generate_context!())
         .expect("error building Crux")

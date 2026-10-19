@@ -30,6 +30,7 @@ import SessionsPanel from "./components/SessionsPanel";
 import WorkspaceHome from "./components/WorkspaceHome";
 import "./components/settings.css";
 import { emitAppearance, withDefaults } from "./appearance";
+import { isSafeMode, safeModeReady } from "./theme";
 import TerminalBackground, { TERM_TRANSPARENT_EVENT, type TermTransparentDetail } from "./components/TerminalBackground"; // Appearance (D)
 import { TERM_STATE_EVENT, type TermState, type TermStateDetail } from "./appearance"; // Appearance (D)
 import FirstSetup from "./components/onboarding/FirstSetup";
@@ -255,7 +256,8 @@ export default function App() {
   useEffect(() => {
     if (!config) return;
     const look = withDefaults(config.settings?.appearance);
-    emitAppearance(look);
+    // ⌥ held at launch: terminals and backgrounds start as Crux Dark this run.
+    void safeModeReady.then((safe) => emitAppearance(safe && isSafeMode() ? withDefaults() : look));
     try {
       localStorage.setItem("crux.appearance", JSON.stringify(look));
     } catch {

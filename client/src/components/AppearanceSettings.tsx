@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../net";
+import { exitSafeMode, isSafeMode } from "../theme";
 import {
   DEFAULT_APPEARANCE,
   emitAppearance,
@@ -258,6 +259,8 @@ export default function AppearanceSettings({ settings, onChange }: { settings: S
     pending.current = null;
   };
   const update = (next: Appearance) => {
+    // Editing the look ends a ⌥ safe-mode run, so the preview shows.
+    if (isSafeMode()) exitSafeMode();
     setLook(next);
     emitAppearance(next);
     pending.current = next;
