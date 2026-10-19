@@ -25,6 +25,8 @@ import { notify } from "./notify";
 import { IS_MAC, KEY, isAppShortcut } from "./platform";
 import type { TeamMember, TrayAgent } from "./components/TrayPanel";
 import OrchestrateModal, { type OrchestrateOpts } from "./components/OrchestrateModal";
+import SessionBar, { type SessionTab } from "./components/SessionBar";
+import SessionsPanel from "./components/SessionsPanel";
 import "./components/settings.css";
 import FirstSetup from "./components/onboarding/FirstSetup";
 import PermissionsStep from "./components/onboarding/PermissionsStep";
@@ -61,7 +63,7 @@ const CHIP_COLORS: Record<string, string> = {
 
 type View = string | "connections" | "jira" | "home";
 /** Views that are not a workspace. */
-const SPECIAL_VIEWS = new Set(["connections", "jira", "home"]);
+const SPECIAL_VIEWS = new Set(["connections", "jira", "home", "sessions"]);
 const isSpecial = (v: string) => SPECIAL_VIEWS.has(v);
 /** Sent by the ⌥Space quick-ask window. */
 type QuickAsk = { ws: string; text: string };
@@ -137,6 +139,8 @@ interface SavedSession {
   layouts: Record<string, PaneNode>;
   activeChat?: Record<string, string>;
   chatTitles?: Record<string, string>;
+  /** Session tab bar order (chat keys). */
+  chatOrder?: string[];
 }
 
 // A chat is one screen inside a workspace: its own tabs and splits. Tab,
@@ -237,6 +241,11 @@ export default function App() {
   // Chat shown per workspace, and chat names (default: first tab's title).
   const [activeChat, setActiveChat] = useState<Record<string, string>>({});
   const [chatTitles, setChatTitles] = useState<Record<string, string>>({});
+  // Session tab bar order; chats not in it yet go at the end (order opened).
+  const [chatOrder, setChatOrder] = useState<string[]>([]);
+  const orderedChats = [...chatOrder.filter((k) => tabs[k]), ...Object.keys(tabs).filter((k) => !chatOrder.includes(k))];
+  // Recently closed chats, for ⌘⇧T.
+  const closedChats = useRef<{ ws: string; title: string; tabs: TermTab[] }[]>([]);
   const chatsOf = (ws: string) => Object.keys(tabs).filter((k) => wsOf(k) === ws);
   const chatTitle = (chat: string) => chatTitles[chat] ?? tabs[chat]?.[0]?.title ?? "chat";
   // The chat on screen for the current workspace ("" = it has none yet).
@@ -256,12 +265,12 @@ export default function App() {
     try {
       localStorage.setItem(
         SESSION_KEY,
-        JSON.stringify({ tabs, activeTab, layouts, activeChat, chatTitles } satisfies SavedSession),
+        JSON.stringify({ tabs, activeTab, layouts, activeChat, chatTitles, chatOrder: orderedChats } satisfies SavedSession),
       );
     } catch {
       /* storage full or blocked: chats just won't be remembered */
     }
-  }, [tabs, activeTab, layouts, activeChat, chatTitles]);
+  }, [tabs, activeTab, layouts, activeChat, chatTitles, chatOrder]); // eslint-disable-line react-hooks/exhaustive-deps
   const [rightHidden, setRightHidden] = useState(() => localStorage.getItem("crux.rightHidden") === "1");
   const [sideHidden, setSideHidden] = useState(() => localStorage.getItem("crux.sideHidden") === "1");
   const toggleSide = () =>
@@ -282,6 +291,14 @@ export default function App() {
   const quickAskRef = useRef<(q: QuickAsk) => void>(() => {});
   // ⌘⇧C (app menu, so it works while the page has focus): mark an issue.
   const browserKeyRef = useRef<(op: string) => void>(() => {});
+  // Session tab shortcuts (⌘W, ⌘⇧T, ⌘1–9, ⌘⇧[ ]) when a chat has focus.
+  const sessionKeyRef = useRef<(op: string) => void>(() => {});
+  // Menu shortcuts and the key fallback both land here (see routeKeyRef.current).
+  const routeKeyRef = useRef<(op: string) => void>(() => {});
+  const sessionTabsRef = useRef<SessionTab[]>([]);
+  const [sessionMenu, setSessionMenu] = useState<null | { x: number; y: number }>(null);
+  // The workspace new sessions from the tab bar's + go to.
+  const lastWs = useRef("");
   const reportIssueRef = useRef<() => void>(() => {});
   const markingRef = useRef(false);
   // Scheduled-pipeline health per E2E / API workspace (sidebar dot).
@@ -570,6 +587,7 @@ export default function App() {
         setLayouts(initialLayouts);
         setActiveChat(initialChat);
         setChatTitles(initialTitles);
+        setChatOrder((saved?.chatOrder ?? []).filter((k) => initialTabs[k]));
         sessionReady.current = true;
       });
   }, []);
@@ -700,7 +718,7 @@ export default function App() {
           listen("menu:toggle-sidebar", () => toggleSideRef.current()),
           listen("menu:toggle-right", () => toggleRightRef.current()),
           listen("menu:report-issue", () => reportIssueRef.current()),
-          listen<string>("menu:browser", (e) => browserKeyRef.current(e.payload)),
+          listen<string>("menu:browser", (e) => routeKeyRef.current(e.payload)),
           listen("menu:search-chats", () => setSearchOpen(true)),
           listen("menu:check-updates", () => {
             setSettingsPage("updates");
@@ -742,14 +760,17 @@ export default function App() {
       "0": "zoom-reset",
     };
     const onKey = (e: KeyboardEvent) => {
-      if (!e.metaKey || e.ctrlKey || e.altKey) return;
-      const k = e.key.toLowerCase();
-      let op = e.shiftKey ? ({ t: "reopen", d: "duplicate", "]": "next-tab", "}": "next-tab", "[": "prev-tab", "{": "prev-tab" } as Record<string, string>)[k] : keys[k];
-      if (!op && !e.shiftKey && /^[1-9]$/.test(k)) op = `tab-${k}`;
+      let op: string | undefined;
+      if (e.ctrlKey && !e.metaKey && !e.altKey && e.key === "Tab") op = e.shiftKey ? "prev-tab-ctrl" : "next-tab-ctrl";
+      else if (e.metaKey && !e.ctrlKey && !e.altKey) {
+        const k = e.key.toLowerCase();
+        op = e.shiftKey ? ({ t: "reopen", d: "duplicate", "]": "next-tab", "}": "next-tab", "[": "prev-tab", "{": "prev-tab" } as Record<string, string>)[k] : keys[k];
+        if (!op && !e.shiftKey && /^[1-9]$/.test(k)) op = `tab-${k}`;
+      }
       if (!op) return;
       e.preventDefault();
       e.stopPropagation();
-      browserKeyRef.current(op);
+      routeKeyRef.current(op);
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
@@ -1250,14 +1271,63 @@ export default function App() {
   // (pressed again there: back to where you were). No browser: the panel.
   const lastView = useRef("");
   // ⌘T / ⌘L: show the browser if it's hidden, then a new tab / the address bar.
-  const lastBrowserKey = useRef({ op: "", at: 0 });
+  useEffect(() => {
+    if (view && !isSpecial(view)) lastWs.current = view;
+  }, [view]);
+  const newSessionWs = config && (config.repos[view] ? view : config.repos[lastWs.current] ? lastWs.current : Object.keys(config.repos)[0]);
+  const reopenClosed = () => {
+    const last = closedChats.current.pop();
+    if (!last || !config?.repos[last.ws]) return;
+    const chat = newChatKey(last.ws);
+    // Claude reopens its conversation (its --session-id is resumed); Codex
+    // shows its resume picker; shells start fresh.
+    for (const t of last.tabs) {
+      if (t.role === "worker") continue;
+      addTab(chat, t.title, t.agent, t.agent === "codex" ? "codex resume" : t.bootCmd);
+    }
+    setChatTitles((prev) => ({ ...prev, [chat]: last.title }));
+    openChat(chat);
+    setChatsShown(last.ws, true);
+  };
+  sessionKeyRef.current = (op) => {
+    const list = sessionTabsRef.current;
+    const current = !isSpecial(viewRef.current) ? ck : "";
+    const at = list.findIndex((t) => t.chat === current);
+    const show = (i: number) => {
+      const t = list[(i + list.length) % list.length];
+      if (!t) return;
+      openChat(t.chat);
+      setChatsShown(wsOf(t.chat), true);
+    };
+    if (op === "close") {
+      // No session on screen: ⌘W closes the window, as before.
+      if (!current) return browserKeyRef.current("close");
+      requestClose({ key: current, id: "", name: chatTitle(current) });
+    } else if (op === "reopen") reopenClosed();
+    else if (op.startsWith("tab-")) {
+      const n = Number(op.slice(4));
+      show(n === 9 ? list.length - 1 : n - 1);
+    } else if (op.startsWith("next-tab")) show(at + 1);
+    else if (op.startsWith("prev-tab")) show(at < 0 ? list.length - 1 : at - 1);
+  };
+  // Keys follow focus: on a web page (the page has keyboard focus, so this
+  // document doesn't), in the Browser view or the browser's own bar they act
+  // on browser tabs; anywhere else in Crux, tab keys act on session tabs.
+  // The menu and the key fallback can both report one press: once is enough.
+  const lastKey = useRef({ op: "", at: 0 });
+  routeKeyRef.current = (op) => {
+    const now = Date.now();
+    if (lastKey.current.op === op && now - lastKey.current.at < 300) return;
+    lastKey.current = { op, at: now };
+    const inBrowser =
+      viewRef.current === "jira" || !document.hasFocus() || !!(document.activeElement as HTMLElement | null)?.closest?.(".browser");
+    const sessionOp = op === "close" || op === "reopen" || op.startsWith("tab-") || op.startsWith("next-tab") || op.startsWith("prev-tab");
+    if (!inBrowser && sessionOp) sessionKeyRef.current(op);
+    else browserKeyRef.current(op);
+  };
   browserKeyRef.current = (op) => {
     const v = viewRef.current;
     if (config?.browserSupported === false) return;
-    // The menu and the key fallback below can both report one press.
-    const now = Date.now();
-    if (lastBrowserKey.current.op === op && now - lastBrowserKey.current.at < 300) return;
-    lastBrowserKey.current = { op, at: now };
     const browserShown = v === "jira" || (!!v && !isSpecial(v) && settings.browser && !rightHidden && (panelTabs[v] ?? "") === "browser");
     // Only ⌘T / ⌘L / ⌘⇧T bring the browser up; the rest act on a browser on screen.
     if (!browserShown && !["new-tab", "url", "reopen"].includes(op)) {
@@ -1624,6 +1694,9 @@ export default function App() {
 
   // Close a whole chat: every terminal in it.
   const closeChat = (chat: string) => {
+    if (tabs[chat]?.length) {
+      closedChats.current = [...closedChats.current.slice(-19), { ws: wsOf(chat), title: chatTitle(chat), tabs: tabs[chat] }];
+    }
     for (const t of tabs[chat] ?? []) {
       send({ type: "term:kill", id: t.id });
       disposeTerm(t.id);
@@ -1708,6 +1781,23 @@ export default function App() {
   });
 
   if (!config) return <div className="loading">Loading Crux…</div>;
+
+  // Session tab bar: open chats of every workspace (or this one's).
+  const sessionTabs: SessionTab[] = orderedChats
+    .filter((chat) => config.repos[wsOf(chat)] && (settings.tabsAll !== false || wsOf(chat) === view))
+    .map((chat) => {
+      const r = config.repos[wsOf(chat)];
+      const a = attention.get(chat);
+      return {
+        chat,
+        name: chatTitle(chat),
+        wsLabel: r.label,
+        badge: avatarStyle(r),
+        kind: tabs[chat].find((t) => t.agent && t.role !== "worker")?.agent ?? "shell",
+        status: working.has(chat) ? "working" : a === "input" ? "input" : a === "stop" ? "done" : undefined,
+      };
+    });
+  sessionTabsRef.current = sessionTabs;
 
   const chatRow = (chat: string) => ({
     chat,
@@ -2091,7 +2181,7 @@ export default function App() {
               <span className="side-label">Add a repo folder</span>
             </button>
           )}
-          {(showConnections || settings.jira) && (
+          {(showConnections || settings.jira || settings.sessionsView !== false) && (
           <>
           <button
             className={`side-section side-section-toggle ${viewsHidden ? "collapsed" : ""}`}
@@ -2105,6 +2195,16 @@ export default function App() {
           </button>
           <div className={`side-views ${viewsHidden ? "collapsed" : ""}`}>
             <div className="side-views-inner">
+              {settings.sessionsView !== false && (
+              <button
+                className={`side-item view-item ${view === "sessions" ? "active" : ""}`}
+                onClick={() => setView("sessions")}
+                tabIndex={viewsHidden ? -1 : 0}
+              >
+                <span className="avatar view-icon"><TerminalIcon /></span>
+                <span className="side-label">Sessions</span>
+              </button>
+              )}
               {showConnections && (
               <button
                 className={`side-item view-item ${view === "connections" ? "active" : ""}`}
@@ -2198,6 +2298,28 @@ export default function App() {
             </button>
           </div>
         </nav>
+        <div className="main-col">
+        {sessionTabs.length > 0 && (
+          <SessionBar
+            tabs={sessionTabs}
+            active={isSpecialView ? "" : ck}
+            showBadges={settings.tabsAll !== false}
+            onOpen={(chat) => {
+              openChat(chat);
+              setChatsShown(wsOf(chat), true);
+            }}
+            onClose={(chat) => requestClose({ key: chat, id: "", name: chatTitle(chat) })}
+            onRename={renameChat}
+            onMove={(from, to) =>
+              setChatOrder(() => {
+                const next = orderedChats.filter((k) => k !== from);
+                next.splice(next.indexOf(to) + (orderedChats.indexOf(from) < orderedChats.indexOf(to) ? 1 : 0), 0, from);
+                return next;
+              })
+            }
+            onAdd={(e) => setSessionMenu({ x: e.clientX, y: e.clientY + 8 })}
+          />
+        )}
         {!repo && !isSpecialView ? (
           <section className="full-pane empty-state">
             {settings.mode === "qa" ? (
@@ -2259,6 +2381,12 @@ export default function App() {
               setBrowserOpen({ url, nonce: Date.now() });
               setView("jira");
             }}
+          />
+        ) : view === "sessions" ? (
+          <SessionsPanel
+            workspaces={Object.fromEntries(Object.entries(config.repos).map(([k, r]) => [k, { label: r.label, badge: avatarStyle(r) }]))}
+            isOpen={(id) => Object.values(tabs).some((ts) => ts.some((t) => t.bootCmd?.includes(id)))}
+            onResume={resumePast}
           />
         ) : view === "connections" ? (
           <section className="full-pane">
@@ -2412,7 +2540,32 @@ export default function App() {
             )}
           </div>
         )}
+        </div>
       </div>
+      {sessionMenu && (
+        <ContextMenu
+          x={sessionMenu.x}
+          y={sessionMenu.y}
+          onClose={() => setSessionMenu(null)}
+          groups={[
+            ...(newSessionWs
+              ? [
+                  [
+                    { label: `New Claude chat · ${config.repos[newSessionWs].label}`, icon: <ClaudeLogo />, onSelect: () => askChatName(newSessionWs, "claude") },
+                    { label: "New Codex chat", icon: <CodexLogo />, onSelect: () => askChatName(newSessionWs, "codex") },
+                    { label: "New terminal", icon: <TerminalIcon />, onSelect: () => askChatName(newSessionWs, "shell") },
+                  ],
+                ]
+              : []),
+            [
+              ...(closedChats.current.length
+                ? [{ label: "Reopen closed session", icon: MenuIcons.read, shortcut: "⌘⇧T", onSelect: () => reopenClosed() }]
+                : []),
+              { label: "Past sessions…", icon: MenuIcons.folder, onSelect: () => setView("sessions") },
+            ],
+          ]}
+        />
+      )}
       {menu && config.repos[menu.key] && (
         <ContextMenu
           x={menu.x}

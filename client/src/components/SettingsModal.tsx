@@ -36,6 +36,7 @@ const VIEW_GROUPS: Group[] = [
   {
     title: "Sidebar",
     toggles: [
+      { key: "sessionsView", label: "Sessions", hint: "Past Claude and Codex sessions of every workspace, to reopen. Also under the tab bar's +." },
       { key: "connections", label: "Connections", hint: "Features across frontend, backend and test repos." },
       { key: "connCoverage", label: "Coverage", hint: "Feature list with API / E2E coverage.", parent: "connections" },
       { key: "connGraph", label: "Graph", hint: "The same as a graph.", parent: "connections" },
@@ -49,6 +50,7 @@ const CHAT_TOGGLES: Group = {
   toggles: [
     { key: "askChatName", label: "Ask for a name", hint: "Off: new chats are named “claude”, “claude 2”, … and you can rename them later." },
     { key: "confirmClose", label: "Ask before closing", hint: "Off: × closes a chat or terminal right away." },
+    { key: "tabsAll", label: "Session tabs from every workspace", hint: "The tab bar above the chats shows all open sessions. Off: only this workspace's." },
   ],
 };
 

@@ -1,8 +1,8 @@
 # Installing Crux
 
-Crux is a desktop QA workbench: terminals with Claude / Codex per repo,
-docs preview, test trees, coverage, a feature map of the dashboard, and a
-built-in browser the agent can drive.
+Crux is a desktop workbench for coding agents: Claude Code, Codex and
+terminals side by side across your projects, with session tabs, notifications,
+an orchestrator, and a built-in browser the agents can drive.
 
 ## Requirements
 

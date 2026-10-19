@@ -52,6 +52,10 @@ export interface Settings {
   quickAsk: boolean;
   /** Start on the Home screen instead of the last view. */
   openHome: boolean;
+  /** The session tab bar lists every workspace's chats (off: this workspace's). */
+  tabsAll: boolean;
+  /** Sidebar → Sessions (past sessions of every workspace). */
+  sessionsView: boolean;
   /** Jira project key bugs are filed in (blank: the agent asks). */
   jiraProject: string;
 }
@@ -62,11 +66,11 @@ export const VIEW_KEYS = [
   "connections", "connCoverage", "connGraph", "jira",
 ] as const;
 /** Personal preferences: kept when the mode changes. */
-export const PREF_KEYS = ["askChatName", "confirmClose", "notifyAgent", "notifyPipeline", "keepRunning", "quickAsk", "openHome"] as const;
+export const PREF_KEYS = ["askChatName", "confirmClose", "notifyAgent", "notifyPipeline", "keepRunning", "quickAsk", "openHome", "tabsAll", "sessionsView"] as const;
 export const SETTING_KEYS = [...VIEW_KEYS, ...PREF_KEYS] as const;
 export const DEFAULT_CHATS = ["pick", "claude", "codex", "shell"] as const;
 
-const PREFS = { jiraProject: "", defaultChat: "pick", askChatName: true, confirmClose: true, notifyAgent: true, notifyPipeline: true, keepRunning: true, quickAsk: true, openHome: true } as const;
+const PREFS = { jiraProject: "", defaultChat: "pick", askChatName: true, confirmClose: true, notifyAgent: true, notifyPipeline: true, keepRunning: true, quickAsk: true, openHome: true, tabsAll: true, sessionsView: true } as const;
 const views = (on: boolean) => Object.fromEntries(VIEW_KEYS.map((k) => [k, on])) as Record<(typeof VIEW_KEYS)[number], boolean>;
 export const MODE_PRESETS: Record<Settings["mode"], Settings> = {
   qa: { mode: "qa", ...views(true), ...PREFS },

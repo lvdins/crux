@@ -67,6 +67,10 @@ export interface Settings {
   keepRunning: boolean;
   quickAsk: boolean;
   openHome: boolean;
+  /** The session tab bar lists every workspace's chats (off: this workspace's). */
+  tabsAll: boolean;
+  /** Sidebar → Sessions (past sessions of every workspace). */
+  sessionsView: boolean;
   /** Jira project key bugs are filed in (blank: the agent asks). */
   jiraProject: string;
 }
@@ -75,5 +79,5 @@ export const QA_SETTINGS: Settings = {
   mode: "qa",
   docPreview: true, tests: true, coverage: true, pipelines: true, browser: true, network: true, picker: true,
   connections: true, connCoverage: true, connGraph: true, jira: true,
-  defaultChat: "pick", askChatName: true, confirmClose: true, notifyAgent: true, notifyPipeline: true, keepRunning: true, quickAsk: true, openHome: true, jiraProject: "",
+  defaultChat: "pick", askChatName: true, confirmClose: true, notifyAgent: true, notifyPipeline: true, keepRunning: true, quickAsk: true, openHome: true, tabsAll: true, sessionsView: true, jiraProject: "",
 };

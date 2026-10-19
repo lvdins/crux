@@ -177,6 +177,16 @@ app.get("/api/inbox/mrs", async (req, res) => {
 });
 
 // Chat search: past Claude / Codex conversations started in a workspace.
+// The Sessions view: past Claude / Codex chats of every workspace, newest first.
+app.get("/api/history", (req, res) => {
+  const q = String(req.query.q ?? "");
+  const chats = Object.entries(config.repos)
+    .flatMap(([ws, repo]) => pastChats(repo.path, q, q ? 40 : 120).map((c) => ({ ...c, ws })))
+    .sort((a, b) => b.at.localeCompare(a.at))
+    .slice(0, 500);
+  res.json({ chats });
+});
+
 app.get("/api/history/:key", (req, res) => {
   const repo = config.repos[req.params.key];
   if (!repo) return void res.status(404).json({ error: "Unknown workspace" });

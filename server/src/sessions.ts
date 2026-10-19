@@ -132,6 +132,19 @@ export interface PastChat {
   at: string;
   /** Text around the search match. */
   match?: string;
+  /** Git branch the chat ran on (Claude records it). */
+  branch?: string;
+}
+
+/** Unsearched reads, by file and its modification time: listing every
+ *  workspace's history (the Sessions view) re-reads only what changed. */
+const listCache = new Map<string, { mtime: number; chat: PastChat | null }>();
+function cached(file: string, mtime: number, read: () => PastChat | null): PastChat | null {
+  const hit = listCache.get(file);
+  if (hit && hit.mtime === mtime) return hit.chat;
+  const chat = read();
+  listCache.set(file, { mtime, chat });
+  return chat;
 }
 
 const claudeDir = (cwd: string) => path.join(os.homedir(), ".claude", "projects", cwd.replace(/[^a-zA-Z0-9]/g, "-"));
@@ -159,6 +172,7 @@ function readClaude(file: string, q: string): PastChat | null {
   }
   let title = "";
   let prompt = "";
+  let branch = "";
   let match: string | undefined;
   for (const line of raw.split("\n")) {
     if (!line) continue;
@@ -168,6 +182,7 @@ function readClaude(file: string, q: string): PastChat | null {
     } catch {
       continue;
     }
+    if (typeof j.gitBranch === "string" && j.gitBranch) branch = j.gitBranch;
     if (j.type === "custom-title" && j.customTitle) title = j.customTitle;
     else if (j.type === "ai-title" && j.aiTitle && !title) title = j.aiTitle;
     else if ((j.type === "user" || j.type === "assistant") && !j.isSidechain && !j.isMeta) {
@@ -186,6 +201,7 @@ function readClaude(file: string, q: string): PastChat | null {
     prompt,
     at: new Date(fs.statSync(file).mtimeMs).toISOString(),
     match,
+    branch: branch || undefined,
   };
 }
 
@@ -234,12 +250,12 @@ export function pastChats(cwd: string, q = "", limit = 40): PastChat[] {
     /* never used Claude here */
   }
   for (const f of files) {
-    const c = readClaude(f.file, query);
+    const c = query ? readClaude(f.file, query) : cached(f.file, f.mtime, () => readClaude(f.file, ""));
     if (c) out.push(c);
     if (out.length >= limit) break;
   }
   for (const r of codexRollouts().filter((r) => r.cwd === cwd).slice(0, 80)) {
-    const c = readCodex(r, query);
+    const c = query ? readCodex(r, query) : cached(r.file, r.mtime, () => readCodex(r, ""));
     if (c) out.push(c);
   }
   return out.sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit);

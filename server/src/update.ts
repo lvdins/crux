@@ -1,10 +1,14 @@
-import { execFile, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { CRUX_HOME, PORT, ROOT } from "./paths.js";
 
-/** Releases (with the .dmg attached) are published here; read with the user's `gh` login. */
+/** Releases (DMG, AppImage, .deb, setup.exe) are published here. The repo is
+ *  public: no GitHub login (or gh) is needed to check or download. */
 const REPO = "lvdins/crux";
+const RELEASES = `https://github.com/${REPO}/releases`;
+/** A release file's download link, e.g. Crux_0.1.37_aarch64.dmg. */
+const assetUrl = (tag: string, suffix: string) => `${RELEASES}/download/${tag}/Crux_${tag.replace(/^v/, "")}_${suffix}`;
 
 const parse = (v: string) => v.replace(/^v/, "").split(".").map((n) => parseInt(n, 10) || 0);
 export function isNewer(latest: string, current: string): boolean {
@@ -16,13 +20,23 @@ export function isNewer(latest: string, current: string): boolean {
   return false;
 }
 
-/** Latest release tag, or null when gh is missing, logged out or offline. */
-export function latestRelease(): Promise<string | null> {
-  return new Promise((resolve) => {
-    execFile("gh", ["release", "view", "-R", REPO, "--json", "tagName", "-q", ".tagName"], { timeout: 15000 }, (err, out) =>
-      resolve(err ? null : out.trim() || null),
-    );
-  });
+/**
+ * Latest release tag (null when offline). github.com/…/releases/latest
+ * redirects to …/releases/tag/<tag>: reading that redirect needs no login and
+ * isn't held to the API's 60-an-hour limit, which a whole office shares.
+ */
+let lastCheck: { at: number; tag: string } | null = null;
+export async function latestRelease(): Promise<string | null> {
+  if (lastCheck && Date.now() - lastCheck.at < 5 * 60_000) return lastCheck.tag;
+  try {
+    const res = await fetch(`${RELEASES}/latest`, { redirect: "manual", signal: AbortSignal.timeout(15000) });
+    const tag = /\/releases\/tag\/([^/?#]+)/.exec(res.headers.get("location") ?? "")?.[1];
+    if (!tag) return null;
+    lastCheck = { at: Date.now(), tag: decodeURIComponent(tag) };
+    return lastCheck.tag;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -38,8 +52,8 @@ export function installRelease(tag: string): void {
   const log = path.join(CRUX_HOME, "update.log");
   const script = `set -e
 T=$(mktemp -d -t crux-update)
-gh release download "$TAG" -R "$REPO" -p '*.dmg' -D "$T"
-DMG=$(ls "$T"/*.dmg | head -1)
+DMG="$T/Crux.dmg"
+curl -fsSL --retry 2 -o "$DMG" "$URL"
 mkdir "$T/mnt"
 hdiutil attach -nobrowse -quiet -mountpoint "$T/mnt" "$DMG"
 ditto "$T/mnt/$(basename "$APP")" "$T/new.app"
@@ -69,7 +83,7 @@ rm -rf "$T"
   spawn("/bin/bash", ["-c", script], {
     detached: true,
     stdio: ["ignore", out, out],
-    env: { ...process.env, TAG: tag, REPO, APP: app },
+    env: { ...process.env, URL: assetUrl(tag, "aarch64.dmg"), APP: app },
   }).unref();
 }
 
@@ -84,8 +98,8 @@ function installAppImage(tag: string): void {
   const log = path.join(CRUX_HOME, "update.log");
   const script = `set -e
 T=$(mktemp -d -t crux-update.XXXXXX)
-gh release download "$TAG" -R "$REPO" -p '*.AppImage' -D "$T"
-NEW=$(ls "$T"/*.AppImage | head -1)
+NEW="$T/Crux.AppImage"
+curl -fsSL --retry 2 -o "$NEW" "$URL"
 chmod +x "$NEW"
 kill -TERM "$APP_PID" 2>/dev/null || true
 for i in $(seq 1 50); do kill -0 "$APP_PID" 2>/dev/null || break; sleep 0.2; done
@@ -99,7 +113,7 @@ nohup "$APPIMAGE" >/dev/null 2>&1 &
   spawn("/bin/bash", ["-c", script], {
     detached: true,
     stdio: ["ignore", out, out],
-    env: { ...process.env, TAG: tag, REPO, APPIMAGE: appImage, APP_PID: String(process.ppid) },
+    env: { ...process.env, URL: assetUrl(tag, "amd64.AppImage"), APPIMAGE: appImage, APP_PID: String(process.ppid) },
   }).unref();
 }
 
@@ -112,8 +126,9 @@ function installWindows(tag: string): void {
   const script = `$ErrorActionPreference = 'Stop'
 $T = Join-Path $env:TEMP ('crux-update-' + [guid]::NewGuid())
 New-Item -ItemType Directory $T | Out-Null
-gh release download $env:TAG -R $env:REPO -p '*-setup.exe' -D $T
-$setup = Get-ChildItem $T -Filter '*-setup.exe' | Select-Object -First 1
+$setup = Get-Item (Join-Path $T 'Crux-setup.exe') -ErrorAction SilentlyContinue
+Invoke-WebRequest -UseBasicParsing -Uri $env:URL -OutFile (Join-Path $T 'Crux-setup.exe')
+$setup = Get-Item (Join-Path $T 'Crux-setup.exe')
 $app = (Get-Process -Id $env:APP_PID).Path
 try { Invoke-RestMethod -Method Post "http://127.0.0.1:$env:CRUX_PORT/api/quit" | Out-Null } catch {}
 Start-Sleep -Seconds 2
@@ -127,6 +142,6 @@ Remove-Item $T -Recurse -Force
   spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], {
     detached: true,
     stdio: ["ignore", out, out],
-    env: { ...process.env, TAG: tag, REPO, APP_PID: String(process.ppid), CRUX_PORT: String(PORT) },
+    env: { ...process.env, URL: assetUrl(tag, "x64-setup.exe"), APP_PID: String(process.ppid), CRUX_PORT: String(PORT) },
   }).unref();
 }
