@@ -10,6 +10,8 @@ import TrayPanel from "./components/TrayPanel";
 // Roboto, bundled (works offline): the one UI font across the app.
 import "@fontsource-variable/roboto";
 import "./styles.css";
+import "./themes.css";
+import { initTheme } from "./theme";
 
 // The ⌥Space window and the menu bar panel load this same page with
 // __CRUX_QUICK__ / __CRUX_TRAY__ set (main.rs).
@@ -17,6 +19,8 @@ const quick = !!(window as { __CRUX_QUICK__?: boolean }).__CRUX_QUICK__;
 const tray = !!(window as { __CRUX_TRAY__?: boolean }).__CRUX_TRAY__;
 if (quick) document.documentElement.classList.add("quick-window");
 if (tray) document.documentElement.classList.add("tray-window");
+// Saved appearance (theme, accent, motion) on <html> before the first paint.
+initTheme();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>{quick ? <QuickAsk /> : tray ? <TrayPanel /> : <App />}</React.StrictMode>,

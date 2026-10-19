@@ -1,0 +1,227 @@
+/* =====================================================================
+   App themes. styles.css holds today's look (Crux Dark); this file adds
+   the tokens styles.css now reads instead of hard-coded colours, and one
+   token set per theme keyed by html[data-theme]. No attribute, or
+   data-theme="crux-dark", renders exactly as before. theme.ts sets the
+   attributes (and --accent when the user picks one).
+   ===================================================================== */
+
+/* Extra tokens (Crux Dark values = the literals they replaced). */
+:root {
+  --hi: #fff;                 /* strongest ink; also the tint for hover washes */
+  --on-accent: #fff;          /* text on accent-filled buttons */
+  --on-warn: #1b1c20;         /* text on warn-filled badges */
+  --scrim: rgba(0, 0, 0, 0.55);
+  --danger-ink: #f0607a;
+  --danger-solid: #c94160;
+  --danger-solid-hover: #d9516f;
+  --drop-bg: rgba(20, 20, 20, 0.55);
+  --drop-over-bg: rgba(16, 41, 29, 0.6);
+  /* data colours (badges, methods, coverage bars) */
+  --c-green: #7ec98f;
+  --c-blue: #6fa8dc;
+  --c-purple: #c9a0e8;
+  --c-pink: #e8a0bf;
+  --c-sage: #9fc5b0;
+  --c-jira: #4c9aff;
+  --c-claude: #d97757;
+  /* r, g, b of the colours styles.css tints with rgba(var(--x-rgb), a):
+     legacy rgba() keeps the exact pixels the literals had. */
+  --hi-rgb: 255, 255, 255;
+  --bg-rgb: 27, 28, 32;
+  --accent-rgb: 0, 153, 255;
+  --ok-rgb: 62, 207, 142;
+  --warn-rgb: 217, 160, 91;
+  --fail-rgb: 224, 108, 92;
+  --danger-ink-rgb: 240, 96, 122;
+  --c-claude-rgb: 217, 119, 87;
+}
+
+/* ---------- Crux Light ---------- */
+html[data-theme="crux-light"] {
+  color-scheme: light;
+  --bg: #f6f6f8;
+  --surface: #ffffff;
+  --surface-2: #eeeef1;
+  --raise: #e4e5e9;
+  --ink: #1b1c20;
+  --ink-soft: #4f525a;
+  --ink-faint: #7d808a;
+  --line: #dcdde2;
+  --menu: #ffffff;
+  --menu-line: #d6d7dd;
+  --menu-hover: #eeeef2;
+  --accent: #0a7fe0;
+  --accent-ink: #0068bd;
+  --accent-soft: rgba(10, 127, 224, 0.12);
+  --ok: #1f9d63;
+  --ok-ink: #17834f;
+  --ok-soft: rgba(31, 157, 99, 0.14);
+  --fail: #d0453a;
+  --warn: #b7791f;
+  --hi: #000;
+  --on-warn: #fff;
+  --scrim: rgba(24, 26, 32, 0.28);
+  --danger-ink: #d2354f;
+  --danger-solid: #c9304f;
+  --danger-solid-hover: #b52643;
+  --drop-bg: rgba(246, 246, 248, 0.7);
+  --drop-over-bg: rgba(10, 127, 224, 0.1);
+  --c-green: #2f8f4a;
+  --c-blue: #2f6fb0;
+  --c-purple: #8a4fbf;
+  --c-pink: #b8487c;
+  --c-sage: #3f7d63;
+  --c-jira: #0c66e4;
+  --c-claude: #c15f3c;
+  --hi-rgb: 0, 0, 0; --bg-rgb: 246, 246, 248; --accent-rgb: 10, 127, 224; --ok-rgb: 31, 157, 99;
+  --warn-rgb: 183, 121, 31; --fail-rgb: 208, 69, 58; --danger-ink-rgb: 210, 53, 79; --c-claude-rgb: 193, 95, 60;
+}
+
+/* ---------- Cyberpunk ---------- */
+html[data-theme="cyberpunk"] {
+  color-scheme: dark;
+  --bg: #07060b;
+  --surface: #0e0b16;
+  --surface-2: #161221;
+  --raise: #1f1930;
+  --ink: #f4ecff;
+  --ink-soft: #b9a8dc;
+  --ink-faint: #7f71a0;
+  --line: #2b2143;
+  --menu: #110d1b;
+  --menu-line: #3d2c63;
+  --menu-hover: #211936;
+  --graph-bg: #05040a;
+  --accent: #ff2bd6;
+  --accent-ink: #ff6be3;
+  --accent-soft: rgba(255, 43, 214, 0.16);
+  --ok: #00f0ff;
+  --ok-ink: #5ff6ff;
+  --ok-soft: rgba(0, 240, 255, 0.14);
+  --fail: #ff3b6b;
+  --warn: #e8ff3a;
+  --on-warn: #07060b;
+  --scrim: rgba(4, 2, 10, 0.7);
+  --danger-ink: #ff3b6b;
+  --danger-solid: #e0185a;
+  --danger-solid-hover: #ff2d6f;
+  --drop-bg: rgba(7, 6, 11, 0.6);
+  --drop-over-bg: rgba(255, 43, 214, 0.12);
+  --c-green: #3dff9a;
+  --c-blue: #00e5ff;
+  --c-purple: #c77dff;
+  --c-pink: #ff6be3;
+  --c-sage: #7affd1;
+  --c-jira: #4da3ff;
+  --c-claude: #ff8a5c;
+  --bg-rgb: 7, 6, 11; --accent-rgb: 255, 43, 214; --ok-rgb: 0, 240, 255;
+  --warn-rgb: 232, 255, 58; --fail-rgb: 255, 59, 107; --danger-ink-rgb: 255, 59, 107; --c-claude-rgb: 255, 138, 92;
+  --glow: 0 0 0 1px color-mix(in srgb, var(--accent) 70%, transparent), 0 0 14px color-mix(in srgb, var(--accent) 45%, transparent);
+  --glow-cyan: 0 0 0 1px color-mix(in srgb, var(--ok) 60%, transparent), 0 0 12px color-mix(in srgb, var(--ok) 35%, transparent);
+}
+html[data-theme="cyberpunk"] ::selection { background: color-mix(in srgb, var(--ok) 35%, transparent); }
+/* Neon edges on whatever is focused / active. */
+html[data-theme="cyberpunk"] :is(input, textarea, select):focus,
+html[data-theme="cyberpunk"] :is(button, a, [role="radio"]):focus-visible { box-shadow: var(--glow); }
+html[data-theme="cyberpunk"] .side-item.active { box-shadow: inset 2px 0 0 var(--accent), -1px 0 10px -2px var(--accent); color: var(--hi); }
+html[data-theme="cyberpunk"] .session-tab.on { box-shadow: var(--glow), inset 0 -2px 0 var(--ok); }
+html[data-theme="cyberpunk"] .term-tab.active { box-shadow: 0 -2px 0 var(--accent) inset, 0 0 12px -4px var(--accent); }
+html[data-theme="cyberpunk"] .tabs button.active { border-bottom-color: var(--ok); text-shadow: 0 0 8px color-mix(in srgb, var(--ok) 60%, transparent); }
+html[data-theme="cyberpunk"] :is(.modal, .ctx-menu, .jira-menu, .qa-card),
+html[data-theme="cyberpunk"].tray-window .tray-card {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent), 0 0 30px -6px color-mix(in srgb, var(--accent) 55%, transparent), 0 24px 60px rgba(0, 0, 0, 0.7);
+}
+html[data-theme="cyberpunk"] :is(button.primary, .modal button.primary) { box-shadow: 0 0 14px -2px var(--accent); }
+html[data-theme="cyberpunk"] .brand-name { text-shadow: 0 0 10px color-mix(in srgb, var(--accent) 70%, transparent); }
+html[data-theme="cyberpunk"] :is(.unread-dot, .update-dot, .session-dot.done) { box-shadow: 0 0 8px currentColor, 0 0 6px var(--ok); }
+html[data-theme="cyberpunk"] .splitter:hover, html[data-theme="cyberpunk"] .pane-divider:hover { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+
+/* Scan lines: a fixed, click-through overlay (theme.ts sets data-scanlines for cyberpunk). */
+html[data-scanlines]::after {
+  content: ""; position: fixed; inset: 0; z-index: 2147483000; pointer-events: none;
+  background: repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0) 0, rgba(0, 0, 0, 0) 2px, rgba(0, 0, 0, 0.16) 3px, rgba(0, 0, 0, 0) 4px);
+  mix-blend-mode: multiply;
+}
+
+/* ---------- Unicorn ---------- */
+html[data-theme="unicorn"] {
+  color-scheme: light;
+  --bg: #fff6fc;
+  --surface: #ffffff;
+  --surface-2: #fbeefa;
+  --raise: #f3e2fb;
+  --ink: #3a2850;
+  --ink-soft: #6c5786;
+  --ink-faint: #9d8db3;
+  --line: #f0dcf0;
+  --menu: #ffffff;
+  --menu-line: #ead3f2;
+  --menu-hover: #fbebf8;
+  --accent: #b05ae8;
+  --accent-ink: #9440cf;
+  --accent-soft: rgba(176, 90, 232, 0.14);
+  --ok: #22a884;
+  --ok-ink: #178c6c;
+  --ok-soft: rgba(34, 168, 132, 0.15);
+  --fail: #e2477a;
+  --warn: #d98a1c;
+  --hi: #2a1840;
+  --on-warn: #fff;
+  --scrim: rgba(120, 80, 150, 0.22);
+  --danger-ink: #e2477a;
+  --danger-solid: #e2477a;
+  --danger-solid-hover: #cc3468;
+  --drop-bg: rgba(255, 246, 252, 0.7);
+  --drop-over-bg: rgba(176, 90, 232, 0.12);
+  --c-green: #2e9d62;
+  --c-blue: #3d7fd0;
+  --c-purple: #9a52d6;
+  --c-pink: #d24a8e;
+  --c-sage: #3a8a70;
+  --c-jira: #2f6fe0;
+  --c-claude: #d0643f;
+  --hi-rgb: 42, 24, 64; --bg-rgb: 255, 246, 252; --accent-rgb: 176, 90, 232; --ok-rgb: 34, 168, 132;
+  --warn-rgb: 217, 138, 28; --fail-rgb: 226, 71, 122; --danger-ink-rgb: 226, 71, 122; --c-claude-rgb: 208, 100, 63;
+  --rainbow: linear-gradient(90deg, #ff9aa2, #ffc39e, #ffe38a, #b8f0a4, #9fe6ff, #b7a6ff, #f4a6ff);
+}
+html[data-theme="unicorn"] ::selection { background: rgba(244, 166, 255, 0.45); }
+/* Rainbow under the tab strips, and the active tab carries a rainbow bar. */
+html[data-theme="unicorn"] :is(.session-bar, .term-tabs, .tabs) { position: relative; border-bottom-color: transparent; }
+html[data-theme="unicorn"] :is(.session-bar, .term-tabs, .tabs)::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--rainbow); opacity: 0.55; pointer-events: none;
+}
+html[data-theme="unicorn"] .session-tab.on { box-shadow: 0 1px 4px rgba(176, 90, 232, 0.18); }
+html[data-theme="unicorn"] :is(.session-tab.on, .term-tab.active, .tabs button.active) { position: relative; }
+html[data-theme="unicorn"] :is(.session-tab.on, .term-tab.active, .tabs button.active)::after {
+  content: ""; position: absolute; left: 8px; right: 8px; bottom: 0; height: 3px; border-radius: 3px; background: var(--rainbow); z-index: 1;
+}
+html[data-theme="unicorn"] .tabs button.active { border-bottom-color: transparent; }
+html[data-theme="unicorn"] :is(button.primary, .modal button.primary) { background-image: linear-gradient(135deg, #c27bf0, #f08ac8); border-color: transparent; }
+html[data-theme="unicorn"] .brand-name { background: var(--rainbow); -webkit-background-clip: text; background-clip: text; color: transparent; filter: saturate(1.6) brightness(0.85); }
+html[data-theme="unicorn"] .side-item.active { background: linear-gradient(90deg, rgba(244, 166, 255, 0.22), rgba(159, 230, 255, 0.18)); }
+
+/* ---------- Light themes: fixes for spots built on dark ---------- */
+html:is([data-theme="crux-light"], [data-theme="unicorn"]) :is(.modal, .ctx-menu, .jira-menu) { box-shadow: 0 18px 50px rgba(40, 30, 60, 0.18), 0 2px 8px rgba(40, 30, 60, 0.08); }
+html:is([data-theme="crux-light"], [data-theme="unicorn"]) .qa-card,
+html:is([data-theme="crux-light"], [data-theme="unicorn"]).tray-window .tray-card { box-shadow: 0 20px 50px rgba(40, 30, 60, 0.2), 0 2px 8px rgba(40, 30, 60, 0.1); }
+html:is([data-theme="crux-light"], [data-theme="unicorn"]) :is(.toast, .issue-bar, .drag-ghost) { box-shadow: 0 10px 30px rgba(40, 30, 60, 0.18); }
+html:is([data-theme="crux-light"], [data-theme="unicorn"]) .graph-panel { box-shadow: 0 6px 24px rgba(40, 30, 60, 0.14); }
+/* Scrollbars follow color-scheme; the Quick Ask workspace menu draws its own. */
+html:is([data-theme="crux-light"], [data-theme="unicorn"]) .qa-ws-menu { scrollbar-color: rgba(0, 0, 0, 0.2) transparent; }
+/* The feature graph canvas and the first-run intro are drawn for a dark
+   backdrop: keep them dark under light themes. */
+html:is([data-theme="crux-light"], [data-theme="unicorn"]) :is(.fg, .intro, .onb-backdrop) {
+  color-scheme: dark;
+  --bg: #1b1c20; --surface: #212226; --surface-2: #2a2b30; --raise: #323439;
+  --ink: #f5f5f7; --ink-soft: #a9abb2; --ink-faint: #7b7e86; --line: #34363c;
+  --menu: #2a2b30; --menu-line: #3d3f46; --menu-hover: #35373d; --graph-bg: #121317;
+  --hi: #fff; --hi-rgb: 255, 255, 255; --bg-rgb: 27, 28, 32;
+}
+
+/* ---------- Reduce motion (setting, or the OS asks) ---------- */
+html[data-reduce-motion] *, html[data-reduce-motion] *::before, html[data-reduce-motion] *::after {
+  animation-duration: 0.001ms !important; animation-delay: 0s !important; animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important; transition-delay: 0s !important; scroll-behavior: auto !important;
+}
