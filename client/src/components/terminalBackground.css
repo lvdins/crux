@@ -1,0 +1,27 @@
+/* Terminal backgrounds. Only slots that actually hold a background get the
+   stacking changes, so with "none" nothing differs from today. */
+.term-slot:has(> .term-bg) { position: relative; }
+.term-slot:has(> .term-bg) > .term,
+.term-slot:has(> .term-bg) > .term-slot-head { position: relative; z-index: 1; }
+
+.term-bg { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+.term-bg-layer { position: absolute; inset: 0; }
+.term-bg-video { width: 100%; height: 100%; display: block; }
+.term-bg-dim { position: absolute; inset: 0; }
+
+.term-bg-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.term-bg-canvas.fresh { animation: term-bg-in 1s ease-in-out both; }
+@keyframes term-bg-in { from { opacity: 0; } to { opacity: 1; } }
+
+.contrast-warning {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 10px; border-radius: 8px; font-size: 12px;
+  color: var(--ink, #e6e6e6);
+  background: color-mix(in srgb, #e5c07b 14%, transparent);
+  border: 1px solid color-mix(in srgb, #e5c07b 45%, transparent);
+}
+.contrast-warning button {
+  margin-left: auto; font: inherit; cursor: pointer;
+  padding: 3px 9px; border-radius: 6px;
+  color: inherit; background: transparent; border: 1px solid currentColor;
+}
