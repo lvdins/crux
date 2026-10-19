@@ -1991,3 +1991,16 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); }
 .session-close:hover { background: rgba(255, 255, 255, 0.08); }
 .session-add { width: 30px; height: 30px; border: 0; border-radius: 999px; font-size: 17px; }
 .session-add:hover { background: rgba(255, 255, 255, 0.07); }
+
+/* --- Appearance (C): terminal tab themes --- */
+.tab-scheme-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  border: 2px solid; box-sizing: border-box; margin-right: 1px;
+}
+.scheme-swatch {
+  display: inline-flex; align-items: center; gap: 1.5px; padding: 0 2px;
+  width: 16px; height: 12px; border-radius: 3px; box-sizing: border-box;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14); overflow: hidden;
+}
+.scheme-swatch i { flex: 1; height: 6px; border-radius: 1px; }
+/* --- end Appearance (C) --- */

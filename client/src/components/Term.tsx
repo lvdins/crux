@@ -1,17 +1,38 @@
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { api } from "../net";
 import { IS_MAC } from "../platform";
-import { Terminal } from "@xterm/xterm";
+import { Terminal, type ITerminalOptions } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
+import {
+  APPEARANCE_EVENT,
+  SAFE_MODE_KEY,
+  resolveLook,
+  withDefaults,
+  type Appearance,
+  type AppearanceEventDetail,
+  type ChatKind,
+  type TermLook,
+} from "../appearance";
+import { getScheme, toXtermTheme } from "../terminalThemes";
 
 export type TermSend = (payload: Record<string, unknown>) => void;
 export type TermSubscribe = (id: string, handler: (data: string) => void) => () => void;
+
+/** What decides a terminal's look besides the app-wide settings. */
+interface TermCtx {
+  repo: string;
+  kind?: ChatKind;
+  look?: TermLook;
+}
 
 interface CachedTerm {
   term: Terminal;
   fit: FitAddon;
   el: HTMLDivElement;
+  ctx: TermCtx;
+  /** Set while mounted: fit + tell the PTY the new size. */
+  refit?: () => void;
 }
 
 // Terminals live outside React so scrollback and the running program survive
@@ -19,12 +40,115 @@ interface CachedTerm {
 const cache = new Map<string, CachedTerm>();
 
 const FONT = '"QL Nerd", "MesloLGS NF", ui-monospace, "SF Mono", Menlo, monospace';
+const FONT_SIZE = 12.5;
 // Web fonts load lazily; start both weights now so the first terminal
 // measures cells with the real glyph metrics.
 const fontReady = Promise.all([
   document.fonts?.load('400 12.5px "QL Nerd"'),
   document.fonts?.load('700 12.5px "QL Nerd"'),
 ]).catch(() => undefined);
+
+// --- Appearance ---------------------------------------------------------
+// The latest settings, kept here so terminals created later (and the live
+// updates below) read the same thing. Settings write "crux.appearance".
+function loadAppearance(): Appearance {
+  try {
+    if (localStorage.getItem(SAFE_MODE_KEY)) return withDefaults();
+    return withDefaults(JSON.parse(localStorage.getItem("crux.appearance") ?? "null"));
+  } catch {
+    return withDefaults();
+  }
+}
+let appearance = loadAppearance();
+
+/** The appearance terminals currently use. */
+export function getAppearance(): Appearance {
+  return appearance;
+}
+
+// Terminals that show a background behind them (see setTermTransparent).
+const transparent = new Set<string>();
+
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+const fontOf = () => appearance.font.family?.trim() || FONT;
+const sizeOf = () => (appearance.font.size ? clamp(appearance.font.size, 10, 24) : FONT_SIZE);
+
+/** xterm options for a terminal's look. Nothing set → exactly Crux's old options. */
+function lookOptions(ctx: TermCtx, id: string): ITerminalOptions {
+  const { font } = appearance;
+  const scheme = getScheme(resolveLook(appearance, { session: ctx.look, repo: ctx.repo, kind: ctx.kind }).scheme, appearance);
+  const theme = toXtermTheme(scheme);
+  const clear = transparent.has(id);
+  const opts: ITerminalOptions = {
+    fontSize: sizeOf(),
+    fontFamily: fontOf(),
+    cursorBlink: font.cursorBlink ?? true,
+    theme: clear ? { ...theme, background: "#00000000" } : theme,
+  };
+  if (font.lineHeight) opts.lineHeight = clamp(font.lineHeight, 1, 2);
+  if (font.cursorStyle) opts.cursorStyle = font.cursorStyle;
+  if (clear) opts.allowTransparency = true;
+  return opts;
+}
+
+// No ligature addon (it needs font files the webview can't read); the DOM
+// renderer draws runs of text, so the CSS feature does the job.
+function applyLigatures(el: HTMLElement) {
+  const on = appearance.font.ligatures;
+  el.style.fontVariantLigatures = on ? "normal" : on === false ? "none" : "";
+  el.style.fontFeatureSettings = on ? '"liga" 1, "calt" 1' : "";
+}
+
+/** Wait for a (possibly new) font so cells are measured with real glyphs. */
+async function loadFont(family: string, size: number) {
+  try {
+    await Promise.all([document.fonts?.load(`400 ${size}px ${family}`), document.fonts?.load(`700 ${size}px ${family}`)]);
+  } catch {
+    /* unknown font or older webview: the fallback still renders */
+  }
+}
+
+/** Apply the current look to one terminal; refit when the cell size changes. */
+async function restyle(id: string, c: CachedTerm) {
+  const next = lookOptions(c.ctx, id);
+  const o = c.term.options;
+  const metrics = o.fontFamily !== next.fontFamily || o.fontSize !== next.fontSize || (o.lineHeight ?? 1) !== (next.lineHeight ?? 1);
+  if (metrics) await loadFont(next.fontFamily!, next.fontSize!);
+  if (cache.get(id) !== c) return; // closed meanwhile
+  o.theme = next.theme;
+  o.cursorBlink = next.cursorBlink;
+  o.cursorStyle = next.cursorStyle ?? "block";
+  o.allowTransparency = next.allowTransparency ?? false;
+  applyLigatures(c.el);
+  if (!metrics) return;
+  o.fontSize = next.fontSize;
+  o.lineHeight = next.lineHeight ?? 1;
+  o.fontFamily = next.fontFamily;
+  c.refit?.();
+}
+
+// Settings saved or previewed: every open terminal changes right away.
+window.addEventListener(APPEARANCE_EVENT, (e) => {
+  appearance = withDefaults((e as CustomEvent<AppearanceEventDetail>).detail);
+  for (const [id, c] of cache) void restyle(id, c);
+});
+
+/**
+ * Let a background show through a terminal: its background colour becomes
+ * transparent (the text colours stay). Works before the terminal exists.
+ */
+export function setTermTransparent(id: string, on: boolean): void {
+  if (on === transparent.has(id)) return;
+  if (on) transparent.add(id);
+  else transparent.delete(id);
+  const c = cache.get(id);
+  if (c) void restyle(id, c);
+}
+
+/** A terminal's own element (lives across re-mounts), if it's been created. */
+export function termEl(id: string): HTMLDivElement | undefined {
+  return cache.get(id)?.el;
+}
 
 /** Put the keyboard in a terminal (e.g. after adding an image to its input). */
 export function focusTerm(id: string): void {
@@ -43,6 +167,8 @@ export function disposeTerm(id: string): void {
 export default function Term({
   id,
   repo,
+  look,
+  kind,
   bootCmd,
   connected,
   send,
@@ -53,6 +179,9 @@ export default function Term({
   onFocus?: (id: string) => void;
   id: string;
   repo: string;
+  /** This terminal's own look (tab theme); wins over workspace and kind. */
+  look?: TermLook;
+  kind?: ChatKind;
   bootCmd?: string;
   connected: boolean;
   send: TermSend;
@@ -72,38 +201,15 @@ export default function Term({
       const el = document.createElement("div");
       el.style.width = "100%";
       el.style.height = "100%";
+      const ctx: TermCtx = { repo, kind, look };
       const term = new Terminal({
-        fontSize: 12.5,
-        fontFamily: FONT,
-        cursorBlink: true,
+        ...lookOptions(ctx, id),
         scrollback: 8000,
         // Glyphs (powerline arrows, icons) drawn edge to edge, no seams.
         customGlyphs: true,
         rescaleOverlappingGlyphs: true,
-        theme: {
-          background: "#1b1c20",
-          foreground: "#e6e6e6",
-          cursor: "#3ecf8e",
-          cursorAccent: "#1b1c20",
-          selectionBackground: "#3a4a42",
-          black: "#2a2b30",
-          red: "#e06c75",
-          green: "#3ecf8e",
-          yellow: "#e5c07b",
-          blue: "#61afef",
-          magenta: "#c678dd",
-          cyan: "#56b6c2",
-          white: "#d4d4d4",
-          brightBlack: "#5c6370",
-          brightRed: "#ef7f88",
-          brightGreen: "#5fe0a6",
-          brightYellow: "#f0d08e",
-          brightBlue: "#7cc0f5",
-          brightMagenta: "#d595e8",
-          brightCyan: "#6fcad5",
-          brightWhite: "#f5f5f5",
-        },
       });
+      applyLigatures(el);
       const fit = new FitAddon();
       term.loadAddon(fit);
       term.open(el);
@@ -124,10 +230,11 @@ export default function Term({
         if (e.type === "keydown") send({ type: "term:input", id, data: "\n" });
         return false;
       });
-      cached = { term, fit, el };
+      cached = { term, fit, el, ctx };
       cache.set(id, cached);
     }
-    const { term, fit, el } = cached;
+    const entry = cached;
+    const { term, fit, el } = entry;
     container.appendChild(el);
 
     let disposed = false;
@@ -160,8 +267,10 @@ export default function Term({
       } catch {
         /* older webviews */
       }
+      // A font picked in Appearance loads on demand.
+      if (fresh && (fontOf() !== FONT || sizeOf() !== FONT_SIZE)) await loadFont(fontOf(), sizeOf());
       // Re-assign so xterm re-measures cells with the now-loaded font.
-      if (fresh) term.options.fontFamily = FONT;
+      if (fresh) term.options.fontFamily = fontOf();
       await new Promise(requestAnimationFrame);
       await new Promise(requestAnimationFrame);
       if (disposed) return;
@@ -174,6 +283,8 @@ export default function Term({
       // terminal, reports fresh=false, and the server may not have spawned yet.)
       send({ type: "term:open", id, repo, cols: term.cols, rows: term.rows, fresh, bootCmd });
       unsubscribe = subscribe(id, (data) => term.write(data));
+      // Live appearance changes may refit from now on (the PTY exists).
+      entry.refit = doFit;
       // One more pass shortly after, in case a scrollbar or font swap shifted
       // the layout between the first fit and the PTY spawn.
       setTimeout(doFit, 300);
@@ -195,6 +306,7 @@ export default function Term({
 
     return () => {
       disposed = true;
+      if (entry.refit === doFit) entry.refit = undefined;
       term.textarea?.removeEventListener("focus", reportFocus);
       container.removeEventListener("pointerdown", reportFocus, true);
       clearTimeout(debounce);
@@ -204,6 +316,17 @@ export default function Term({
       if (el.parentElement === container) container.removeChild(el);
     };
   }, [id, repo, bootCmd, connected, send, subscribe]);
+
+  // Tab theme / workspace / kind changed: restyle in place (no re-open).
+  const lookKey = JSON.stringify(look ?? null);
+  useEffect(() => {
+    const c = cache.get(id);
+    if (!c) return;
+    const ctx: TermCtx = { repo, kind, look };
+    if (JSON.stringify(ctx) === JSON.stringify(c.ctx)) return;
+    c.ctx = ctx;
+    void restyle(id, c);
+  }, [id, repo, kind, lookKey, connected]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Drop screenshots / photos (any file) onto the chat: the server saves them
   // and their paths are pasted in, which is how Claude Code attaches images.

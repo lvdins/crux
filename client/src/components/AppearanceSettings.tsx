@@ -16,7 +16,8 @@ import {
   type ThemeFile,
   type WildId,
 } from "../appearance";
-import { SCHEMES, importScheme } from "../terminalThemes";
+import { SCHEMES, getScheme, importScheme } from "../terminalThemes";
+import { ContrastWarning } from "./TerminalBackground";
 import type { Settings } from "../types";
 
 const IN_TAURI = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -509,7 +510,15 @@ export default function AppearanceSettings({ settings, onChange }: { settings: S
             </Row>
           </>
         )}
-        {/* D: contrast warning */}
+        {look.background.kind !== "none" && (
+          <ContrastWarning
+            fg={getScheme(look.terminalScheme, look).foreground}
+            base={getScheme(look.terminalScheme, look).background}
+            background={look.background}
+            style={look.backgroundStyle}
+            onRaiseDim={(dim) => bgStyle({ dim })}
+          />
+        )}
         <label className="settings-row">
           <span className="settings-text">
             <b>React to agent state</b>
