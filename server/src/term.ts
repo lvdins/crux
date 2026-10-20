@@ -175,6 +175,9 @@ export function termTail(id: string): { text: string; quietMs: number; alive: bo
   return e ? { text: e.buffer.slice(-20_000), quietMs: Date.now() - e.lastData, alive: true } : { text: "", quietMs: Infinity, alive: false };
 }
 
+/** Working directory a terminal was started in. */
+export const termCwd = (id: string): string | undefined => terms.get(id)?.cwd;
+
 export function termInput(id: string, data: string): void {
   terms.get(id)?.pty.write(data);
 }
