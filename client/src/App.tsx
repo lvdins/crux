@@ -430,7 +430,7 @@ export default function App() {
   // "+" next to a workspace: pick Claude / Codex / terminal for a new chat.
   const [chatMenu, setChatMenu] = useState<null | { key: string; x: number; y: number }>(null);
   // Name prompt shown before a new chat is created.
-  const [nameChat, setNameChat] = useState<null | { key: string; kind: "claude" | "codex" | "shell"; name: string }>(null);
+  const [nameChat, setNameChat] = useState<null | { key: string; kind: "claude" | "codex" | "shell"; name: string; fallback: string }>(null);
   // First-run intro → welcome cards → guided setup (replayable from the ? button).
   const [onboarding, setOnboarding] = useState<null | "intro" | "name" | "mode" | "permissions" | "welcome" | "setup">(null);
   // Permissions opened on its own (Settings, or once after updating) closes instead of going on to Welcome.
@@ -1907,7 +1907,7 @@ export default function App() {
     const taken = new Set(chatsOf(key).map(chatTitle));
     let name: string = kind;
     for (let n = 2; taken.has(name); n++) name = `${kind} ${n}`;
-    if (settings.askChatName) setNameChat({ key, kind, name });
+    if (settings.askChatName) setNameChat({ key, kind, name: "", fallback: name });
     else newChat(key, kind, name);
   };
 
@@ -1937,7 +1937,7 @@ export default function App() {
   useModalKeys(!!nameChat, {
     onEnter: () => {
       if (!nameChat) return;
-      newChat(nameChat.key, nameChat.kind, nameChat.name);
+      newChat(nameChat.key, nameChat.kind, nameChat.name.trim() || nameChat.fallback);
       setNameChat(null);
     },
     onEscape: () => setNameChat(null),
@@ -3058,7 +3058,7 @@ export default function App() {
             role="dialog"
             onSubmit={(e) => {
               e.preventDefault();
-              newChat(nameChat.key, nameChat.kind, nameChat.name);
+              newChat(nameChat.key, nameChat.kind, nameChat.name.trim() || nameChat.fallback);
               setNameChat(null);
             }}
           >
@@ -3076,10 +3076,9 @@ export default function App() {
             <input
               className="chat-name-input"
               value={nameChat.name}
-              placeholder="Name this chat"
+              placeholder={nameChat.fallback}
               spellCheck={false}
               autoFocus
-              onFocus={(e) => e.currentTarget.select()}
               onChange={(e) => setNameChat({ ...nameChat, name: e.target.value })}
             />
             <div className="chat-modal-foot">
