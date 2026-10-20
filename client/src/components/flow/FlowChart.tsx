@@ -3,10 +3,17 @@ import { Background, Handle, Position, ReactFlow, ReactFlowProvider, useReactFlo
 import "@xyflow/react/dist/style.css";
 import type { FlowState, GraphNode } from "../../types";
 import { getGraph, loadGraph, useFlowVersion } from "../../flow/store";
+import { ChatIcon, CheckIcon, ChevronLeftIcon, CloseIcon, DocIcon, EditIcon, GlobeIcon, OrchestrateIcon, TerminalIcon, ToolIcon, WaitIcon } from "../icons";
 import { BOX_W, buildChart, MAX_BOXES, type Box, type StatusFilter, type TypeFilter } from "../../flow/chart";
 
 type StepData = { box: Box };
 type StepNode = Node<StepData, "step">;
+
+const TYPES: [TypeFilter, string, string][] = [
+  ["all", "All", "Every step"],
+  ["noReads", "No reads", "Hide file reads and searches"],
+  ["editsShell", "Edits + shell", "Only edits and shell commands"],
+];
 
 const reduceMotion = () => document.documentElement.hasAttribute("data-reduce-motion");
 
@@ -67,22 +74,24 @@ function Chart({ term, flow, wsLabel, module, moduleSelect, onBack, onJump }: Pa
   const canvas = useRef<HTMLDivElement>(null);
   const moveFrom = useRef<Viewport | null>(null);
   const last = chart?.boxes[chart.boxes.length - 1];
+  const picked = selected ? g?.nodes.get(selected) : undefined;
+  // Also re-frames when the details panel opens or closes (the canvas changes width).
   useEffect(() => {
     if (!follow || !last) return;
     const zoom = rf.getZoom();
     const half = (canvas.current?.clientWidth ?? 800) / 2 / zoom;
     const x = Math.max(last.x + BOX_W + 48 / zoom - half, half - 20 / zoom);
     void rf.setCenter(x, last.y + 40, { zoom, duration: reduceMotion() ? 0 : 300 });
-  }, [follow, last?.id, last?.x, last?.y]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [follow, last?.id, last?.x, last?.y, !!picked]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const picked = selected ? g?.nodes.get(selected) : undefined;
   const total = g?.order.length ?? 0;
 
   return (
     <>
       <div className="flow-head">
-        <button className="flow-back" onClick={onBack} title="All flows">
-          ← Flows
+        <button className="flow-btn flow-back" onClick={onBack} title="All flows">
+          <ChevronLeftIcon />
+          Flows
         </button>
         <h2>{flow?.name ?? term}</h2>
         {flow && (
@@ -92,31 +101,38 @@ function Chart({ term, flow, wsLabel, module, moduleSelect, onBack, onJump }: Pa
           </span>
         )}
         <span className="flow-grow" />
-        {moduleSelect}
-        <select className="flow-select" value={type} onChange={(e) => setType(e.target.value as TypeFilter)} title="Step types">
-          <option value="all">All steps</option>
-          <option value="noReads">Hide reads</option>
-          <option value="editsShell">Only edits + shell</option>
-        </select>
-        <label className="flow-check" title="Only failed steps and steps waiting for you">
-          <input type="checkbox" checked={status === "problems"} onChange={(e) => setStatus(e.target.checked ? "problems" : "all")} />
-          Errors + waits
-        </label>
-        {expanded.size > 0 && (
-          <button className="flow-btn" onClick={() => setExpanded(new Set())} title="Fold repeated tool calls again">
-            Fold repeats
-          </button>
-        )}
-        <label className={`flow-check ${follow ? "on" : ""}`} title="Keep the newest step in view. Panning turns it off.">
-          <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />
-          Follow live
-        </label>
+        <div className="flow-tools">
+          {moduleSelect}
+          <div className="fm-seg flow-seg" role="radiogroup" aria-label="Step types">
+            {TYPES.map(([v, text, tip]) => (
+              <button key={v} role="radio" aria-checked={type === v} className={type === v ? "on" : ""} title={tip} onClick={() => setType(v)}>
+                {text}
+              </button>
+            ))}
+          </div>
+          <label className={`flow-check ${status === "problems" ? "on" : ""}`} title="Only failed steps and steps waiting for you">
+            <input type="checkbox" checked={status === "problems"} onChange={(e) => setStatus(e.target.checked ? "problems" : "all")} />
+            Errors + waits
+          </label>
+          {expanded.size > 0 && (
+            <button className="flow-btn" onClick={() => setExpanded(new Set())} title="Fold repeated tool calls again">
+              Fold repeats
+            </button>
+          )}
+          <label className={`flow-check ${follow ? "on" : ""}`} title="Keep the newest step in view. Panning turns it off.">
+            <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />
+            Follow live
+          </label>
+        </div>
       </div>
       <div className="flow-body">
         <div className="flow-canvas" ref={canvas}>
           {error && <p className="flow-empty">Couldn't load this flow: {error}</p>}
           {!error && g && !chart?.boxes.length && (
-            <p className="flow-empty">{total ? "No steps match these filters." : "No steps yet."}</p>
+            <div className="empty-state flow-empty-state flow-canvas-empty">
+              <h2>{total ? "No matching steps" : "No steps yet"}</h2>
+              <p>{total ? "No step matches these filters." : "Steps show up here as the agent works."}</p>
+            </div>
           )}
           {!!chart?.hidden && <div className="flow-note">Showing the newest {MAX_BOXES} boxes; {chart.hidden} older hidden.</div>}
           <ReactFlow
@@ -159,25 +175,21 @@ const EDIT_TOOLS = /^(Edit|MultiEdit|Write|NotebookEdit|apply_patch)$/;
 const SHELL_TOOLS = /^(Bash|shell|exec_command)$/;
 const WEB_TOOLS = /^(WebFetch|WebSearch)$|browser/i;
 
-/** Small line icon for a step's type (or tool). */
+/** Line icon for a step's type (or tool), from the app's icon set. */
 function StepIcon({ node }: { node: GraphNode }) {
   const tool = node.meta.tool ?? "";
-  const path =
-    node.type === "session" ? "M2.5 3.5h11v9h-11zM5 7l1.5 1.5L5 10M8.5 10h2.5"
-    : node.type === "prompt" ? "M3 3.5h10v7H7l-3 2.5v-2.5H3z"
-    : node.type === "subagent" || node.type === "worker" ? "M8 3v3M8 6 4 10M8 6l4 4M2.5 10.5h3v3h-3zM10.5 10.5h3v3h-3zM6.5 1.5h3v3h-3z"
-    : node.type === "wait" ? "M5 2.5h6M5 13.5h6M5.5 2.5c0 3 5 3 5 5.5s-5 2.5-5 5.5M10.5 2.5c0 3-5 3-5 5.5s5 2.5 5 5.5"
-    : node.type === "done" ? "M3 8.5l3 3 7-7"
-    : READ_TOOLS.test(tool) ? "M4 1.5h5.5L12 4v10.5H4zM9.5 1.5V4H12M6 7.5h4M6 10h4"
-    : EDIT_TOOLS.test(tool) ? "M10.5 2.5l3 3-7.5 7.5H3v-3zM9 4l3 3"
-    : SHELL_TOOLS.test(tool) ? "M2.5 3.5h11v9h-11zM5 7l1.5 1.5L5 10M8.5 10h2.5"
-    : WEB_TOOLS.test(tool) ? "M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2zM2 8h12M8 2c-2 2-2 10 0 12M8 2c2 2 2 10 0 12"
-    : "M9.5 2.5a3 3 0 0 0-3.4 4L2.5 10v3.5H6l3.5-3.6a3 3 0 0 0 4-3.4l-2 2-2-2z";
-  return (
-    <svg className="flow-icon" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
-      <path d={path} />
-    </svg>
-  );
+  const icon =
+    node.type === "session" ? <TerminalIcon />
+    : node.type === "prompt" ? <ChatIcon />
+    : node.type === "subagent" || node.type === "worker" ? <OrchestrateIcon />
+    : node.type === "wait" ? <WaitIcon />
+    : node.type === "done" ? <CheckIcon />
+    : READ_TOOLS.test(tool) ? <DocIcon />
+    : EDIT_TOOLS.test(tool) ? <EditIcon />
+    : SHELL_TOOLS.test(tool) ? <TerminalIcon />
+    : WEB_TOOLS.test(tool) ? <GlobeIcon />
+    : <ToolIcon />;
+  return <span className="flow-icon">{icon}</span>;
 }
 
 const StepBox = memo(function StepBox({ data, selected }: NodeProps<StepNode>) {
@@ -194,7 +206,7 @@ const StepBox = memo(function StepBox({ data, selected }: NodeProps<StepNode>) {
         <span className="flow-box-label">{label}</span>
       </div>
       <div className="flow-box-meta">
-        {n.meta.module && <span className="flow-tag">{n.meta.module.label}</span>}
+        {n.meta.module && <span className="kind-tag">{n.meta.module.label}</span>}
         {folded ? <span>{n.meta.files?.[0]?.split("/").pop() ?? "repeated calls"}</span> : n.meta.durationMs != null && <span>{fmtMs(n.meta.durationMs)}</span>}
       </div>
       {box.text && (
@@ -227,8 +239,8 @@ function StepPanel({ node, term, onClose, onJump }: { node: GraphNode; term: str
       <div className="flow-panel-head">
         <StepIcon node={node} />
         <b>{node.label}</b>
-        <button className="modal-x" title="Close" onClick={onClose}>
-          ×
+        <button className="flow-x" title="Close" onClick={onClose}>
+          <CloseIcon />
         </button>
       </div>
       <dl className="flow-facts">
@@ -275,11 +287,12 @@ function StepPanel({ node, term, onClose, onJump }: { node: GraphNode; term: str
       {m.input && <Block title="Input" body={m.input} />}
       {m.output && <Block title="Output" body={m.output} />}
       <button
-        className="flow-jump"
+        className="primary flow-jump"
         onClick={() => {
           if (!onJump(term)) setGone(true);
         }}
       >
+        <TerminalIcon />
         Jump to terminal
       </button>
       {gone && <p className="flow-panel-note">That terminal isn't open any more.</p>}
