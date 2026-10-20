@@ -693,6 +693,11 @@ export default function App() {
             .catch((err) => ws.send(JSON.stringify({ type: "browser:result", id: msg.id, ok: false, error: String(err?.message ?? err) })));
           return;
         }
+        // Lab account switcher (AccountPill listens).
+        if (typeof msg.type === "string" && msg.type.startsWith("account:")) {
+          window.dispatchEvent(new CustomEvent("crux:account", { detail: msg }));
+          return;
+        }
         if (typeof msg.type === "string" && msg.type.startsWith("orch:")) {
           orchRef.current(msg);
           return;
@@ -1953,6 +1958,7 @@ export default function App() {
     if (showConnections) go("connections", "Connections", <WebIcon />, () => setView("connections"), "features graph coverage");
     for (const [key, r] of repos) go(`ws:${key}`, r.label, <span className="avatar search-avatar" style={avatarStyle(r)}>{r.label[0]?.toUpperCase()}</span>, () => setView(key), `workspace ${r.path}`);
     for (const [page, label] of SETTINGS_PAGES) {
+      if (page === "accounts" && (!settings.labAccounts || config.browserSupported === false)) continue;
       go(`set:${page}`, `Settings: ${label}`, MenuIcons.rename, () => {
         setSettingsPage(page);
         setSettingsOpen(true);
@@ -2707,6 +2713,7 @@ export default function App() {
                         visible={!panelHidden && !overlayOpen}
                         network={settings.network}
                         picker={settings.picker}
+                        account={settings.labAccounts ? view : undefined}
                       />
                     )}
                   </>

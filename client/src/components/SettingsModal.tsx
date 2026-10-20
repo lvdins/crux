@@ -7,6 +7,7 @@ import { IS_MAC, KEY } from "../platform";
 import SetupChecklist, { type ToolHealth } from "./SetupChecklist";
 import ImportLogins from "./ImportLogins";
 import AppearanceSettings from "./AppearanceSettings";
+import LabAccountsSettings from "./LabAccountsSettings";
 
 type Key = Exclude<keyof Settings, "mode" | "defaultChat" | "jiraProject" | "appearance">;
 interface Toggle {
@@ -19,7 +20,7 @@ interface Toggle {
 type Group = { title: string; toggles: Toggle[] };
 
 /** Toggles that need the in-app browser (macOS only). */
-const BROWSER_KEYS: Key[] = ["browser", "network", "picker", "jira"];
+const BROWSER_KEYS: Key[] = ["browser", "network", "picker", "jira", "labAccounts"];
 
 const VIEW_GROUPS: Group[] = [
   {
@@ -32,6 +33,7 @@ const VIEW_GROUPS: Group[] = [
       { key: "browser", label: "Browser", hint: "A browser beside your chats. When off, agents still use a hidden browser through MCP." },
       { key: "network", label: "Network view", hint: "Fetch / XHR calls under the browser.", parent: "browser" },
       { key: "picker", label: "Element picker", hint: "Pick an element to get Playwright locators.", parent: "browser" },
+      { key: "labAccounts", label: "Lab accounts", hint: "Account pill: log the browser and agents in as a named lab fixture. Set up in Settings → Lab accounts.", parent: "browser" },
     ],
   },
   {
@@ -107,6 +109,7 @@ export const PAGES = [
   ["tabs", "Tabs & views"],
   ["chats", "Chats"],
   ["appearance", "Appearance"],
+  ["accounts", "Lab accounts"],
   ["notify", "Notifications"],
   ["background", "Background"],
   ["keys", "Shortcuts"],
@@ -259,7 +262,7 @@ export default function SettingsModal({
         </div>
         <div className="settings-body">
           <nav className="settings-nav" role="tablist">
-            {PAGES.map(([id, label]) => (
+            {PAGES.filter(([id]) => id !== "accounts" || (settings.labAccounts && browserSupported)).map(([id, label]) => (
               <button key={id} role="tab" className={page === id ? "on" : ""} onClick={() => setPage(id)}>
                 {label}
                 {id === "setup" && setupCount > 0 && <span className="nav-count">{setupCount}</span>}
@@ -403,6 +406,8 @@ export default function SettingsModal({
             )}
 
             {page === "appearance" && <AppearanceSettings settings={settings} onChange={onChange} />}
+
+            {page === "accounts" && settings.labAccounts && browserSupported && <LabAccountsSettings />}
 
             {page === "notify" && (
               <>

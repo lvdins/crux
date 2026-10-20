@@ -3,6 +3,7 @@ import { DEFAULT_BROWSER_URL, browserLabel, setActiveBrowserLabel } from "../age
 import ContextMenu, { MenuIcons, type MenuItem } from "./ContextMenu";
 import { CANCEL_PICK_SCRIPT, PICK_SCRIPT, type PickedElement } from "../elementPicker";
 import NetworkPanel from "./NetworkPanel";
+import AccountPill from "./AccountPill";
 
 /**
  * In-app browser with minimal tabs. In the desktop app each tab is a native
@@ -90,7 +91,10 @@ export default function Browser({
   openRequest,
   network = true,
   picker = true,
+  account,
 }: {
+  /** Workspace whose lab account pill to show (Settings → Lab accounts); none: no pill. */
+  account?: string;
   /** Settings: show the network-calls dock / the element picker. */
   network?: boolean;
   picker?: boolean;
@@ -259,7 +263,9 @@ export default function Browser({
       .catch((err) => setError(String(err)));
   }, [label]);
 
-  const pageShown = visible && !menu;
+  // The account menu is HTML: the native page hides while it's open.
+  const [accountMenu, setAccountMenu] = useState(false);
+  const pageShown = visible && !menu && !accountMenu;
   useLayoutEffect(() => {
     if (!isTauri) return;
     if (!pageShown) {
@@ -718,6 +724,7 @@ export default function Browser({
             </button>
           )}
         </form>
+        {account && <AccountPill ws={account} onMenu={setAccountMenu} />}
         {picker && (
         <button
           title={picking ? "Cancel inspecting (Esc)" : "Inspect an element: pick it on the page to get Playwright locators"}
