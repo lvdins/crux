@@ -41,6 +41,8 @@ export interface Settings {
   connCoverage: boolean;
   connGraph: boolean;
   jira: boolean;
+  /** Sidebar → Flow: live chart of what each agent is doing (QA tooling). */
+  flow: boolean;
   // chats and notifications (not part of a mode)
   defaultChat: "pick" | "claude" | "codex" | "shell";
   askChatName: boolean;
@@ -66,7 +68,7 @@ export interface Settings {
 /** Tabs and views: a mode turns these on or off. */
 export const VIEW_KEYS = [
   "docPreview", "tests", "coverage", "pipelines", "browser", "network", "picker",
-  "connections", "connCoverage", "connGraph", "jira",
+  "connections", "connCoverage", "connGraph", "jira", "flow",
 ] as const;
 /** Personal preferences: kept when the mode changes. */
 export const PREF_KEYS = ["askChatName", "confirmClose", "notifyAgent", "notifyPipeline", "keepRunning", "quickAsk", "openHome", "tabsAll", "sessionsView"] as const;
