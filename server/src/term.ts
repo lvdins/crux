@@ -5,7 +5,8 @@ import path from "node:path";
 import pty, { type IPty } from "node-pty";
 import type { WebSocket } from "ws";
 import { config } from "./config.js";
-import { agentEnv, writeMcpConfig } from "./agent-setup.js";
+import { agentEnv, dropTermToken, writeMcpConfig } from "./agent-setup.js";
+import { forgetFlow } from "./activity.js";
 import { findCodexSession, forgetTerm, loadTerm, pruneTerms, saveTerm } from "./sessions.js";
 import { codexLeadExtra, cwdFor, takeBoot } from "./orchestrator.js";
 
@@ -129,6 +130,7 @@ export function attachTerm(
     });
     proc.onExit(({ exitCode }) => {
       for (const sub of e.subs) send(sub, { type: "term:exit", id, code: exitCode });
+      if (terms.get(id) === e) forgetFlow(id);
       terms.delete(id);
     });
     terms.set(id, e);
@@ -186,6 +188,8 @@ export function killTerm(id: string): void {
   terms.get(id)?.pty.kill();
   terms.delete(id);
   forgetTerm(id);
+  forgetFlow(id);
+  dropTermToken(id);
 }
 
 /** Saves each terminal's screen (and Codex conversation) for reopening. */

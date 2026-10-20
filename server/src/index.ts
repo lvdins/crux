@@ -13,7 +13,8 @@ import { attachTerm, termInput, termResize, killTerm, detachAll, killAllTerms, o
 import { allTeams, codexModels, initOrchestrator, noteTermClosed, noteWorkerEvent, runTool, startTeam } from "./orchestrator.js";
 import { startPreview, stopPreview, stopAllPreviews, previewStatus } from "./preview.js";
 import { buildTree, sharedEndpoints } from "./tree.js";
-import { fullReply, hookDetail, installAgentSetup } from "./agent-setup.js";
+import { FLOW_EVENTS, fullReply, hookDetail, installAgentSetup, termTokenOk } from "./agent-setup.js";
+import { allFlows, bindTerm, graphOf, initActivity, noteHook, snapshotMsg } from "./activity.js";
 import { latestRelease, installRelease, isNewer } from "./update.js";
 import { guardHttp, wsAllowed } from "./security.js";
 import { ASSET_EXT, ASSET_PROTOCOL_OK, ASSETS_DIR, MAX_ASSET, THEMES_DIR, assetPath, cleanAppearance, deleteTheme, exportTheme, importTheme, listThemes, safeName, saveAsset, saveTheme } from "./themes.js";
@@ -188,16 +189,32 @@ app.post("/api/profile", (req, res) => {
 // (see agent-setup.ts); every open window gets it to show a notification.
 // Older chats post {term, event}; newer hooks put those in the query and the
 // hook's own JSON in the body (turned into a one-line detail for the menu bar).
+// Every event's full hook JSON also goes to the Flow view (activity.ts);
+// pre / fail / session go only there.
 app.post("/api/agent-event", (req, res) => {
   const term = String(req.query.term ?? req.body?.term ?? "");
   const event = String(req.query.event ?? req.body?.event ?? "");
-  if (!term || !["stop", "input", "working"].includes(event)) return void res.status(400).json({ error: "Bad event" });
+  if (!term || !["stop", "input", "working", ...FLOW_EVENTS].includes(event)) return void res.status(400).json({ error: "Bad event" });
+  if (!termTokenOk(term, String(req.headers["x-crux-token"] ?? ""))) return void res.status(403).json({ error: "Bad token" });
+  if (req.query.term) noteHook(term, event, req.body ?? {});
+  if (FLOW_EVENTS.includes(event)) return void res.json({ ok: true });
   const detail = req.query.term ? hookDetail(event, req.body ?? {}) : "";
   // Orchestrator workers report to their lead; the team's row shows them.
   if (noteWorkerEvent(term, event, detail, event === "stop" ? fullReply(req.body ?? {}) : "")) return void res.json({ ok: true });
   const msg = JSON.stringify({ type: "agent:event", id: term, event, detail });
   for (const client of wss.clients) if (client.readyState === WebSocket.OPEN) client.send(msg);
   res.json({ ok: true });
+});
+
+// Flow view: one terminal's events, or every flow's state.
+app.get("/api/graph", (req, res) => {
+  const term = String(req.query.term ?? "");
+  if (!term) return void res.status(400).json({ error: "term is required" });
+  res.json(graphOf(term));
+});
+
+app.get("/api/graph/flows", (_req, res) => {
+  res.json({ flows: allFlows() });
 });
 
 app.post("/api/onboarded", (req, res) => {
@@ -550,6 +567,8 @@ wss.on("connection", (ws: WebSocket) => {
     try {
       switch (msg.type) {
         case "term:open":
+          bindTerm(String(msg.id), String(msg.repo));
+          if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(snapshotMsg(String(msg.id))));
           attachTerm(
             String(msg.id),
             String(msg.repo),
@@ -612,18 +631,23 @@ wss.on("connection", (ws: WebSocket) => {
 });
 
 installAgentSetup();
+function broadcast(msg: unknown): boolean {
+  const data = JSON.stringify(msg);
+  let sent = false;
+  for (const client of wss.clients) {
+    if (client.readyState !== WebSocket.OPEN) continue;
+    client.send(data);
+    sent = true;
+  }
+  return sent;
+}
+initActivity(broadcast);
 initOrchestrator({
-  broadcast: (msg) => {
-    const data = JSON.stringify(msg);
-    let sent = false;
-    for (const client of wss.clients) {
-      if (client.readyState !== WebSocket.OPEN) continue;
-      client.send(data);
-      sent = true;
-    }
-    return sent;
+  broadcast,
+  startTerm: (id, ws, bootCmd) => {
+    bindTerm(id, ws);
+    attachTerm(id, ws, null, 120, 32, false, bootCmd);
   },
-  startTerm: (id, ws, bootCmd) => attachTerm(id, ws, null, 120, 32, false, bootCmd),
   writeTerm: termInput,
   stopTerm: killTerm,
   tailOf: termTail,
