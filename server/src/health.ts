@@ -42,7 +42,11 @@ async function gitlabHosts(): Promise<string[]> {
     if (repo.kind !== "playwright" && repo.kind !== "pytest") continue;
     const r = await run("git", ["-C", repo.path, "remote", "get-url", "origin"]);
     const remote = r.code === 0 ? parseRemote(r.out) : null;
-    if (remote && !remote.host.includes("github")) hosts.add(remote.host);
+    if (!remote) continue;
+    const host = remote.host.toLowerCase();
+    // Bitbucket Cloud (including its alternate SSH host) cannot use glab.
+    // Preserve custom hosts for self-managed GitLab installations.
+    if (!host.includes("github") && host !== "bitbucket.org" && !host.endsWith(".bitbucket.org")) hosts.add(remote.host);
   }
   return [...hosts];
 }
