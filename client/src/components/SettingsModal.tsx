@@ -44,6 +44,11 @@ const VIEW_GROUPS: Group[] = [
       { key: "jira", label: "Browser view", hint: "A full browser for any website, next to your workspaces." },
     ],
   },
+  // Part of QA mode, but open to everyone: regular users can switch it on here.
+  {
+    title: "QA tooling",
+    toggles: [{ key: "flow", label: "Flow view", hint: "Live chart of what each agent is doing, by module." }],
+  },
 ];
 
 const CHAT_TOGGLES: Group = {
@@ -96,8 +101,8 @@ const SHORTCUTS: [string, string][] = [
 ];
 
 const MODES: { mode: Settings["mode"]; title: string; body: string }[] = [
-  { mode: "qa", title: "QA Tool", body: "Everything on: docs, tests, coverage, pipelines, browser and QA views." },
-  { mode: "regular", title: "Regular", body: "Just chats and agents on any folder; everything else off." },
+  { mode: "qa", title: "QA Tool", body: "Everything on: docs, tests, coverage, pipelines, browser and QA views, including the live Flow view." },
+  { mode: "regular", title: "Regular", body: "Just chats and agents on any folder; everything else off (QA tooling like the Flow view can still be switched on)." },
 ];
 
 export const PAGES = [

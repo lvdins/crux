@@ -114,3 +114,15 @@ export function OrchestrateIcon() {
     </svg>
   );
 }
+
+/** Flow view: steps joined left to right. */
+export function FlowIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="1.5" y="3" width="4" height="3.5" rx="1" />
+      <rect x="10.5" y="1.5" width="4" height="3.5" rx="1" />
+      <rect x="10.5" y="11" width="4" height="3.5" rx="1" />
+      <path d="M5.5 4.75h2.2c1 0 1.3-1.5 2.8-1.5M7.7 4.75v6c0 1.25.9 2 2.8 2" />
+    </svg>
+  );
+}

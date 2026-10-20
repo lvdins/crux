@@ -7,7 +7,7 @@ const MODES: { mode: Settings["mode"]; title: string; body: string; icons: JSX.E
   {
     mode: "qa",
     title: "QA Tool",
-    body: "Docs preview, Playwright and pytest trees, coverage, a browser with network view and element picker.",
+    body: "Docs preview, Playwright and pytest trees, coverage, a browser with network view and element picker, and a live Flow view of your agents.",
     icons: [<DocIcon key="d" />, <BrowserTestIcon key="b" />, <ApiIcon key="a" />],
   },
   {

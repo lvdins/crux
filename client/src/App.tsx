@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QA_SETTINGS, type AppConfig, type RepoInfo, type Settings } from "./types";
 import { api, WS_URL } from "./net";
 import Term, { disposeTerm, focusTerm } from "./components/Term";
@@ -28,6 +28,9 @@ import OrchestrateModal, { type OrchestrateOpts } from "./components/Orchestrate
 import SessionBar, { type SessionTab } from "./components/SessionBar";
 import SessionsPanel from "./components/SessionsPanel";
 import WorkspaceHome from "./components/WorkspaceHome";
+import { FLOW_MOCK, handleGraphMessage } from "./flow/store";
+// React Flow + dagre load with the view, not at startup.
+const FlowView = lazy(() => import("./components/flow/FlowView"));
 import "./components/settings.css";
 import { emitAppearance, withDefaults } from "./appearance";
 import { isSafeMode, safeModeReady } from "./theme";
@@ -55,7 +58,7 @@ import {
   type PaneNode,
 } from "./paneLayout";
 import ContextMenu, { MenuIcons } from "./components/ContextMenu";
-import { WebIcon, ClaudeLogo, CodexLogo, GlobeIcon, OrchestrateIcon, TerminalIcon } from "./components/icons";
+import { WebIcon, ClaudeLogo, CodexLogo, FlowIcon, GlobeIcon, OrchestrateIcon, TerminalIcon } from "./components/icons";
 // --- Appearance (C) ---
 import { APPEARANCE_EVENT, type ChatKind, type TermLook } from "./appearance";
 import { getAppearance, setTermTransparent } from "./components/Term";
@@ -73,7 +76,7 @@ const CHIP_COLORS: Record<string, string> = {
 
 type View = string | "connections" | "jira" | "home";
 /** Views that are not a workspace. */
-const SPECIAL_VIEWS = new Set(["connections", "jira", "home", "sessions"]);
+const SPECIAL_VIEWS = new Set(["connections", "jira", "home", "sessions", "flow"]);
 const isSpecial = (v: string) => SPECIAL_VIEWS.has(v);
 /** Sent by the ⌥Space quick-ask window. */
 type QuickAsk = { ws: string; text: string; agent?: "claude" | "codex" };
@@ -231,6 +234,8 @@ export default function App() {
   const settings = { ...QA_SETTINGS, ...config?.settings };
   // Connections is listed only while at least one of its tabs is on.
   const showConnections = settings.connections && (settings.connCoverage || settings.connGraph);
+  // Flow view (QA tooling); dev builds also show it with ?flowMock=1.
+  const showFlow = settings.flow || FLOW_MOCK;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsPage, setSettingsPage] = useState<SettingsPage>("profile");
   // { mode } applies that mode's preset; other keys flip single toggles.
@@ -268,10 +273,10 @@ export default function App() {
   const [view, setView] = useState<View>("");
   // A view switched off in Settings: leave it.
   useEffect(() => {
-    if ((view === "connections" && !showConnections) || (view === "jira" && !settings.jira)) {
+    if ((view === "connections" && !showConnections) || (view === "jira" && !settings.jira) || (view === "flow" && !showFlow)) {
       setView(Object.keys(config?.repos ?? {})[0] ?? "");
     }
-  }, [view, settings.connections, settings.jira, config]);
+  }, [view, settings.connections, settings.jira, showFlow, config]);
   // Right-panel tab per workspace: tree / coverage / preview / browser.
   const [panelTabs, setPanelTabs] = useState<Record<string, string>>(() => {
     try {
@@ -697,6 +702,7 @@ export default function App() {
           orchRef.current(msg);
           return;
         }
+        if (handleGraphMessage(msg)) return;
         if (msg.type === "agent:event") {
           agentEventRef.current(
             String(msg.id),
@@ -1744,6 +1750,16 @@ export default function App() {
     setView(ws);
     setActiveChat((prev) => ({ ...prev, [ws]: chat }));
   };
+  // Flow view → "Jump to terminal": show the chat holding it; false if it's closed.
+  const jumpToTerm = (term: string) => {
+    const chat = Object.keys(tabs).find((c) => tabs[c].some((t) => t.id === term));
+    if (!chat) return false;
+    openChat(chat);
+    setChatsShown(wsOf(chat), true);
+    setActiveTab((prev) => ({ ...prev, [chat]: term }));
+    setTimeout(() => focusTerm(term), 150);
+    return true;
+  };
   openChatRef.current = (chat) => {
     if (!tabs[chat]) return;
     openChat(chat);
@@ -1951,6 +1967,7 @@ export default function App() {
     if (settings.sessionsView !== false) go("sessions", "Sessions", <TerminalIcon />, () => setView("sessions"), "past history");
     if (settings.jira && config.browserSupported !== false) go("browser", "Browser", <GlobeIcon />, () => setView("jira"), "web", KEY.panel);
     if (showConnections) go("connections", "Connections", <WebIcon />, () => setView("connections"), "features graph coverage");
+    if (showFlow) go("flow", "Flow", <FlowIcon />, () => setView("flow"), "agents steps modules chart live");
     for (const [key, r] of repos) go(`ws:${key}`, r.label, <span className="avatar search-avatar" style={avatarStyle(r)}>{r.label[0]?.toUpperCase()}</span>, () => setView(key), `workspace ${r.path}`);
     for (const [page, label] of SETTINGS_PAGES) {
       go(`set:${page}`, `Settings: ${label}`, MenuIcons.rename, () => {
@@ -2208,6 +2225,16 @@ export default function App() {
           >
             <span className="avatar view-icon"><WebIcon /></span>
             <span className="side-label">Connections</span>
+          </button>
+          )}
+          {showFlow && (
+          <button
+            className={`side-item view-item ${view === "flow" ? "active" : ""}`}
+            onClick={() => setView("flow")}
+            title="Live chart of what each agent is doing"
+          >
+            <span className="avatar view-icon"><FlowIcon /></span>
+            <span className="side-label">Flow</span>
           </button>
           )}
           {settings.jira && (
@@ -2563,6 +2590,10 @@ export default function App() {
           <section className="full-pane">
             <FeatureMap onAddWorkspace={() => setAdding(true)} showCoverage={settings.connCoverage} showGraph={settings.connGraph} />
           </section>
+        ) : view === "flow" ? (
+          <Suspense fallback={<section className="full-pane" />}>
+            <FlowView wsLabel={(ws) => (ws && config.repos[ws]?.label) || ws || ""} onJump={jumpToTerm} />
+          </Suspense>
         ) : view === "jira" ? (
           // Browser view (internally still "jira", so saved tabs and logins carry over).
           <section className="full-pane jira-pane">
