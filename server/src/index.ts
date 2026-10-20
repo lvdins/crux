@@ -10,7 +10,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { BROWSER_SUPPORTED, currentSettings, DEFAULT_CHATS, MODE_PRESETS, PREF_KEYS, SETTING_KEYS, type Settings } from "./config.js";
 import { config, saveConfig, userConfigPath, addWorkspace, updateWorkspace, removeWorkspace, detectKind, expandHome } from "./config.js";
 import { attachTerm, termInput, termResize, killTerm, detachAll, killAllTerms, openLog, termProcess, termTail } from "./term.js";
-import { allTeams, codexModels, initOrchestrator, noteTermClosed, noteWorkerEvent, runTool, startTeam } from "./orchestrator.js";
+import { allTeams, codexModels, initOrchestrator, noteTermClosed, noteWorkerEvent, runTool, startTask, startTeam } from "./orchestrator.js";
 import { startPreview, stopPreview, stopAllPreviews, previewStatus } from "./preview.js";
 import { buildTree, sharedEndpoints } from "./tree.js";
 import { FLOW_EVENTS, fullReply, hookDetail, installAgentSetup, termTokenOk } from "./agent-setup.js";
@@ -23,6 +23,7 @@ import { checkSetup } from "./health.js";
 import { inboxMrs } from "./inbox.js";
 import { pastChats } from "./sessions.js";
 import { importCookies, importSites, importSources } from "./browserImport.js";
+import { registerQaRoutes } from "./qa.js";
 import { adoptLoginShellPath, checkTools, CRUX_HOME, PACKAGED, PORT, rootPath } from "./paths.js";
 
 adoptLoginShellPath();
@@ -105,7 +106,7 @@ app.patch("/api/settings", (req, res) => {
   if (body.mode === "qa" || body.mode === "regular") {
     // A mode resets the tabs and views; personal preferences stay.
     const prefs = Object.fromEntries(PREF_KEYS.map((k) => [k, next[k]]));
-    next = { ...MODE_PRESETS[body.mode], ...prefs, defaultChat: next.defaultChat, jiraProject: next.jiraProject, appearance: next.appearance };
+    next = { ...MODE_PRESETS[body.mode], ...prefs, defaultChat: next.defaultChat, jiraProject: next.jiraProject, qaRoot: next.qaRoot, appearance: next.appearance };
     if (!next.appearance) delete next.appearance;
   }
   for (const k of SETTING_KEYS) {
@@ -113,6 +114,8 @@ app.patch("/api/settings", (req, res) => {
   }
   if (DEFAULT_CHATS.includes(body.defaultChat as Settings["defaultChat"])) next.defaultChat = body.defaultChat!;
   if (typeof body.jiraProject === "string" && /^[\w -]{0,40}$/.test(body.jiraProject)) next.jiraProject = body.jiraProject.trim();
+  // QA rounds folder: blank (default), absolute or ~/…; read only, never written.
+  if (typeof body.qaRoot === "string" && /^(|[~/][^\0\n]{0,299})$/.test(body.qaRoot.trim())) next.qaRoot = body.qaRoot.trim();
   // Appearance is a personal preference: replaced whole, checked key by key; null clears it.
   const look = (req.body ?? {}).appearance;
   if (look === null) delete next.appearance;
@@ -556,6 +559,22 @@ app.post("/api/browser-import/cookies", async (req, res) => {
     res.status(400).json({ error: (err as Error).message });
   }
 });
+
+// Start Claude / Codex on a task in a new chat (QA run panel, later Jira and
+// review); the windows open it as a session tab on `term:spawned`.
+app.post("/api/term/start", (req, res) => {
+  if (!fromUi(req, res)) return;
+  const { ws, kind, task, title } = req.body ?? {};
+  if (kind !== "claude" && kind !== "codex") return void res.status(400).json({ error: "kind is claude or codex" });
+  try {
+    res.json(startTask({ ws: String(ws ?? ""), kind, task: String(task ?? ""), title: String(title ?? "") }));
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+// QA run panel: qa-skills rounds, read only (see qa.ts).
+registerQaRoutes(app);
 
 // Orchestrator mode: the lead's crux-agents MCP tools (see orchestrator.ts).
 app.post("/api/orch/:lead/:tool", async (req, res) => {

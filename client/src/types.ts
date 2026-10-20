@@ -55,6 +55,8 @@ export interface Settings {
   browser: boolean;
   network: boolean;
   picker: boolean;
+  /** QA run panel (qa-skills rounds). */
+  qaRuns: boolean;
   // sidebar views (and the Connections view's own tabs)
   connections: boolean;
   connCoverage: boolean;
@@ -77,15 +79,17 @@ export interface Settings {
   sessionsView: boolean;
   /** Jira project key bugs are filed in (blank: the agent asks). */
   jiraProject: string;
+  /** Folder of QA rounds (blank: $HOME/qa-runs). */
+  qaRoot: string;
   /** Settings → Appearance. Absent: Crux's own look (DEFAULT_APPEARANCE). */
   appearance?: Appearance;
 }
 
 export const QA_SETTINGS: Settings = {
   mode: "qa",
-  docPreview: true, tests: true, coverage: true, pipelines: true, browser: true, network: true, picker: true,
+  docPreview: true, tests: true, coverage: true, pipelines: true, browser: true, network: true, picker: true, qaRuns: true,
   connections: true, connCoverage: true, connGraph: true, jira: true, flow: true,
-  defaultChat: "pick", askChatName: true, confirmClose: true, notifyAgent: true, notifyPipeline: true, keepRunning: true, quickAsk: true, openHome: true, tabsAll: true, sessionsView: true, jiraProject: "",
+  defaultChat: "pick", askChatName: true, confirmClose: true, notifyAgent: true, notifyPipeline: true, keepRunning: true, quickAsk: true, openHome: true, tabsAll: true, sessionsView: true, jiraProject: "", qaRoot: "",
 };
 
 // Flow view: the live agent flowchart (copied from server/src/activity.ts).

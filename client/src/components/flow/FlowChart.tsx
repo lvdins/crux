@@ -129,6 +129,9 @@ function Chart({ term, flow, wsLabel, module, moduleSelect, onBack, onJump }: Pa
             nodesDraggable={false}
             nodesConnectable={false}
             elementsSelectable
+            // Two-finger scroll pans (like Whimsical); pinch or ⌘ + scroll zooms.
+            panOnScroll
+            zoomOnPinch
             // Only a real pan / zoom by the user stops following (a click also "starts" a move).
             onMoveStart={(e, vp) => (moveFrom.current = e ? vp : null)}
             onMoveEnd={(e, vp) => {

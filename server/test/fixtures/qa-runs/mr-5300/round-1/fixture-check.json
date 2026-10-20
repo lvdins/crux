@@ -1,0 +1,1 @@
+{"batch:3": {"code": 2, "out": ["batch 3: lanes incomplete", "\u2717 lane ui: status=running", "\u2717 lane design: 3 blocked cases without a reason", "evidence: 11/14 complete"]}, "lane:design": {"code": 1, "out": ["FAIL design: blocked cases need a reason"]}}

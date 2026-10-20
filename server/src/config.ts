@@ -36,6 +36,8 @@ export interface Settings {
   browser: boolean;
   network: boolean;
   picker: boolean;
+  /** QA run panel (qa-skills rounds). */
+  qaRuns: boolean;
   // sidebar views (and the Connections view's own tabs)
   connections: boolean;
   connCoverage: boolean;
@@ -61,6 +63,8 @@ export interface Settings {
   sessionsView: boolean;
   /** Jira project key bugs are filed in (blank: the agent asks). */
   jiraProject: string;
+  /** Folder of QA rounds (blank: $HOME/qa-runs). */
+  qaRoot: string;
   /** Settings → Appearance (see themes.ts). Absent: Crux's own look. */
   appearance?: Appearance;
 }
@@ -69,13 +73,14 @@ export interface Settings {
 export const VIEW_KEYS = [
   "docPreview", "tests", "coverage", "pipelines", "browser", "network", "picker",
   "connections", "connCoverage", "connGraph", "jira", "flow",
+  "qaRuns",
 ] as const;
 /** Personal preferences: kept when the mode changes. */
 export const PREF_KEYS = ["askChatName", "confirmClose", "notifyAgent", "notifyPipeline", "keepRunning", "quickAsk", "openHome", "tabsAll", "sessionsView"] as const;
 export const SETTING_KEYS = [...VIEW_KEYS, ...PREF_KEYS] as const;
 export const DEFAULT_CHATS = ["pick", "claude", "codex", "shell"] as const;
 
-const PREFS = { jiraProject: "", defaultChat: "pick", askChatName: true, confirmClose: true, notifyAgent: true, notifyPipeline: true, keepRunning: true, quickAsk: true, openHome: true, tabsAll: true, sessionsView: true } as const;
+const PREFS = { jiraProject: "", qaRoot: "", defaultChat: "pick", askChatName: true, confirmClose: true, notifyAgent: true, notifyPipeline: true, keepRunning: true, quickAsk: true, openHome: true, tabsAll: true, sessionsView: true } as const;
 const views = (on: boolean) => Object.fromEntries(VIEW_KEYS.map((k) => [k, on])) as Record<(typeof VIEW_KEYS)[number], boolean>;
 export const MODE_PRESETS: Record<Settings["mode"], Settings> = {
   qa: { mode: "qa", ...views(true), ...PREFS },
