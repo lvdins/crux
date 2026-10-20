@@ -14,6 +14,7 @@ export default function ContextMenu({
   y,
   groups,
   top,
+  className,
   onClose,
 }: {
   x: number;
@@ -21,6 +22,8 @@ export default function ContextMenu({
   groups: MenuItem[][];
   /** Custom content above the items (e.g. colour swatches). */
   top?: ReactNode;
+  /** Extra class on the menu (e.g. a scrolling list). */
+  className?: string;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -55,7 +58,7 @@ export default function ContextMenu({
   }, [onClose]);
 
   return (
-    <div className="ctx-menu" ref={ref} style={pos} role="menu" onContextMenu={(e) => e.preventDefault()}>
+    <div className={`ctx-menu ${className ?? ""}`} ref={ref} style={pos} role="menu" onContextMenu={(e) => e.preventDefault()}>
       {top && <div className="ctx-group ctx-top">{top}</div>}
       {groups.map((group, gi) => (
         <div key={gi} className="ctx-group">

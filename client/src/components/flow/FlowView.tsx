@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FlowModule, FlowState, NodeStatus } from "../../types";
 import { FLOW_MOCK, getFlows, loadFlows, useFlowVersion } from "../../flow/store";
-import { ClaudeLogo, CodexLogo } from "../icons";
+import { CheckIcon, ChevronDownIcon, ClaudeLogo, CodexLogo, FlowIcon } from "../icons";
+import ContextMenu from "../ContextMenu";
 import FlowChart from "./FlowChart";
 import "./flow.css";
 
@@ -38,16 +39,7 @@ export default function FlowView({ wsLabel, onJump }: { wsLabel: (ws?: string) =
     .filter((f) => !module || touched(f, module))
     .sort((a, b) => RANK[a.status] - RANK[b.status] || a.name.localeCompare(b.name));
 
-  const moduleSelect = (
-    <select className="flow-select" value={module ?? ""} onChange={(e) => setModule(e.target.value || null)} title="Only flows and steps in this module">
-      <option value="">All modules</option>
-      {modules.map((m) => (
-        <option key={m.id} value={m.id}>
-          {m.label}
-        </option>
-      ))}
-    </select>
-  );
+  const moduleSelect = <ModuleMenu modules={modules} value={module} onChange={setModule} />;
 
   if (term) {
     return (
@@ -76,9 +68,13 @@ export default function FlowView({ wsLabel, onJump }: { wsLabel: (ws?: string) =
       <div className="flow-lanes">
         {error && <p className="flow-empty">Couldn't load flows: {error}</p>}
         {!error && loaded && shown.length === 0 && (
-          <p className="flow-empty">
-            {module ? "No flow has touched this module yet." : "No agent activity yet. Start a Claude chat and its steps show up here."}
-          </p>
+          <div className="empty-state flow-empty-state">
+            <span className="flow-empty-icon">
+              <FlowIcon />
+            </span>
+            <h2>{module ? "Nothing in this module yet" : "No agent activity yet"}</h2>
+            <p>{module ? "No flow has touched this module yet." : "Start a Claude chat and its steps show up here."}</p>
+          </div>
         )}
         {shown.map((f) => (
           <FlowLane key={f.term} flow={f} wsLabel={wsLabel} focus={module} onOpen={(m) => (setTerm(f.term), m && setModule(m))} />
@@ -96,7 +92,7 @@ function FlowLane({ flow: f, wsLabel, focus, onOpen }: { flow: FlowState; wsLabe
       <div className="flow-lane-head">
         <span className="flow-agent">{f.agent === "codex" ? <CodexLogo /> : <ClaudeLogo />}</span>
         <b className="flow-name">{f.name}</b>
-        {f.ws && <span className="flow-ws">{wsLabel(f.ws)}</span>}
+        {f.ws && <span className="kind-tag">{wsLabel(f.ws)}</span>}
         <span className={`flow-status st-${f.status}`}>
           <i />
           {STATUS_WORD[f.status]}
@@ -107,7 +103,7 @@ function FlowLane({ flow: f, wsLabel, focus, onOpen }: { flow: FlowState; wsLabe
           const now = m.id === f.currentModule?.id;
           return (
             <span key={m.id} className="flow-chip-wrap">
-              {i > 0 && <span className="flow-arrow">→</span>}
+              {i > 0 && <span className="flow-arrow" />}
               <button
                 className={`flow-chip ${now ? `now st-${f.status}` : ""} ${focus === m.id ? "focus" : ""}`}
                 title={`Only this flow's steps in ${m.label}`}
@@ -124,7 +120,7 @@ function FlowLane({ flow: f, wsLabel, focus, onOpen }: { flow: FlowState; wsLabe
         })}
         {planned.map((m) => (
           <span key={m.id} className="flow-chip-wrap">
-            <span className="flow-arrow">→</span>
+            <span className="flow-arrow" />
             <span className="flow-chip planned" title="Announced as next">
               {m.label}
             </span>
@@ -133,5 +129,45 @@ function FlowLane({ flow: f, wsLabel, focus, onOpen }: { flow: FlowState; wsLabe
         {!visited.length && <span className="flow-activity">{f.activity || "No module yet"}</span>}
       </div>
     </div>
+  );
+}
+
+/** Module filter: a button that opens the app's menu (ContextMenu), ✓ on the picked one. */
+function ModuleMenu({ modules, value, onChange }: { modules: FlowModule[]; value: string | null; onChange: (id: string | null) => void }) {
+  const [at, setAt] = useState<{ x: number; y: number } | null>(null);
+  // The menu closes on pointerdown; don't let that same click reopen it.
+  const closedAt = useRef(0);
+  const label = modules.find((m) => m.id === value)?.label ?? "All modules";
+  const item = (id: string | null, text: string) => ({ label: text, icon: id === value ? <CheckIcon /> : null, onSelect: () => onChange(id) });
+  return (
+    <>
+      <button
+        className={`flow-btn flow-pick ${at ? "open" : ""} ${value ? "on" : ""}`}
+        title="Only flows and steps in this module"
+        aria-haspopup="menu"
+        aria-expanded={!!at}
+        onClick={(e) => {
+          if (at || performance.now() - closedAt.current < 250) return;
+          const r = e.currentTarget.getBoundingClientRect();
+          // Near the right edge, pass the right side: ContextMenu flips it to end there.
+          setAt({ x: r.left + 240 > window.innerWidth - 8 ? r.right : r.left, y: r.bottom + 4 });
+        }}
+      >
+        <span>{label}</span>
+        <ChevronDownIcon />
+      </button>
+      {at && (
+        <ContextMenu
+          x={at.x}
+          y={at.y}
+          className="flow-menu"
+          groups={[[item(null, "All modules")], ...(modules.length ? [modules.map((m) => item(m.id, m.label))] : [])]}
+          onClose={() => {
+            closedAt.current = performance.now();
+            setAt(null);
+          }}
+        />
+      )}
+    </>
   );
 }
