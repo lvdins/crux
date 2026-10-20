@@ -66,6 +66,7 @@ export interface Settings {
   flow: boolean;
   /** Lab account switcher: the account pill on the browser + Settings → Lab accounts. */
   labAccounts: boolean;
+  writeGuard: boolean;
   // chats and notifications (not part of a mode)
   defaultChat: "pick" | "claude" | "codex" | "shell";
   askChatName: boolean;
@@ -83,6 +84,8 @@ export interface Settings {
   jiraProject: string;
   /** Folder of QA rounds (blank: $HOME/qa-runs). */
   qaRoot: string;
+  /** Write guard: hosts whose writes it answers (absent: the server's defaults). */
+  guardHosts?: string[];
   /** Settings → Appearance. Absent: Crux's own look (DEFAULT_APPEARANCE). */
   appearance?: Appearance;
 }
@@ -90,7 +93,7 @@ export interface Settings {
 export const QA_SETTINGS: Settings = {
   mode: "qa",
   docPreview: true, tests: true, coverage: true, pipelines: true, browser: true, network: true, picker: true, qaRuns: true,
-  connections: true, connCoverage: true, connGraph: true, jira: true, flow: true, labAccounts: true,
+  connections: true, connCoverage: true, connGraph: true, jira: true, flow: true, labAccounts: true, writeGuard: true,
   defaultChat: "pick", askChatName: true, confirmClose: true, notifyAgent: true, notifyPipeline: true, keepRunning: true, quickAsk: true, openHome: true, tabsAll: true, sessionsView: true, jiraProject: "", qaRoot: "",
 };
 

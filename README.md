@@ -78,3 +78,19 @@ GitHub Actions and attaches them; the macOS DMG is built locally.
   adds hooks (to know when a turn finishes) and MCP tools; it doesn't change
   your config files.
 - Your data stays local: workspaces, chats and settings live in `~/.crux`.
+
+## Write guard
+
+The shield button on the browser bar (Settings → Tabs & views → Write guard;
+on in QA mode) answers every non-GET request to lab and preview hosts in
+Crux instead of the server, unless the QA round's `intake.md` grants its
+write class (`Write class | Allowed? | Granted by | Limits | Restore`). Pick
+the reply a blocked write gets (200 echoing the body, or an error status,
+optionally slow); "ask each time" classes ask with Allow / Block. Guarded
+writes are logged under `~/.crux/guard/` (`GET /api/guard/log?ws=&round=`
+gives the report's "Writes made" line); a write that reached the server
+outside a grant shows a red alert.
+
+Limits: the guard runs as page JavaScript (fetch, XMLHttpRequest,
+`sendBeacon`, form posts in the main frame). It can't stop WebSocket
+messages, requests made by a service worker, or requests from iframes.

@@ -26,6 +26,7 @@ import { importCookies, importSites, importSources } from "./browserImport.js";
 import { registerQaRoutes } from "./qa.js";
 import { registerLabAccounts } from "./labAccounts.js";
 import { releaseAll as releaseAccounts } from "./fixtures.js";
+import { guardRoutes } from "./guard.js";
 import { adoptLoginShellPath, checkTools, CRUX_HOME, PACKAGED, PORT, rootPath } from "./paths.js";
 
 adoptLoginShellPath();
@@ -108,7 +109,8 @@ app.patch("/api/settings", (req, res) => {
   if (body.mode === "qa" || body.mode === "regular") {
     // A mode resets the tabs and views; personal preferences stay.
     const prefs = Object.fromEntries(PREF_KEYS.map((k) => [k, next[k]]));
-    next = { ...MODE_PRESETS[body.mode], ...prefs, defaultChat: next.defaultChat, jiraProject: next.jiraProject, qaRoot: next.qaRoot, appearance: next.appearance };
+    next = { ...MODE_PRESETS[body.mode], ...prefs, defaultChat: next.defaultChat, jiraProject: next.jiraProject, qaRoot: next.qaRoot, appearance: next.appearance, guardHosts: next.guardHosts };
+    if (!next.guardHosts) delete next.guardHosts;
     if (!next.appearance) delete next.appearance;
   }
   for (const k of SETTING_KEYS) {
@@ -580,6 +582,12 @@ registerQaRoutes(app);
 
 // Lab account switcher: fixtures, Keychain secrets (see labAccounts.ts).
 registerLabAccounts(app, (msg) => {
+  const data = JSON.stringify(msg);
+  for (const client of wss.clients) if (client.readyState === WebSocket.OPEN) client.send(data);
+});
+
+// Write guard for the browser (see guard.ts); leaks go to every window.
+guardRoutes(app, (msg) => {
   const data = JSON.stringify(msg);
   for (const client of wss.clients) if (client.readyState === WebSocket.OPEN) client.send(data);
 });

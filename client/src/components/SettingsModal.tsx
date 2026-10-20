@@ -9,7 +9,7 @@ import ImportLogins from "./ImportLogins";
 import AppearanceSettings from "./AppearanceSettings";
 import LabAccountsSettings from "./LabAccountsSettings";
 
-type Key = Exclude<keyof Settings, "mode" | "defaultChat" | "jiraProject" | "qaRoot" | "appearance">;
+type Key = Exclude<keyof Settings, "mode" | "defaultChat" | "jiraProject" | "qaRoot" | "appearance" | "guardHosts">;
 interface Toggle {
   key: Key;
   label: string;
@@ -20,7 +20,7 @@ interface Toggle {
 type Group = { title: string; toggles: Toggle[] };
 
 /** Toggles that need the in-app browser (macOS only). */
-const BROWSER_KEYS: Key[] = ["browser", "network", "picker", "jira", "labAccounts"];
+const BROWSER_KEYS: Key[] = ["browser", "network", "picker", "jira", "labAccounts", "writeGuard"];
 
 const VIEW_GROUPS: Group[] = [
   {
@@ -35,6 +35,7 @@ const VIEW_GROUPS: Group[] = [
       { key: "picker", label: "Element picker", hint: "Pick an element to get Playwright locators.", parent: "browser" },
       { key: "qaRuns", label: "QA runs", hint: "qa-full-pass / qa-lite rounds: batches and gates, the pause after Batch 2, lanes." },
       { key: "labAccounts", label: "Lab accounts", hint: "Account pill: log the browser and agents in as a named lab fixture. Set up in Settings → Lab accounts.", parent: "browser" },
+      { key: "writeGuard", label: "Write guard", hint: "Answer writes to lab / preview hosts in Crux unless the QA round granted them.", parent: "browser" },
     ],
   },
   {
@@ -104,7 +105,7 @@ const SHORTCUTS: [string, string][] = [
 ];
 
 const MODES: { mode: Settings["mode"]; title: string; body: string }[] = [
-  { mode: "qa", title: "QA Tool", body: "Everything on: docs, tests, coverage, pipelines, browser and QA views, including the live Flow view." },
+  { mode: "qa", title: "QA Tool", body: "Everything on: docs, tests, coverage, pipelines, browser, write guard and QA views, including the live Flow view." },
   { mode: "regular", title: "Regular", body: "Just chats and agents on any folder; everything else off (QA tooling like the Flow view can still be switched on)." },
 ];
 

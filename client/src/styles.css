@@ -1118,6 +1118,34 @@ button.primary:hover:not(:disabled) { background: var(--accent-ink); }
 .net-url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
 .net-url small { color: var(--ink-faint); font-size: 10.5px; }
 .net-ms, .net-size { color: var(--ink-faint); text-align: right; white-space: nowrap; }
+.net-row.blocked { background: rgba(var(--warn-rgb), 0.08); }
+.net-guard { font-style: normal; font-size: 10px; font-weight: 700; text-transform: uppercase; border-radius: 4px; padding: 0 4px; margin-right: 6px; }
+.net-guard.blocked { color: var(--warn); border: 1px solid currentColor; }
+.net-guard.allowed { color: var(--ok); border: 1px solid currentColor; }
+.net-guard.ask { color: var(--accent); border: 1px solid currentColor; }
+/* write guard (WriteGuard.tsx) */
+.guard-bar { border-top: 1px solid var(--line); font-size: 11.5px; }
+.guard-row { display: flex; align-items: center; gap: 10px; padding: 4px 12px; flex-wrap: wrap; color: var(--ink-soft); }
+.guard-title { color: var(--accent); font-size: 11.5px; }
+.guard-row label { display: inline-flex; align-items: center; gap: 4px; }
+.guard-row select, .guard-row input:not([type]) {
+  background: var(--surface); border: 1px solid var(--line); color: var(--ink); border-radius: 6px; font: inherit; font-size: 11.5px; padding: 1px 4px;
+}
+.guard-hosts input { width: 170px; font-family: var(--mono); }
+.guard-row button, .guard-ask button, .guard-leak button {
+  background: none; border: 1px solid var(--line); color: var(--ink-soft); border-radius: 6px; font: inherit; font-size: 11.5px; padding: 1px 8px; cursor: pointer;
+}
+.guard-row button:hover, .guard-ask button:hover { color: var(--ink); border-color: var(--ink-faint); }
+.guard-count { margin-left: auto; color: var(--ink-faint); }
+.guard-problem { padding: 3px 12px; color: var(--warn); }
+.guard-ask { display: flex; align-items: center; gap: 6px; padding: 4px 12px; background: var(--accent-soft); }
+.guard-ask span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
+.guard-ask small { color: var(--ink-faint); font-family: inherit; }
+.guard-leak { display: flex; align-items: flex-start; gap: 8px; padding: 5px 12px; background: rgba(var(--fail-rgb), 0.14); color: var(--fail); font-size: 12px; }
+.guard-leak > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.guard-leak code { font-family: var(--mono); font-size: 11px; }
+.guard-restore { display: block; color: var(--ink-soft); }
+.browser-bar > button.browser-tool.guard-leaked { color: var(--fail); background: rgba(var(--fail-rgb), 0.14); }
 .net-detail { border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .net-detail-head { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-bottom: 1px solid var(--line); min-width: 0; }
 .net-detail-head code { flex: 1; min-width: 0; font-family: var(--mono); font-size: 11px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

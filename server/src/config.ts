@@ -47,6 +47,7 @@ export interface Settings {
   flow: boolean;
   /** Lab account switcher: the account pill on the browser + Settings → Lab accounts. */
   labAccounts: boolean;
+  writeGuard: boolean;
   // chats and notifications (not part of a mode)
   defaultChat: "pick" | "claude" | "codex" | "shell";
   askChatName: boolean;
@@ -67,6 +68,8 @@ export interface Settings {
   jiraProject: string;
   /** Folder of QA rounds (blank: $HOME/qa-runs). */
   qaRoot: string;
+  /** Write guard: hosts whose writes it answers (default DEFAULT_GUARD_HOSTS). */
+  guardHosts?: string[];
   /** Settings → Appearance (see themes.ts). Absent: Crux's own look. */
   appearance?: Appearance;
 }
@@ -77,6 +80,7 @@ export const VIEW_KEYS = [
   "connections", "connCoverage", "connGraph", "jira", "flow",
   "qaRuns",
   "labAccounts",
+  "writeGuard",
 ] as const;
 /** Personal preferences: kept when the mode changes. */
 export const PREF_KEYS = ["askChatName", "confirmClose", "notifyAgent", "notifyPipeline", "keepRunning", "quickAsk", "openHome", "tabsAll", "sessionsView"] as const;
@@ -95,7 +99,7 @@ export const MODE_PRESETS: Record<Settings["mode"], Settings> = {
  * Browser view) is built on macOS's WebKit: elsewhere it's always off.
  */
 export const BROWSER_SUPPORTED = process.platform === "darwin";
-const NO_BROWSER = { browser: false, network: false, picker: false, jira: false, labAccounts: false } as const;
+const NO_BROWSER = { browser: false, network: false, picker: false, jira: false, labAccounts: false, writeGuard: false } as const;
 
 /** Saved settings over the mode's preset (existing users default to QA). */
 export function currentSettings(): Settings {
