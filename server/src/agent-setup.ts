@@ -159,7 +159,7 @@ if [[ -n "$CRUX_MCP_CONFIG" && -f "$CRUX_MCP_CONFIG" ]]; then
     command codex \\
       -c "mcp_servers.crux_browser.command=\\"$QL_NODE\\"" \\
       -c "mcp_servers.crux_browser.args=[\\"$QL_BROWSER_MCP\\"]" \\
-      -c "mcp_servers.crux_browser.env={CRUX_WORKSPACE=\\"$CRUX_WORKSPACE\\",CRUX_URL=\\"$CRUX_URL\\"}" \\
+      -c "mcp_servers.crux_browser.env={CRUX_WORKSPACE=\\"$CRUX_WORKSPACE\\",CRUX_URL=\\"$CRUX_URL\\",CRUX_TERM=\\"$CRUX_TERM\\"}" \\
       "$@"
   }
 fi
@@ -182,7 +182,7 @@ esac
     : `[ -n "$CRUX_MCP_CONFIG" ] && [ -f "$CRUX_MCP_CONFIG" ] && set -- \\
   -c "mcp_servers.crux_browser.command=\\"$QL_NODE\\"" \\
   -c "mcp_servers.crux_browser.args=[\\"$QL_BROWSER_MCP\\"]" \\
-  -c "mcp_servers.crux_browser.env={CRUX_WORKSPACE=\\"$CRUX_WORKSPACE\\",CRUX_URL=\\"$CRUX_URL\\"}" \\
+  -c "mcp_servers.crux_browser.env={CRUX_WORKSPACE=\\"$CRUX_WORKSPACE\\",CRUX_URL=\\"$CRUX_URL\\",CRUX_TERM=\\"$CRUX_TERM\\"}" \\
   "$@"`
 }
 exec "$real" "$@"

@@ -82,9 +82,40 @@ const TOOLS = [
   { name: "browser_back", description: "Go back in history.", inputSchema: { type: "object", properties: {} } },
   { name: "browser_forward", description: "Go forward in history.", inputSchema: { type: "object", properties: {} } },
   { name: "browser_reload", description: "Reload the page.", inputSchema: { type: "object", properties: {} } },
+  {
+    name: "flow_set_module",
+    description:
+      "Tell Crux's Flow view which product module you are working in or testing now (e.g. \"Billing\"), and optionally the modules you'll test next. Call it when you move on to a new module.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        module: { type: "string", description: "Module or feature name, e.g. Billing, Presets" },
+        next: { type: "array", items: { type: "string" }, description: "Modules you plan to test after this one, in order" },
+      },
+      required: ["module"],
+    },
+  },
 ];
 
+async function setModule(args) {
+  const term = process.env.CRUX_TERM;
+  if (!term) return { isError: true, content: [{ type: "text", text: "Not running inside a Crux terminal (CRUX_TERM is unset)." }] };
+  try {
+    const res = await fetch(`${BASE}/api/flow/module`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ term, module: args?.module, next: args?.next }),
+    });
+    const body = await res.json();
+    if (!res.ok || !body.module) return { isError: true, content: [{ type: "text", text: body.error || "Module not set" }] };
+    return { content: [{ type: "text", text: `Now in: ${body.module.label}` }] };
+  } catch (err) {
+    return { isError: true, content: [{ type: "text", text: `Crux server unreachable at ${BASE}: ${err.message}` }] };
+  }
+}
+
 async function call(name, args) {
+  if (name === "flow_set_module") return setModule(args);
   if (!WORKSPACE) {
     return { isError: true, content: [{ type: "text", text: "Not running inside a Crux terminal (CRUX_WORKSPACE is unset)." }] };
   }

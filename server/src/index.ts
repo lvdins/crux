@@ -200,6 +200,20 @@ app.post("/api/agent-event", (req, res) => {
   res.json({ ok: true });
 });
 
+// Flow view: an agent announces the module it works in now ("now testing:
+// Billing") and the ones it'll test next (crux-browser's flow_set_module).
+app.post("/api/flow/module", async (req, res) => {
+  const term = typeof req.body?.term === "string" ? req.body.term : "";
+  const name = typeof req.body?.module === "string" ? req.body.module : "";
+  if (!term || !name.trim()) return void res.status(400).json({ error: "term and module are required" });
+  const next = Array.isArray(req.body?.next) ? req.body.next.filter((n: unknown): n is string => typeof n === "string") : undefined;
+  const { declareModule, plannedModules } = await import("./flowModules.js");
+  const { setFlowModule } = await import("./activity.js");
+  const module = declareModule(term, name, next);
+  if (module) setFlowModule(term, module, plannedModules(term));
+  res.json({ ok: true, module });
+});
+
 app.post("/api/onboarded", (req, res) => {
   config.onboarded = req.body?.done !== false;
   saveConfig();
