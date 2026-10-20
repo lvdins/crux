@@ -24,6 +24,8 @@ import { inboxMrs } from "./inbox.js";
 import { pastChats } from "./sessions.js";
 import { importCookies, importSites, importSources } from "./browserImport.js";
 import { registerQaRoutes } from "./qa.js";
+import { registerLabAccounts } from "./labAccounts.js";
+import { releaseAll as releaseAccounts } from "./fixtures.js";
 import { adoptLoginShellPath, checkTools, CRUX_HOME, PACKAGED, PORT, rootPath } from "./paths.js";
 
 adoptLoginShellPath();
@@ -576,6 +578,12 @@ app.post("/api/term/start", (req, res) => {
 // QA run panel: qa-skills rounds, read only (see qa.ts).
 registerQaRoutes(app);
 
+// Lab account switcher: fixtures, Keychain secrets (see labAccounts.ts).
+registerLabAccounts(app, (msg) => {
+  const data = JSON.stringify(msg);
+  for (const client of wss.clients) if (client.readyState === WebSocket.OPEN) client.send(data);
+});
+
 // Orchestrator mode: the lead's crux-agents MCP tools (see orchestrator.ts).
 app.post("/api/orch/:lead/:tool", async (req, res) => {
   try {
@@ -692,6 +700,7 @@ server.listen(PORT, "127.0.0.1", () => {
 });
 
 function shutdown() {
+  releaseAccounts();
   stopAllPreviews();
   killAllTerms();
   process.exit(0);

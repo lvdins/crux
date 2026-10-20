@@ -509,7 +509,7 @@ pub fn keep_logins(app: AppHandle) {
 /// browserImport.ts) go into the browser's cookie store, and into Crux's
 /// copy of the jar so keep_logins puts them back if no pane is open yet.
 #[tauri::command]
-pub async fn browser_import_cookies(app: AppHandle, cookies: Vec<String>) -> Result<usize, String> {
+pub async fn browser_import_cookies(app: AppHandle, cookies: Vec<String>, reload: Option<bool>) -> Result<usize, String> {
     use tauri::webview::cookie::Cookie;
     // Lines whose domain-wide cookies say "Domain=..site" (the parser drops one dot).
     let (lines_in, parsed): (Vec<&String>, Vec<Cookie<'static>>) =
@@ -522,9 +522,12 @@ pub async fn browser_import_cookies(app: AppHandle, cookies: Vec<String>) -> Res
                 set += 1;
             }
         }
-        for (label, v) in app.webviews() {
-            if label.starts_with("browser-") {
-                let _ = v.eval("location.reload()");
+        // A lab account refresh (same login, new token) keeps the page as it is.
+        if reload.unwrap_or(true) {
+            for (label, v) in app.webviews() {
+                if label.starts_with("browser-") {
+                    let _ = v.eval("location.reload()");
+                }
             }
         }
     }

@@ -6,6 +6,7 @@ import path from "node:path";
 import { BROWSER_SUPPORTED, config } from "./config.js";
 import { CRUX_HOME, SERVER_URL, rootPath } from "./paths.js";
 import { leadMcpConfig } from "./orchestrator.js";
+import { accountEnv } from "./fixtures.js";
 
 /**
  * Gives claude / codex started in a Crux terminal the
@@ -277,6 +278,8 @@ export function agentEnv(ws: string, shell: string, term: string): Record<string
     CRUX_MCP_CONFIG: leadMcpConfig(term) || (BROWSER_SUPPORTED ? mcpConfigPath(ws) : ""),
     QL_NODE: process.execPath,
     QL_BROWSER_MCP: BROWSER_MCP,
+    // Lab account switcher: the workspace's active fixture (placeholder + minted env).
+    ...accountEnv(ws),
   };
   if (path.basename(shell) === "zsh") {
     // Crux started from a Crux terminal (e.g. a dev copy) inherits that

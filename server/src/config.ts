@@ -45,6 +45,8 @@ export interface Settings {
   jira: boolean;
   /** Sidebar → Flow: live chart of what each agent is doing (QA tooling). */
   flow: boolean;
+  /** Lab account switcher: the account pill on the browser + Settings → Lab accounts. */
+  labAccounts: boolean;
   // chats and notifications (not part of a mode)
   defaultChat: "pick" | "claude" | "codex" | "shell";
   askChatName: boolean;
@@ -74,6 +76,7 @@ export const VIEW_KEYS = [
   "docPreview", "tests", "coverage", "pipelines", "browser", "network", "picker",
   "connections", "connCoverage", "connGraph", "jira", "flow",
   "qaRuns",
+  "labAccounts",
 ] as const;
 /** Personal preferences: kept when the mode changes. */
 export const PREF_KEYS = ["askChatName", "confirmClose", "notifyAgent", "notifyPipeline", "keepRunning", "quickAsk", "openHome", "tabsAll", "sessionsView"] as const;
@@ -92,7 +95,7 @@ export const MODE_PRESETS: Record<Settings["mode"], Settings> = {
  * Browser view) is built on macOS's WebKit: elsewhere it's always off.
  */
 export const BROWSER_SUPPORTED = process.platform === "darwin";
-const NO_BROWSER = { browser: false, network: false, picker: false, jira: false } as const;
+const NO_BROWSER = { browser: false, network: false, picker: false, jira: false, labAccounts: false } as const;
 
 /** Saved settings over the mode's preset (existing users default to QA). */
 export function currentSettings(): Settings {

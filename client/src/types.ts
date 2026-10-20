@@ -64,6 +64,8 @@ export interface Settings {
   jira: boolean;
   /** Sidebar → Flow: live chart of what each agent is doing (QA tooling). */
   flow: boolean;
+  /** Lab account switcher: the account pill on the browser + Settings → Lab accounts. */
+  labAccounts: boolean;
   // chats and notifications (not part of a mode)
   defaultChat: "pick" | "claude" | "codex" | "shell";
   askChatName: boolean;
@@ -88,7 +90,7 @@ export interface Settings {
 export const QA_SETTINGS: Settings = {
   mode: "qa",
   docPreview: true, tests: true, coverage: true, pipelines: true, browser: true, network: true, picker: true, qaRuns: true,
-  connections: true, connCoverage: true, connGraph: true, jira: true, flow: true,
+  connections: true, connCoverage: true, connGraph: true, jira: true, flow: true, labAccounts: true,
   defaultChat: "pick", askChatName: true, confirmClose: true, notifyAgent: true, notifyPipeline: true, keepRunning: true, quickAsk: true, openHome: true, tabsAll: true, sessionsView: true, jiraProject: "", qaRoot: "",
 };
 
