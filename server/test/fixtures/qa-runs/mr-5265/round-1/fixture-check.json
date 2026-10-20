@@ -1,0 +1,1 @@
+{"batch:1": {"code": 1, "out": ["batch 1: 2 open checks", "OPEN intake.md: write-class table has no decision for \"Delete media\"", "OPEN run-log.md: Batch 1 status block missing \"Head SHA\""]}}

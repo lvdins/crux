@@ -100,6 +100,9 @@ export function initOrchestrator(deps: {
   ({ broadcast, startTerm, writeTerm, stopTerm, tailOf } = deps);
 }
 
+/** Every open window (QA run panel and other features). */
+export const broadcastAll = (msg: unknown) => broadcast(msg);
+
 const envRef = (name: string) => (WIN ? `$env:${name}` : `"$${name}"`);
 const leadMcpPath = (lead: string) => path.join(MCP_DIR, `lead-${lead.replace(/[^\w-]/g, "_")}.json`);
 
@@ -229,6 +232,32 @@ export function startTeam(opts: { ws: string; chat: string; lead: string; max: n
     });
   }
   publish(team);
+}
+
+/**
+ * POST /api/term/start: a new chat whose Claude / Codex starts on a task
+ * (the QA run panel, later Jira and review). The server starts the terminal;
+ * `term:spawned` tells the windows to open it as a session tab.
+ */
+export function startTask(opts: { ws: string; kind: WorkerKind; task: string; title: string; brief?: string }) {
+  const task = opts.task.trim();
+  if (!config.repos[opts.ws]) throw new Error("Unknown workspace");
+  if (!task || task.length > 20_000) throw new Error("task is required (up to 20,000 characters)");
+  const kind: WorkerKind = opts.kind === "codex" ? "codex" : "claude";
+  const brief = (opts.brief ?? "").trim();
+  const title = opts.title.trim().slice(0, 40) || kind;
+  const chat = `${opts.ws}::${Date.now().toString(36)}${crypto.randomBytes(2).toString("hex")}`;
+  const id = `${chat}:1:${Date.now() % 100000}`;
+  const bootCmd = kind === "claude" ? `claude --session-id ${crypto.randomUUID()}` : "codex";
+  boots.set(
+    id,
+    kind === "claude"
+      ? { env: { CRUX_BRIEF: brief, CRUX_TASK: task }, append: `${brief ? ` --append-system-prompt ${envRef("CRUX_BRIEF")}` : ""} ${envRef("CRUX_TASK")}` }
+      : { env: { CRUX_TASK: brief ? `${brief}\n\n${task}` : task }, append: ` ${envRef("CRUX_TASK")}` },
+  );
+  startTerm(id, opts.ws, bootCmd);
+  broadcast({ type: "term:spawned", ws: opts.ws, chat, id, title, kind, bootCmd });
+  return { id, chat, title, kind, bootCmd };
 }
 
 /** Taken by term.ts when it first starts this terminal. */
@@ -390,6 +419,12 @@ function spawn(team: Team, args: Record<string, unknown>) {
 function sendTo(id: string, text: string) {
   writeTerm(id, `\x1b[200~${text}\x1b[201~`);
   setTimeout(() => writeTerm(id, "\r"), 250);
+}
+
+/** The same, for a terminal outside a team (QA run panel's go-ahead). */
+export function sendToTerm(id: string, text: string) {
+  if (!tailOf(id).alive) throw new Error("That chat is closed");
+  sendTo(id, text);
 }
 
 async function waitFor(team: Team, args: Record<string, unknown>) {

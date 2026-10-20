@@ -11,6 +11,7 @@ import { CANCEL_REPORT_SCRIPT, REPORT_SCRIPT, cropShot, jiraPrompt, type MarkedI
 import ChatSearch, { type PaletteItem, type PastChat } from "./components/ChatSearch";
 import ChatPicker from "./components/ChatPicker";
 import PipelinesPanel, { overallTone, type PipelineInfo } from "./components/PipelinesPanel";
+import QaPanel, { QA_EVENT } from "./components/QaPanel";
 import FeatureMap from "./components/FeatureMap";
 import Home, { reviewPrompt, type InboxMr } from "./components/Home";
 import AddWorkspace from "./components/AddWorkspace";
@@ -555,6 +556,7 @@ export default function App() {
   const [teams, setTeams] = useState<Map<string, { lead: string; workers: TeamMember[] }>>(new Map());
   const [orchestrate, setOrchestrate] = useState<string | null>(null);
   const orchRef = useRef<(msg: any) => void>(() => {});
+  const spawnedRef = useRef<(msg: any) => void>(() => {});
   // Menu bar menu → "show me this chat" / "pick who gets this screenshot"
   // (the listeners are set up once).
   const openChatRef = useRef<(chat: string) => void>(() => {});
@@ -695,6 +697,15 @@ export default function App() {
         }
         if (typeof msg.type === "string" && msg.type.startsWith("orch:")) {
           orchRef.current(msg);
+          return;
+        }
+        if (msg.type === "term:spawned") {
+          spawnedRef.current(msg);
+          return;
+        }
+        // QA run panel: the open round changed on disk (see qa.ts).
+        if (typeof msg.type === "string" && msg.type.startsWith("qa:")) {
+          window.dispatchEvent(new CustomEvent(QA_EVENT, { detail: msg }));
           return;
         }
         if (msg.type === "agent:event") {
@@ -1807,6 +1818,22 @@ export default function App() {
     }
   };
 
+  // A chat the server started on a task (POST /api/term/start, e.g. Start QA
+  // round): its terminal already runs, this opens it as a session tab.
+  spawnedRef.current = (msg) => {
+    const ws = String(msg.ws);
+    const chat = String(msg.chat);
+    const id = String(msg.id);
+    if (!config?.repos[ws] || !chat.startsWith(`${ws}::`) || tabs[chat]?.some((t) => t.id === id)) return;
+    const kind = msg.kind === "codex" ? "codex" : "claude";
+    const title = String(msg.title || kind);
+    createTab(chat, title, kind, String(msg.bootCmd), id);
+    setActiveTab((prev) => ({ ...prev, [chat]: id }));
+    setChatTitles((prev) => ({ ...prev, [chat]: title }));
+    setActiveChat((prev) => ({ ...prev, [ws]: chat }));
+    setChatsShown(ws, true);
+  };
+
   // Close a whole chat: every terminal in it.
   const closeChat = (chat: string) => {
     if (tabs[chat]?.length) {
@@ -1997,6 +2024,7 @@ export default function App() {
         isTestRepo && settings.tests && ["tree", "Tests"],
         isTestRepo && settings.coverage && ["coverage", "Coverage"],
         isTestRepo && settings.pipelines && ["pipelines", "Pipelines"],
+        settings.qaRuns && ["qa", "QA runs"],
         settings.browser && ["browser", "Browser"],
       ].filter(Boolean) as [string, string][])
     : [];
@@ -2696,6 +2724,9 @@ export default function App() {
                     {panelTab === "tree" && <TestTree repo={view} />}
                     {panelTab === "pipelines" && (
                       <PipelinesPanel key={view} wsKey={view} onInfo={notePipelines} onCheck={checkPipeline} />
+                    )}
+                    {panelTab === "qa" && (
+                      <QaPanel key={view} wsKey={view} qaRoot={settings.qaRoot} onRoot={(qaRoot) => saveSettings({ qaRoot })} />
                     )}
                     {panelTab === "coverage" && (
                       <SuiteCoverage key={view} suite={repo.kind === "pytest" ? "api" : "e2e"} repoKey={view} />

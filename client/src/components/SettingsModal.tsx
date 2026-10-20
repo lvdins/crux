@@ -8,7 +8,7 @@ import SetupChecklist, { type ToolHealth } from "./SetupChecklist";
 import ImportLogins from "./ImportLogins";
 import AppearanceSettings from "./AppearanceSettings";
 
-type Key = Exclude<keyof Settings, "mode" | "defaultChat" | "jiraProject" | "appearance">;
+type Key = Exclude<keyof Settings, "mode" | "defaultChat" | "jiraProject" | "qaRoot" | "appearance">;
 interface Toggle {
   key: Key;
   label: string;
@@ -32,6 +32,7 @@ const VIEW_GROUPS: Group[] = [
       { key: "browser", label: "Browser", hint: "A browser beside your chats. When off, agents still use a hidden browser through MCP." },
       { key: "network", label: "Network view", hint: "Fetch / XHR calls under the browser.", parent: "browser" },
       { key: "picker", label: "Element picker", hint: "Pick an element to get Playwright locators.", parent: "browser" },
+      { key: "qaRuns", label: "QA runs", hint: "qa-full-pass / qa-lite rounds: batches and gates, the pause after Batch 2, lanes." },
     ],
   },
   {

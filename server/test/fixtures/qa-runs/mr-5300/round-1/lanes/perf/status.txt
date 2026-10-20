@@ -1,0 +1,1 @@
+lane=perf status=partial cases=4 pass=2 fail=0 blocked=2 not_tested=0 reason="lab rate limit"
