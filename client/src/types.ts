@@ -60,6 +60,7 @@ export interface Settings {
   connCoverage: boolean;
   connGraph: boolean;
   jira: boolean;
+  writeGuard: boolean;
   // chats and notifications (not part of a mode)
   defaultChat: "pick" | "claude" | "codex" | "shell";
   askChatName: boolean;
@@ -75,6 +76,8 @@ export interface Settings {
   sessionsView: boolean;
   /** Jira project key bugs are filed in (blank: the agent asks). */
   jiraProject: string;
+  /** Write guard: hosts whose writes it answers (absent: the server's defaults). */
+  guardHosts?: string[];
   /** Settings → Appearance. Absent: Crux's own look (DEFAULT_APPEARANCE). */
   appearance?: Appearance;
 }
@@ -82,6 +85,6 @@ export interface Settings {
 export const QA_SETTINGS: Settings = {
   mode: "qa",
   docPreview: true, tests: true, coverage: true, pipelines: true, browser: true, network: true, picker: true,
-  connections: true, connCoverage: true, connGraph: true, jira: true,
+  connections: true, connCoverage: true, connGraph: true, jira: true, writeGuard: true,
   defaultChat: "pick", askChatName: true, confirmClose: true, notifyAgent: true, notifyPipeline: true, keepRunning: true, quickAsk: true, openHome: true, tabsAll: true, sessionsView: true, jiraProject: "",
 };

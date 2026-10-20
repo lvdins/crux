@@ -91,17 +91,55 @@ fn safari_user_agent() -> String {
     .clone()
 }
 
+/// The write guard's policy as a page script (`window.__qlGuard = …`);
+/// empty until the UI first sets it. New panes run it at document start.
+static GUARD: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+/// Write guard on / off, its policy and the reply blocked writes get (see
+/// netRecorder.js and server/src/guard.ts). Applies to every open page now
+/// and to every page loaded later, in every browser pane.
+#[tauri::command]
+pub async fn guard_set(app: AppHandle, policy: serde_json::Value, reply: serde_json::Value) -> Result<(), String> {
+    let mut policy = policy;
+    policy.as_object_mut().ok_or("policy must be an object")?.insert("reply".into(), reply);
+    let script = format!("window.__qlGuard = {policy};");
+    let changed = {
+        let mut current = GUARD.lock().unwrap();
+        let changed = *current != script;
+        *current = script.clone();
+        changed
+    };
+    for (label, view) in app.webviews() {
+        if !label.starts_with("browser-") {
+            continue;
+        }
+        let _ = view.eval(&script);
+        // Init scripts are fixed when a pane is made: add one so its next
+        // pages start guarded too (the latest one added wins).
+        #[cfg(target_os = "macos")]
+        if changed {
+            mac::add_start_script(&view, script.clone());
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = changed;
+    Ok(())
+}
+
 fn create(app: &AppHandle, label: &str, url: &str, x: f64, y: f64, w: f64, h: f64) -> Result<(), String> {
     let window = app.get_window("main").ok_or("main window missing")?;
     let events = app.clone();
     let downloads = app.clone();
     let event_label = label.to_string();
+    let guard = GUARD.lock().unwrap().clone();
     let builder = WebviewBuilder::new(label, WebviewUrl::External(parse(url)?))
         // Web Inspector for the DevTools button (also makes the page
         // inspectable from Safari's Develop menu).
         .devtools(true)
         // Records fetch/XHR from document start for the Network panel.
         .initialization_script(include_str!("../../client/src/netRecorder.js"))
+        // The write guard's current policy (read by the recorder per request).
+        .initialization_script(if guard.is_empty() { "window.__qlGuard = null;" } else { &guard })
         .user_agent(&safari_user_agent())
         // Downloads go to ~/Downloads (wry picks the name, adding " (1)" when
         // taken); the window shows a notice when each one finishes.
@@ -214,7 +252,7 @@ mod mac {
     use objc2::MainThreadMarker;
     use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRep, NSImage};
     use objc2_foundation::{NSDictionary, NSError, NSPoint, NSRect, NSSize, NSString};
-    use objc2_web_kit::{WKContentWorld, WKWebView};
+    use objc2_web_kit::{WKContentWorld, WKUserScript, WKUserScriptInjectionTime, WKWebView};
     use std::sync::mpsc::{channel, Receiver};
 
     type Reply = Result<String, String>;
@@ -313,6 +351,21 @@ mod mac {
         })
         .map_err(|e| e.to_string())?;
         Ok(rx)
+    }
+
+    /// A page-world script for every later page load of this pane (main frame).
+    pub fn add_start_script(view: &tauri::Webview, source: String) {
+        let _ = view.with_webview(move |pv| unsafe {
+            let wk: &WKWebView = &*(pv.inner() as *const WKWebView);
+            let mtm = MainThreadMarker::new_unchecked();
+            let script = WKUserScript::initWithSource_injectionTime_forMainFrameOnly(
+                mtm.alloc(),
+                &NSString::from_str(&source),
+                WKUserScriptInjectionTime::AtDocumentStart,
+                true,
+            );
+            wk.configuration().userContentController().addUserScript(&script);
+        });
     }
 
     /// Undock Web Inspector into its own window (private _WKInspector API,

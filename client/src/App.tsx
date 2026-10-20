@@ -2566,7 +2566,7 @@ export default function App() {
         ) : view === "jira" ? (
           // Browser view (internally still "jira", so saved tabs and logins carry over).
           <section className="full-pane jira-pane">
-            <Browser wsKey="jira" visible={!overlayOpen} network={settings.network} picker={settings.picker} openRequest={browserOpen} />
+            <Browser wsKey="jira" visible={!overlayOpen} network={settings.network} picker={settings.picker} writeGuard={settings.writeGuard} openRequest={browserOpen} />
           </section>
         ) : (
           <div
@@ -2707,6 +2707,8 @@ export default function App() {
                         visible={!panelHidden && !overlayOpen}
                         network={settings.network}
                         picker={settings.picker}
+                        writeGuard={settings.writeGuard}
+                        guardWs={view}
                       />
                     )}
                   </>

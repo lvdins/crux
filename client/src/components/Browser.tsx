@@ -3,6 +3,7 @@ import { DEFAULT_BROWSER_URL, browserLabel, setActiveBrowserLabel } from "../age
 import ContextMenu, { MenuIcons, type MenuItem } from "./ContextMenu";
 import { CANCEL_PICK_SCRIPT, PICK_SCRIPT, type PickedElement } from "../elementPicker";
 import NetworkPanel from "./NetworkPanel";
+import { GuardBar, guardStore, useGuard, useGuardWatch, type GuardLeak } from "./WriteGuard";
 
 /**
  * In-app browser with minimal tabs. In the desktop app each tab is a native
@@ -90,10 +91,15 @@ export default function Browser({
   openRequest,
   network = true,
   picker = true,
+  writeGuard = false,
+  guardWs,
 }: {
-  /** Settings: show the network-calls dock / the element picker. */
+  /** Settings: show the network-calls dock / the element picker / the write guard. */
   network?: boolean;
   picker?: boolean;
+  writeGuard?: boolean;
+  /** Workspace the write guard logs under (default: wsKey). */
+  guardWs?: string;
   wsKey: string;
   visible: boolean;
   defaultUrl?: string;
@@ -140,6 +146,16 @@ export default function Browser({
   const showNet = network && netOpen;
   const [netHeight, setNetHeight] = useState(() => Number(localStorage.getItem("crux.netHeight")) || 220);
   const [netDragging, setNetDragging] = useState(false);
+  // Write guard (see WriteGuard.tsx): one for every pane, off with its setting.
+  const guard = useGuard();
+  const [leak, setLeak] = useState<GuardLeak | null>(null);
+  useEffect(() => {
+    if (isTauri) guardStore.enable(writeGuard);
+  }, [writeGuard]);
+  const guardWatch = useGuardWatch(label, guardWs ?? wsKey, isTauri && visible, (l) => {
+    setLeak(l);
+    if (network) setNetOpen(true);
+  });
   const toggleNet = () =>
     setNetOpen((o) => {
       localStorage.setItem("crux.netOpen", o ? "0" : "1");
@@ -742,6 +758,18 @@ export default function Browser({
           </svg>
         </button>
         )}
+        {writeGuard && isTauri && (
+        <button
+          title={guard.on ? "Write guard on: writes to lab / preview hosts are answered by Crux unless granted. Click to turn off." : "Write guard off: click to answer writes to lab / preview hosts in Crux"}
+          onClick={() => guardStore.set({ on: !guard.on })}
+          className={`browser-tool ${guard.on ? "on" : ""} ${leak ? "guard-leaked" : ""}`}
+        >
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M8 1.8 13 3.6v4.1c0 3-2.1 5.4-5 6.5-2.9-1.1-5-3.5-5-6.5V3.6L8 1.8Z" />
+            {guard.on && <path d="m5.8 8 1.6 1.6 3-3.2" />}
+          </svg>
+        </button>
+        )}
         {!fixedBookmarks && (
           <button title={isBookmarked ? "Remove bookmark" : "Bookmark this page"} onClick={toggleBookmark} className={isBookmarked ? "on" : ""}>
             {isBookmarked ? "★" : "☆"}
@@ -800,6 +828,7 @@ export default function Browser({
           </svg>
         </button>
       </div>
+      {writeGuard && <GuardBar {...guardWatch} leak={showNet ? null : leak} />}
       {picking && <div className="browser-picking">Hover the page and click an element · Esc to cancel</div>}
       {picked && (
         <div className="browser-picked">
@@ -882,7 +911,7 @@ export default function Browser({
           <div className="net-resize" onPointerDown={startNetResize} title="Drag to resize" />
           <div className="net-wrap" style={{ height: netHeight }}>
             {isTauri ? (
-              <NetworkPanel label={label} active={visible && showNet} />
+              <NetworkPanel label={label} active={visible && showNet} guard={writeGuard} leak={writeGuard ? leak : null} onLeakClose={() => setLeak(null)} />
             ) : (
               <div className="net-empty">The network checker needs the desktop app.</div>
             )}

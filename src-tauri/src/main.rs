@@ -822,6 +822,7 @@ fn main() {
             browser::browser_zoom,
             browser::browser_reveal_download,
             browser::browser_devtools,
+            browser::guard_set,
             set_background,
             set_tray_title,
             set_tray_chats,

@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import RECORDER from "../netRecorder.js?raw";
+import { LeakBanner, type GuardLeak } from "./WriteGuard";
 
 /**
  * Lightweight network checker docked under the in-app browser: the page's
  * fetch / XHR calls (recorded by netRecorder.js) with status, timing, size
  * and request / response bodies. Polls the active tab once a second.
+ * With the write guard on, guarded writes are marked blocked / allowed.
  */
 
 interface NetEntry {
   id: number;
-  type: "fetch" | "xhr";
+  type: "fetch" | "xhr" | "beacon" | "form";
   method: string;
   url: string;
   start: number;
@@ -20,7 +22,15 @@ interface NetEntry {
   reqBody: string | null;
   resBody: string | null;
   error: string | null;
+  // write guard (netRecorder.js)
+  guarded?: boolean;
+  blocked?: boolean;
+  class?: string | null;
+  grant?: string | null;
+  ask?: "pending" | "allowed" | "blocked";
 }
+
+const SAFE = new Set(["GET", "HEAD", "OPTIONS"]);
 
 async function invoke<T>(cmd: string, args: Record<string, unknown>): Promise<T> {
   const { invoke: tauriInvoke } = await import("@tauri-apps/api/core");
@@ -49,11 +59,25 @@ const pretty = (body: string | null) => {
 
 const statusClass = (s: number) => (s === 0 ? "pending" : s < 0 || s >= 500 ? "err" : s >= 400 ? "warn" : "ok");
 
-export default function NetworkPanel({ label, active }: { label: string; active: boolean }) {
+export default function NetworkPanel({
+  label,
+  active,
+  guard = false,
+  leak,
+  onLeakClose,
+}: {
+  label: string;
+  active: boolean;
+  /** Settings: the write guard is on (marks, "Writes" filter, leak banner). */
+  guard?: boolean;
+  leak?: GuardLeak | null;
+  onLeakClose?: () => void;
+}) {
   const [entries, setEntries] = useState<NetEntry[]>([]);
   const [pageUrl, setPageUrl] = useState("");
   const [filter, setFilter] = useState("");
   const [errorsOnly, setErrorsOnly] = useState(false);
+  const [writesOnly, setWritesOnly] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
   const [detailTab, setDetailTab] = useState<"response" | "request">("response");
   const [problem, setProblem] = useState("");
@@ -109,8 +133,14 @@ export default function NetworkPanel({ label, active }: { label: string; active:
 
   const shown = useMemo(() => {
     const q = filter.trim().toLowerCase();
-    return entries.filter((e) => (!errorsOnly || e.status < 0 || e.status >= 400) && (!q || `${e.method} ${e.url} ${e.status}`.toLowerCase().includes(q)));
-  }, [entries, filter, errorsOnly]);
+    return entries.filter(
+      (e) =>
+        (!errorsOnly || e.status < 0 || e.status >= 400) &&
+        (!(guard && writesOnly) || !SAFE.has(e.method)) &&
+        (!q || `${e.method} ${e.url} ${e.status} ${e.class ?? ""}`.toLowerCase().includes(q)),
+    );
+  }, [entries, filter, errorsOnly, writesOnly, guard]);
+  const blockedCount = entries.filter((e) => e.blocked).length;
   const failed = entries.filter((e) => e.status < 0 || e.status >= 400).length;
   const sel = entries.find((e) => e.id === selected) ?? null;
 
@@ -129,11 +159,17 @@ export default function NetworkPanel({ label, active }: { label: string; active:
         <button className={errorsOnly ? "on" : ""} onClick={() => setErrorsOnly((v) => !v)} title="Only 4xx / 5xx / failed">
           Errors {failed > 0 && <b>{failed}</b>}
         </button>
+        {guard && (
+          <button className={writesOnly ? "on" : ""} onClick={() => setWritesOnly((v) => !v)} title="Only non-GET calls (the write guard's log)">
+            Writes {blockedCount > 0 && <b>{blockedCount}</b>}
+          </button>
+        )}
         <button onClick={clear}>Clear</button>
         <span className="net-count">
           {shown.length}/{entries.length} calls
         </span>
       </div>
+      {guard && leak && <LeakBanner leak={leak} onClose={onLeakClose} />}
       {problem && <div className="net-problem">{problem}</div>}
       <div className={`net-body ${sel ? "with-detail" : ""}`}>
         <div
@@ -150,10 +186,19 @@ export default function NetworkPanel({ label, active }: { label: string; active:
           {shown.map((e) => {
             const { host, path } = splitUrl(e.url);
             return (
-              <div key={e.id} className={`net-row ${selected === e.id ? "on" : ""} ${statusClass(e.status)}`} onClick={() => setSelected(selected === e.id ? null : e.id)}>
+              <div
+                key={e.id}
+                className={`net-row ${selected === e.id ? "on" : ""} ${statusClass(e.status)} ${guard && e.blocked ? "blocked" : ""}`}
+                onClick={() => setSelected(selected === e.id ? null : e.id)}
+              >
                 <span className="net-status">{e.status === 0 ? "…" : e.status < 0 ? "ERR" : e.status}</span>
                 <span className="net-method">{e.method}</span>
                 <span className="net-url" title={e.url}>
+                  {guard && e.guarded && (
+                    <em className={`net-guard ${e.ask === "pending" ? "ask" : e.blocked ? "blocked" : "allowed"}`} title={e.grant ? `Granted: ${e.grant}` : e.class ?? ""}>
+                      {e.ask === "pending" ? "asking" : e.blocked ? "blocked" : "allowed"}
+                    </em>
+                  )}
                   {path}
                   {host && <small> {host}</small>}
                 </span>
@@ -184,6 +229,7 @@ export default function NetworkPanel({ label, active }: { label: string; active:
                 Request
               </button>
               <span>
+                {guard && sel.guarded && `${sel.blocked ? "Blocked by the write guard" : "Allowed"}${sel.class ? ` · ${sel.class}` : ""}${sel.grant ? ` · ${sel.grant}` : ""} · `}
                 {sel.ms != null && `${sel.ms} ms`} {sel.size != null && `· ${fmtSize(sel.size)}`} {sel.ctype && `· ${sel.ctype.split(";")[0]}`}
               </span>
             </div>
