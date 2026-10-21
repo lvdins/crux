@@ -1,6 +1,6 @@
 [package]
 name = "crux"
-version = "0.1.41"
+version = "0.1.42"
 description = "Crux desktop app"
 edition = "2021"
 
