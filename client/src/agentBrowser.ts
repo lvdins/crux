@@ -15,9 +15,36 @@ export function setActiveBrowserLabel(ws: string, label: string): void {
 }
 export const activeBrowserLabel = (ws: string) => localStorage.getItem(`crux.browserActive.${ws}`) ?? browserLabel(ws);
 
+/** What one command did, for Crux's own views (agents only read text/image). */
+export interface Journey {
+  op: string;
+  url: string | null;
+  title?: string;
+  /** The page changed URL (or reloaded) during the command. */
+  navigated: boolean;
+  /** The command didn't do what was asked (no such element, timed out, …). */
+  failed?: boolean;
+  dialogs?: string[];
+  role?: string;
+  name?: string;
+  ref?: number | null;
+  inputType?: string | null;
+}
+
 export interface AgentResult {
   text: string;
   image?: string; // base64 PNG
+  journey?: Journey;
+}
+
+// What the in-page SCRIPTS return (JSON).
+interface Step {
+  text: string;
+  failed?: boolean;
+  target?: { role: string; name: string; ref: number | null; inputType: string | null } | null;
+  url?: string;
+  title?: string;
+  dialogs?: string[];
 }
 
 async function invoke<T>(cmd: string, args: Record<string, unknown>): Promise<T> {
@@ -83,6 +110,9 @@ const find = (a) => {
   return null;
 };
 const describe = (el) => roleOf(el) + ' "' + nameOf(el) + '"';
+// Every script returns a Step as JSON (see Step in agentBrowser.ts).
+const done = (text, el) => JSON.stringify({ text, target: el ? { role: roleOf(el), name: nameOf(el), ref: el.hasAttribute("data-ql-ref") ? Number(el.getAttribute("data-ql-ref")) : null, inputType: el.tagName === "INPUT" ? (el.type || "text").toLowerCase() : null } : null });
+const fail = (text) => JSON.stringify({ text, failed: true });
 const flash = (el) => {
   const r = el.getBoundingClientRect();
   const ring = document.createElement("div");
@@ -92,7 +122,7 @@ const flash = (el) => {
   setTimeout(() => ring.remove(), 1000);
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const notFound = (a) => "No element matches " + JSON.stringify(a) + " — take a fresh snapshot (refs change after navigation).";
+const notFound = (a) => fail("No element matches " + JSON.stringify(a) + " — take a fresh snapshot (refs change after navigation).");
 `;
 
 const SCRIPTS: Record<string, string> = {
@@ -120,14 +150,19 @@ const SCRIPTS: Record<string, string> = {
     const heads = [...document.querySelectorAll("h1,h2,h3,[role=dialog] [role=heading]")].filter(visible).slice(0, 25).map((h) => h.tagName.toLowerCase() + ": " + clean(h.innerText).slice(0, 90));
     const dialogs = [...document.querySelectorAll('[role=dialog],[role=alertdialog],dialog[open]')].filter(visible).map((d) => clean(d.getAttribute("aria-label") || d.innerText).slice(0, 120));
     const text = clean(document.body ? document.body.innerText : "").slice(0, a.maxText || 5000);
-    return [
-      "URL: " + location.href,
-      "Title: " + document.title,
-      dialogs.length ? "Open dialogs: " + dialogs.join(" | ") : "",
-      heads.length ? "Headings:\n" + heads.join("\n") : "",
-      "Interactive elements (" + lines.length + "):\n" + lines.join("\n"),
-      "Page text:\n" + text,
-    ].filter(Boolean).join("\n\n");`,
+    return JSON.stringify({
+      text: [
+        "URL: " + location.href,
+        "Title: " + document.title,
+        dialogs.length ? "Open dialogs: " + dialogs.join(" | ") : "",
+        heads.length ? "Headings:\n" + heads.join("\n") : "",
+        "Interactive elements (" + lines.length + "):\n" + lines.join("\n"),
+        "Page text:\n" + text,
+      ].filter(Boolean).join("\n\n"),
+      url: location.href,
+      title: document.title,
+      dialogs,
+    });`,
 
   click: String.raw`
     const el = find(a);
@@ -145,7 +180,7 @@ const SCRIPTS: Record<string, string> = {
     el.dispatchEvent(new PointerEvent("pointerup", { ...o, pointerId: 1, isPrimary: true }));
     el.dispatchEvent(new MouseEvent("mouseup", o));
     el.click();
-    return "Clicked " + describe(el) + ".";`,
+    return done("Clicked " + describe(el) + ".", el);`,
 
   type: String.raw`
     const el = a.ref != null || a.selector || a.text ? find(a) : document.activeElement;
@@ -192,7 +227,7 @@ const SCRIPTS: Record<string, string> = {
       if (go && el.form) el.form.requestSubmit ? el.form.requestSubmit() : el.form.submit();
       await sleep(400);
     }
-    return "Typed into " + describe(el) + (a.submit ? " and pressed Enter" : "") + ".";`,
+    return done("Typed into " + describe(el) + (a.submit ? " and pressed Enter" : "") + ".", el);`,
 
   press_key: String.raw`
     const el = document.activeElement || document.body;
@@ -209,20 +244,20 @@ const SCRIPTS: Record<string, string> = {
       (f[i + 1] || f[0])?.focus();
     }
     await sleep(250);
-    return "Pressed " + key + " on " + (el === document.body ? "the page" : describe(el)) + ".";`,
+    return done("Pressed " + key + " on " + (el === document.body ? "the page" : describe(el)) + ".", el === document.body ? null : el);`,
 
   select_option: String.raw`
     const el = find(a);
     if (!el) return notFound(a);
-    if (el.tagName !== "SELECT") return "That element is " + describe(el) + ", not a <select>. For custom dropdowns, click it and then click the option.";
+    if (el.tagName !== "SELECT") return fail("That element is " + describe(el) + ", not a <select>. For custom dropdowns, click it and then click the option.");
     const want = String(a.option).toLowerCase();
     const opt = [...el.options].find((o) => o.value.toLowerCase() === want || clean(o.text).toLowerCase() === want) || [...el.options].find((o) => clean(o.text).toLowerCase().includes(want));
-    if (!opt) return "No option matching " + JSON.stringify(a.option) + ". Options: " + [...el.options].map((o) => clean(o.text)).join(", ");
+    if (!opt) return fail("No option matching " + JSON.stringify(a.option) + ". Options: " + [...el.options].map((o) => clean(o.text)).join(", "));
     flash(el);
     el.value = opt.value;
     el.dispatchEvent(new Event("input", { bubbles: true }));
     el.dispatchEvent(new Event("change", { bubbles: true }));
-    return "Selected " + JSON.stringify(clean(opt.text)) + " in " + describe(el) + ".";`,
+    return done("Selected " + JSON.stringify(clean(opt.text)) + " in " + describe(el) + ".", el);`,
 
   wait_for: String.raw`
     const deadline = Date.now() + Math.min(Number(a.timeout) || 10000, 40000);
@@ -232,10 +267,10 @@ const SCRIPTS: Record<string, string> = {
       return document.readyState === "complete";
     };
     while (Date.now() < deadline) {
-      if (check()) return "Condition met" + (a.text ? ": text " + (a.gone ? "gone" : "present") : a.selector ? ": selector " + (a.gone ? "gone" : "visible") : ": page loaded") + ". URL " + location.href;
+      if (check()) return done("Condition met" + (a.text ? ": text " + (a.gone ? "gone" : "present") : a.selector ? ": selector " + (a.gone ? "gone" : "visible") : ": page loaded") + ". URL " + location.href);
       await sleep(200);
     }
-    return "Timed out after " + (Number(a.timeout) || 10000) + "ms waiting for " + JSON.stringify(a);`,
+    return fail("Timed out after " + (Number(a.timeout) || 10000) + "ms waiting for " + JSON.stringify(a));`,
 
   state: String.raw`return JSON.stringify({ url: location.href, title: document.title, ready: document.readyState });`,
 };
@@ -245,7 +280,15 @@ async function js(label: string, body: string, args: Record<string, unknown> = {
   return invoke<string>("browser_js", { label, script, pageWorld });
 }
 
-async function waitForLoad(label: string, previousUrl: string | null, timeoutMs = 15000): Promise<string> {
+interface PageState {
+  url: string;
+  title: string;
+  ready: string;
+}
+
+const loaded = (s: PageState) => `Loaded ${s.url}\nTitle: ${s.title}`;
+
+async function waitForLoad(label: string, previousUrl: string | null, timeoutMs = 15000): Promise<PageState> {
   const deadline = Date.now() + timeoutMs;
   await new Promise((r) => setTimeout(r, 250));
   let last = { url: "", title: "", ready: "" };
@@ -258,15 +301,19 @@ async function waitForLoad(label: string, previousUrl: string | null, timeoutMs 
     }
     await new Promise((r) => setTimeout(r, 200));
   }
-  return `Loaded ${last.url}\nTitle: ${last.title}`;
+  return last;
 }
 
-async function currentUrl(label: string): Promise<string | null> {
+async function pageState(label: string): Promise<PageState | null> {
   try {
-    return JSON.parse(await js(label, SCRIPTS.state)).url;
+    return JSON.parse(await js(label, SCRIPTS.state));
   } catch {
     return null;
   }
+}
+
+async function currentUrl(label: string): Promise<string | null> {
+  return (await pageState(label))?.url ?? null;
 }
 
 function normaliseUrl(input: string): string {
@@ -284,23 +331,23 @@ export async function runAgentCommand(ws: string, op: string, args: Record<strin
   switch (op) {
     case "navigate": {
       const url = normaliseUrl(String(args.url ?? ""));
-      if (!created) {
-        const before = await currentUrl(label);
-        await invoke("browser_navigate", { label, url });
-        return { text: await waitForLoad(label, before) };
-      }
-      return { text: await waitForLoad(label, null) };
+      const before = created ? null : await currentUrl(label);
+      if (!created) await invoke("browser_navigate", { label, url });
+      const s = await waitForLoad(label, before);
+      return { text: loaded(s), journey: { op, url: s.url, title: s.title, navigated: true } };
     }
     case "back":
     case "forward":
     case "reload": {
       const before = op === "reload" ? null : await currentUrl(label);
       await invoke("browser_action", { label, action: op });
-      return { text: await waitForLoad(label, before) };
+      const s = await waitForLoad(label, before);
+      return { text: loaded(s), journey: { op, url: s.url, title: s.title, navigated: op === "reload" || s.url !== before } };
     }
     case "screenshot": {
       const image = await invoke<string>("browser_screenshot", { label });
-      return { text: `Screenshot of ${(await currentUrl(label)) ?? "the page"}`, image };
+      const s = await pageState(label);
+      return { text: `Screenshot of ${s?.url ?? "the page"}`, image, journey: { op, url: s?.url ?? null, title: s?.title, navigated: false } };
     }
     case "evaluate": {
       const src = String(args.script ?? "");
@@ -310,21 +357,24 @@ export async function runAgentCommand(ws: string, op: string, args: Record<strin
         script: `const __r = await (async () => { ${body} })();\nreturn JSON.stringify(__r === undefined ? null : __r, null, 2);`,
         pageWorld: true,
       });
-      return { text: out };
+      const s = await pageState(label);
+      return { text: out, journey: { op, url: s?.url ?? null, title: s?.title, navigated: false } };
     }
     default: {
-      const body = SCRIPTS[op];
+      const body = op === "state" ? undefined : SCRIPTS[op];
       if (!body) throw new Error(`Unknown browser command "${op}"`);
       const mayNavigate = op === "click" || op === "press_key" || (op === "type" && args.submit);
       const before = mayNavigate ? await currentUrl(label) : null;
-      let text: string;
+      let step: Step;
       try {
-        text = await js(label, body, args);
+        step = JSON.parse(await js(label, body, args));
       } catch (err) {
         // The page unloading mid-script (a link click) aborts the call.
         if (!mayNavigate) throw err;
-        text = `Done (${op}); the page started navigating.`;
+        step = { text: `Done (${op}); the page started navigating.` };
       }
+      let text = step.text;
+      let s: PageState | null = null;
       if (mayNavigate) {
         // Navigation can start a beat after the event: watch briefly.
         const deadline = Date.now() + 1500;
@@ -332,13 +382,18 @@ export async function runAgentCommand(ws: string, op: string, args: Record<strin
           await new Promise((r) => setTimeout(r, 150));
           const now = await currentUrl(label);
           if (now === null || now !== before) {
-            text += "\n" + (await waitForLoad(label, before));
-            return { text };
+            s = await waitForLoad(label, before);
+            break;
           }
         }
-        text += `\nStill on ${before}`;
+        text += "\n" + (s ? loaded(s) : `Still on ${before}`);
       }
-      return { text };
+      const navigated = !!s;
+      s ??= step.url ? { url: step.url, title: step.title ?? "", ready: "" } : await pageState(label);
+      return {
+        text,
+        journey: { op, url: s?.url ?? null, title: s?.title, navigated, failed: step.failed || undefined, dialogs: step.dialogs, ...step.target },
+      };
     }
   }
 }

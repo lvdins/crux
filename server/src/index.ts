@@ -511,7 +511,17 @@ app.get("/api/connections", async (_req, res) => {
  * MCP tool → POST here → the desktop UI (which owns the native browser
  * panes) runs it → result comes back over the same WebSocket. */
 const browserHosts = new Set<WebSocket>();
-const pendingBrowser = new Map<string, { resolve: (v: any) => void; timer: ReturnType<typeof setTimeout> }>();
+// ws / term / op / t0: who asked for what and when, so page network calls
+// can be tied to the command that was running (several agents share one browser).
+interface PendingBrowser {
+  resolve: (v: any) => void;
+  timer: ReturnType<typeof setTimeout>;
+  ws: string;
+  term: string | null;
+  op: string;
+  t0: number;
+}
+const pendingBrowser = new Map<string, PendingBrowser>();
 let browserSeq = 0;
 
 app.post("/api/agent-browser/:ws", async (req, res) => {
@@ -527,7 +537,8 @@ app.post("/api/agent-browser/:ws", async (req, res) => {
       pendingBrowser.delete(id);
       resolve({ ok: false, error: "Timed out waiting for the browser (60s)" });
     }, 60_000);
-    pendingBrowser.set(id, { resolve, timer });
+    const term = typeof req.body?.term === "string" && /^[\w.:-]{1,128}$/.test(req.body.term) ? req.body.term : null;
+    pendingBrowser.set(id, { resolve, timer, ws, term, op: String(req.body?.op ?? ""), t0: Date.now() });
     host.send(JSON.stringify({ type: "browser:cmd", id, ws, op: req.body?.op, args: req.body?.args ?? {} }));
   });
   res.status(result.ok ? 200 : 400).json(result);

@@ -125,7 +125,7 @@ async function call(name, args) {
     const res = await fetch(`${BASE}/api/agent-browser/${encodeURIComponent(WORKSPACE)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ op, args: args ?? {} }),
+      body: JSON.stringify({ op, args: args ?? {}, term: process.env.CRUX_TERM }),
     });
     body = await res.json();
   } catch (err) {
