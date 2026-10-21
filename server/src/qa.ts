@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Express, Request, Response } from "express";
-import { config, currentSettings, expandHome } from "./config.js";
+import { config, qaRoot } from "./config.js";
 import { broadcastAll, sendToTerm, startTask } from "./orchestrator.js";
 
 /**
@@ -97,11 +97,7 @@ export interface Round {
 
 // --- Where things are -------------------------------------------------------
 
-/** Setting `qaRoot` (blank: $HOME/qa-runs). */
-export function qaRoot(): string {
-  const set = currentSettings().qaRoot;
-  return set ? path.resolve(expandHome(set)) : path.join(os.homedir(), "qa-runs");
-}
+export { qaRoot };
 /** Installed skills (CRUX_QA_SKILLS overrides, for tests). */
 export const skillsDir = () => process.env.CRUX_QA_SKILLS || path.join(os.homedir(), ".claude", "skills");
 const checkScript = () => path.join(skillsDir(), "qa-full-pass", "scripts", "check_round.py");

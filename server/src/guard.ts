@@ -1,8 +1,7 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import type express from "express";
-import { config, saveConfig } from "./config.js";
+import { config, qaRoot, saveConfig } from "./config.js";
 import { CRUX_HOME } from "./paths.js";
 
 /**
@@ -52,7 +51,7 @@ const SAFE = new Set(["GET", "HEAD", "OPTIONS"]);
 const ROUND_RE = /^([A-Za-z0-9._-]+)\/round-(\d+)$/;
 const WS_RE = /^[\w.-]{1,64}$/;
 
-export const qaRoot = () => process.env.QA_ROOT || path.join(os.homedir(), "qa-runs");
+export { qaRoot };
 
 /** "<target>/round-<n>" → its folder, target and number (null if malformed). */
 export function parseRound(round: string): { dir: string; target: string; n: number } | null {

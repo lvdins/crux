@@ -169,4 +169,29 @@ await test("never writes into the round folder", () => {
 });
 
 fs.rmSync(process.env.CRUX_HOME!, { recursive: true, force: true });
+await test("qaRoot: blank setting falls back; rounds stay inside it", async () => {
+  const { config } = await import("../src/config.js");
+  const guard = await import("../src/guard.js");
+  const saved = config.settings;
+  const env = process.env.QA_ROOT;
+  try {
+    process.env.QA_ROOT = "/tmp/qa-env-root";
+    for (const blank of ["", "   ", "\t"]) {
+      config.settings = { ...(saved ?? {}), qaRoot: blank } as typeof config.settings;
+      assert.equal(qa.qaRoot(), "/tmp/qa-env-root", JSON.stringify(blank));
+    }
+    config.settings = { ...(saved ?? {}), qaRoot: "~/my-qa" } as typeof config.settings;
+    assert.equal(qa.qaRoot(), path.join(os.homedir(), "my-qa"));
+    assert.equal(guard.qaRoot(), qa.qaRoot());
+    for (const r of ["../round-1", "/etc/round-1", "../../x/round-1", ".locks/round-1", "a/../b/round-1", "x/round-1/.."]) {
+      assert.equal(guard.parseRound(r), null, r);
+    }
+    assert.equal(guard.parseRound("mr-1/round-2")?.dir, path.join(qa.qaRoot(), "mr-1", "round-2"));
+  } finally {
+    config.settings = saved;
+    if (env === undefined) delete process.env.QA_ROOT;
+    else process.env.QA_ROOT = env;
+  }
+});
+
 console.log(`\n${passed} passed${process.exitCode ? ", some FAILED" : ""}`);

@@ -186,6 +186,13 @@ export function expandHome(p: string): string {
   return p;
 }
 
+/** QA rounds folder: setting `qaRoot`, else $QA_ROOT, else $HOME/qa-runs.
+ *  The one source for qa.ts, guard.ts and fixtures.ts. */
+export function qaRoot(): string {
+  const set = currentSettings().qaRoot?.trim();
+  return path.resolve(set ? expandHome(set) : process.env.QA_ROOT || path.join(os.homedir(), "qa-runs"));
+}
+
 /** Guess what a folder is from the marker files at its root. */
 export function detectKind(dir: string): RepoKind {
   const has = (name: string) => fs.existsSync(path.join(dir, name));

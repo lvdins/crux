@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { qaRoot } from "./config.js";
 import { CRUX_HOME } from "./paths.js";
 import { getSecret } from "./secrets.js";
 
@@ -76,7 +77,7 @@ const MIN_DELAY = 15_000;
 const RETRY = 60_000;
 const MAX_TIMER = 2 ** 31 - 1;
 
-export const qaRoot = () => path.resolve(process.env.QA_ROOT || path.join(os.homedir(), "qa-runs"));
+export { qaRoot };
 
 /** Active fixture per workspace. */
 const active = new Map<string, Active>();
