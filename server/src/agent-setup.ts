@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { BROWSER_SUPPORTED, config } from "./config.js";
+import { BROWSER_SUPPORTED, config, qaRoot } from "./config.js";
 import { CRUX_HOME, SERVER_URL, rootPath } from "./paths.js";
 import { leadMcpConfig } from "./orchestrator.js";
 import { accountEnv } from "./fixtures.js";
@@ -278,6 +278,8 @@ export function agentEnv(ws: string, shell: string, term: string): Record<string
     CRUX_MCP_CONFIG: leadMcpConfig(term) || (BROWSER_SUPPORTED ? mcpConfigPath(ws) : ""),
     QL_NODE: process.execPath,
     QL_BROWSER_MCP: BROWSER_MCP,
+    // QA skills write rounds here; guard and fixtures read the same folder.
+    QA_ROOT: qaRoot(),
     // Lab account switcher: the workspace's active fixture (placeholder + minted env).
     ...accountEnv(ws),
   };
