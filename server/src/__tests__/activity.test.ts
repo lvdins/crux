@@ -27,6 +27,16 @@ for (const [text, leak] of secrets) {
 }
 // Ordinary code stays readable.
 for (const text of ["token: string;", "max_tokens: 100", "const tokens = count(text)", "npm test -- auth.spec.ts"]) assert.equal(redact(text), text);
+// JWTs and long hex.
+const jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
+for (const fn of [redact, (s: string) => clean(s)]) {
+  const out = fn(`cookie=${jwt}; next`);
+  assert.ok(!out.includes("SflKxwRJ") && out.includes("[REDACTED JWT]"), `jwt leaked: ${out}`);
+}
+const hex64 = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
+assert.equal(redact(`sum ${hex64} file`), "sum [REDACTED HEX] file");
+assert.equal(redact("git show " + "a94a8fe5ccb19ba61c4c0873d391e987982fbbd3"), "git show [REDACTED HEX]"); // 40-char SHA: masked (accepted)
+for (const text of ["id 123e4567-e89b-12d3-a456-426614174000", "commit d12cdb0", "fix in 1ed0cd2c9c34 ok"]) assert.equal(redact(text), text);
 // 32 KB cap.
 const big = clean("x".repeat(100_000));
 assert.ok(big.length < 33 * 1024 && big.includes("[truncated"));

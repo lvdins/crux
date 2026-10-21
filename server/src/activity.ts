@@ -82,6 +82,10 @@ const SECRETS: [RegExp, string | ((...m: string[]) => string)][] = [
   [/\b(xox[abprs]-)[A-Za-z0-9-]{10,}/g, "$1[REDACTED]"],
   [/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, "AKIA[REDACTED]"],
   [/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi, "$1 [REDACTED]"],
+  // JWT: three base64url segments, header starts {" → eyJ.
+  [/\beyJ[\w-]{8,}\.[\w-]{8,}\.[\w-]{8,}\b/g, "[REDACTED JWT]"],
+  // Long hex (32+): API keys, session ids, sha256. A 40-char git SHA is masked too; short SHAs and dashed UUIDs stay.
+  [/\b[0-9a-f]{32,}\b/gi, "[REDACTED HEX]"],
   // KEY=value env style: API_KEY=…, GITHUB_TOKEN="…", DB_PASSWORD='…'
   [/\b([A-Z][A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|PASS|PWD|CREDENTIALS?|AUTH)[A-Z0-9_]*)=("[^"\n]*"|'[^'\n]*'|[^\s"'&;|]+)/g, "$1=[REDACTED]"],
   // password=…, access_token=…, "secret": "…" (a colon needs a quoted value, so `token: string` stays)
