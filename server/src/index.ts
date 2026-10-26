@@ -12,6 +12,7 @@ import { config, saveConfig, userConfigPath, addWorkspace, updateWorkspace, remo
 import { attachTerm, termInput, termResize, killTerm, detachAll, killAllTerms, openLog, termProcess, termTail } from "./term.js";
 import { allTeams, codexModels, initOrchestrator, noteTermClosed, noteWorkerEvent, runTool, startTask, startTeam } from "./orchestrator.js";
 import { startPreview, stopPreview, stopAllPreviews, previewStatus } from "./preview.js";
+import { getPorts, openExternal, stopPort } from "./ports.js";
 import { buildTree, sharedEndpoints } from "./tree.js";
 import { FLOW_EVENTS, fullReply, hookDetail, installAgentSetup, termTokenOk } from "./agent-setup.js";
 import { allFlows, bindTerm, graphOf, initActivity, noteHook, snapshotMsg } from "./activity.js";
@@ -306,6 +307,20 @@ app.post("/api/preview/:key/stop", (req, res) => {
 });
 app.get("/api/preview/:key/status", (req, res) => {
   res.json(previewStatus(req.params.key));
+});
+
+/* ---------- ports (sidebar) ---------- */
+
+app.get("/api/ports", async (_req, res) => {
+  res.json(await getPorts());
+});
+app.post("/api/ports/:pid/stop", async (req, res) => {
+  if (!/^\d+$/.test(req.params.pid)) return void res.sendStatus(400);
+  const status = await stopPort(Number(req.params.pid), req.body?.force === true);
+  res.status(status).json({ ok: status === 200 });
+});
+app.post("/api/open-external", (req, res) => {
+  res.sendStatus(openExternal(String(req.body?.url ?? "")) ? 204 : 400);
 });
 
 /* ---------- workspaces ---------- */
