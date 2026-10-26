@@ -21,6 +21,8 @@ interface Entry {
   buffer: string;
   subs: Set<WebSocket>;
   cwd: string;
+  /** Workspace key the terminal was opened in. */
+  repo: string;
   startedAt: number;
   /** Started as `codex …`: its conversation id is looked up for reopening. */
   codex: boolean;
@@ -116,6 +118,7 @@ export function attachTerm(
       buffer: restored,
       subs: new Set(),
       cwd,
+      repo,
       startedAt: Date.now(),
       codex: !!safeBoot?.startsWith("codex"),
       codexSession: safeBoot?.startsWith("codex resume ") ? saved?.codexSession : undefined,
@@ -167,6 +170,11 @@ function resumeIfSaved(cmd: string): string {
 export function termProcess(id: string): string | null {
   const entry = terms.get(id);
   return entry ? entry.pty.process : null;
+}
+
+/** pty (shell) pid → its terminal and workspace (ports.ts). */
+export function termPids(): Map<number, { termId: string; ws: string }> {
+  return new Map([...terms].map(([id, e]) => [e.pty.pid, { termId: id, ws: e.repo }]));
 }
 
 /** Screen output so far and how long it has been quiet (orchestrator). */
