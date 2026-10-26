@@ -21,7 +21,7 @@ const post = (path: string, body: unknown) =>
 /** Opens a localhost page in the system browser (server side: Tauri has no opener). */
 export const openExternal = (url: string) => post("/api/open-external", { url });
 
-/** Sidebar → Ports: servers started from Crux terminals. Hidden when there are none. */
+/** Sidebar → Ports: servers started from Crux terminals. Always shown, so it is easy to find. */
 export default function PortsPanel({
   labels,
   onOpen,
@@ -74,7 +74,6 @@ export default function PortsPanel({
     setPorts((ps) => ps.filter((x) => x.pid !== p.pid));
   };
 
-  if (!ports.length) return null;
   return (
     <div className="ports-panel">
       <button className="ports-head" onClick={toggle} aria-expanded={open}>
@@ -84,6 +83,7 @@ export default function PortsPanel({
       </button>
       {open && (
         <div className="ports-list">
+          {!ports.length && <div className="ports-empty">No servers running from Crux terminals</div>}
           {ports.map((p) => (
             <button
               key={p.port}
