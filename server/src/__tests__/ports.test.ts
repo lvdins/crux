@@ -71,4 +71,45 @@ assert.equal(isLocalUrl("https://example.com/"), false);
 assert.equal(isLocalUrl("file:///etc/passwd"), false);
 assert.equal(isLocalUrl("http://localhost:5173/?a=1&calc"), false);
 
+/* ---------- matching listeners to Crux terminals ---------- */
+const roots = new Map([[100, { termId: "t1", ws: "crux" }]]);
+const procs = [
+  { pid: 100, ppid: 1, command: "zsh" },
+  { pid: 200, ppid: 100, command: "node" }, // child of the shell
+  { pid: 300, ppid: 200, command: "vite" }, // grandchild
+  { pid: 400, ppid: 1, command: "postgres" }, // not ours
+];
+assert.deepEqual(
+  matchPorts(
+    [
+      { pid: 300, port: 5173 },
+      { pid: 300, port: 5173 }, // IPv6 duplicate
+      { pid: 200, port: 3000 },
+      { pid: 400, port: 5432 },
+      { pid: 100, port: 8000 }, // the shell itself (exec python -m http.server)
+    ],
+    procs,
+    roots,
+  ),
+  [
+    { port: 3000, pid: 200, command: "node", termId: "t1", ws: "crux", isShell: false },
+    { port: 5173, pid: 300, command: "vite", termId: "t1", ws: "crux", isShell: false },
+    { port: 8000, pid: 100, command: "zsh", termId: "t1", ws: "crux", isShell: true },
+  ],
+);
+// ppid cycle terminates
+assert.deepEqual(matchPorts([{ pid: 7, port: 1 }], [{ pid: 7, ppid: 8, command: "a" }, { pid: 8, ppid: 7, command: "b" }], roots), []);
+// Windows: parent pid reused by a newer process doesn't count
+assert.deepEqual(
+  matchPorts(
+    [{ pid: 900, port: 4000 }],
+    [
+      { pid: 100, ppid: 1, command: "pwsh.exe", created: 50 }, // started after its "child": pid reuse
+      { pid: 900, ppid: 100, command: "node.exe", created: 10 },
+    ],
+    roots,
+  ),
+  [],
+);
+
 console.log("ports parsers ok");

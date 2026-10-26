@@ -101,6 +101,25 @@ export function isLocalUrl(url: string): boolean {
   return /^http:\/\/(localhost|127\.0\.0\.1|\[::1\]):\d{1,5}\/[\w\-./~%]*$/.test(url);
 }
 
-export function matchPorts(_listeners: Listener[], _procs: Proc[], _roots: Map<number, { termId: string; ws: string }>): PortInfo[] {
-  return [];
+/** Each listener whose parent chain reaches a pty pid; one row per port, sorted. */
+export function matchPorts(listeners: Listener[], procs: Proc[], roots: Map<number, { termId: string; ws: string }>): PortInfo[] {
+  const byPid = new Map(procs.map((p) => [p.pid, p]));
+  const rows = new Map<number, PortInfo>();
+  for (const l of listeners) {
+    if (rows.has(l.port)) continue;
+    let pid = l.pid;
+    const seen = new Set<number>();
+    while (pid > 1 && !roots.has(pid) && !seen.has(pid)) {
+      seen.add(pid);
+      const p = byPid.get(pid);
+      if (!p) break;
+      const parent = byPid.get(p.ppid);
+      if (p.created !== undefined && parent?.created !== undefined && parent.created > p.created) break;
+      pid = p.ppid;
+    }
+    const root = roots.get(pid);
+    if (!root) continue;
+    rows.set(l.port, { port: l.port, pid: l.pid, command: byPid.get(l.pid)?.command ?? "?", termId: root.termId, ws: root.ws, isShell: roots.has(l.pid) });
+  }
+  return [...rows.values()].sort((a, b) => a.port - b.port);
 }
