@@ -4,6 +4,9 @@
  * __tests__/ports.test.ts); scanning and stopping live below them.
  */
 
+import { execFile } from "node:child_process";
+import { termPids } from "./term.js";
+
 export interface Listener {
   pid: number;
   port: number;
@@ -122,4 +125,120 @@ export function matchPorts(listeners: Listener[], procs: Proc[], roots: Map<numb
     rows.set(l.port, { port: l.port, pid: l.pid, command: byPid.get(l.pid)?.command ?? "?", termId: root.termId, ws: root.ws, isShell: roots.has(l.pid) });
   }
   return [...rows.values()].sort((a, b) => a.port - b.port);
+}
+
+/* ---------- scanning (side effects) ---------- */
+
+const WIN = process.platform === "win32";
+const WIN_PROCS =
+  "Get-CimInstance Win32_Process | ForEach-Object { \"$($_.ProcessId),$($_.ParentProcessId),$(if ($_.CreationDate) { $_.CreationDate.ToFileTimeUtc() } else { 0 }),$($_.Name)\" }";
+
+const logged = new Set<string>();
+/** stdout, or "" on failure (logged once per command). lsof exits 1 when nothing listens. */
+function run(cmd: string, args: string[]): Promise<string> {
+  return new Promise((resolve) =>
+    execFile(cmd, args, { timeout: 5000, maxBuffer: 8 << 20 }, (err, stdout) => {
+      if (err && !stdout && !(cmd === "lsof" && (err as { code?: unknown }).code === 1) && !logged.has(cmd)) {
+        logged.add(cmd);
+        console.warn(`[ports] ${cmd} failed: ${err.message}`);
+      }
+      resolve(stdout ?? "");
+    }),
+  );
+}
+
+async function scan(): Promise<PortInfo[]> {
+  const roots = termPids();
+  if (!roots.size) return [];
+  let listeners: Listener[];
+  let procs: Proc[];
+  if (WIN) {
+    const [v4, v6, ps] = await Promise.all([
+      run("netstat", ["-ano", "-p", "tcp"]),
+      run("netstat", ["-ano", "-p", "tcpv6"]),
+      run("powershell", ["-NoProfile", "-Command", WIN_PROCS]),
+    ]);
+    listeners = [...parseNetstat(v4), ...parseNetstat(v6)];
+    procs = parseWinProcs(ps);
+  } else {
+    const [ls, ps] = await Promise.all([
+      process.platform === "darwin" ? run("lsof", ["-nP", "-iTCP", "-sTCP:LISTEN", "-F", "pn"]) : run("ss", ["-ltnpH"]),
+      run("ps", ["-A", "-o", "pid=,ppid=,comm="]),
+    ]);
+    listeners = process.platform === "darwin" ? parseLsof(ls) : parseSs(ls);
+    procs = parsePs(ps);
+  }
+  return matchPorts(listeners, procs, roots);
+}
+
+/* Titles: fetched once per port+pid, in the background; shown from the next poll. */
+const titles = new Map<string, string | null>();
+async function fetchTitle(port: number): Promise<string | null> {
+  for (const host of ["127.0.0.1", "[::1]"]) {
+    try {
+      const res = await fetch(`http://${host}:${port}/`, { signal: AbortSignal.timeout(1000) });
+      if (!(res.headers.get("content-type") ?? "").includes("html")) return null;
+      return parseTitle((await res.text()).slice(0, 64_000)) ?? null;
+    } catch {
+      /* try the next host */
+    }
+  }
+  return null;
+}
+function withTitles(ports: PortInfo[]): PortInfo[] {
+  return ports.map((p) => {
+    const key = `${p.port}:${p.pid}`;
+    if (!titles.has(key)) {
+      titles.set(key, null);
+      void fetchTitle(p.port).then((t) => titles.set(key, t));
+    }
+    const title = titles.get(key);
+    return title ? { ...p, title } : p;
+  });
+}
+
+let cache = { at: 0, ports: [] as PortInfo[] };
+let inflight: Promise<PortInfo[]> | null = null;
+
+/** Last scan if younger than maxAge ms, else a new one (one at a time). */
+export function getPorts(maxAge = 2000): Promise<PortInfo[]> {
+  if (Date.now() - cache.at < maxAge) return Promise.resolve(withTitles(cache.ports));
+  inflight ??= scan()
+    .then((ports) => (cache = { at: Date.now(), ports }).ports)
+    .finally(() => (inflight = null));
+  return inflight.then(withTitles);
+}
+
+/** 200 stopped, 404 not a Crux port (any more), 409 it is the terminal's shell and force is off. */
+export async function stopPort(pid: number, force: boolean): Promise<200 | 404 | 409> {
+  const row = (await getPorts(0)).find((p) => p.pid === pid);
+  if (!row) return 404;
+  if (row.isShell && !force) return 409;
+  if (WIN) {
+    execFile("taskkill", ["/PID", String(pid), "/T", "/F"], () => {});
+  } else {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {
+      return 404;
+    }
+    setTimeout(() => {
+      try {
+        process.kill(pid, 0);
+        process.kill(pid, "SIGKILL");
+      } catch {
+        /* already gone */
+      }
+    }, 3000);
+  }
+  cache.at = 0;
+  return 200;
+}
+
+/** Opens a localhost page in the system browser; false if the URL isn't one. */
+export function openExternal(url: string): boolean {
+  if (!isLocalUrl(url)) return false;
+  if (WIN) execFile("cmd", ["/c", "start", "", url], () => {});
+  else execFile(process.platform === "darwin" ? "open" : "xdg-open", [url], () => {});
+  return true;
 }
