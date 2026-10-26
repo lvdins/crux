@@ -102,7 +102,7 @@ Both sit behind the existing `guardHttp` middleware like every `/api` route.
   `localStorage["crux.portsOpen"]` (try/catch, default open).
 - Rows as described above; workspace label muted. The list scrolls inside
   itself once taller than ~40 % of the sidebar.
-- Always visible; when empty it shows "No servers running from Crux terminals".
+- Header always visible; with no ports it stays collapsed (no empty-state text).
 - Right-click → `ContextMenu` (existing component) with the three actions.
   Stop failure → `setToast` (App.tsx). `isShell` rows confirm first, then
   retry with `force: true`.
@@ -120,7 +120,7 @@ Render `<PortsPanel … />` immediately before `<div className="side-footer">`
 In `styles.css`, next to the `.side-footer` rules, using existing tokens.
 
 ## Errors
-- Scan command missing / fails → log once, return `[]`, the section shows its empty line.
+- Scan command missing / fails → log once, return `[]`, the header stays collapsed.
 - Title fetch fails → row without title.
 - Stop on a pid no longer listed → 404, row disappears on next poll.
 

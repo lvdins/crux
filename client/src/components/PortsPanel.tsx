@@ -21,7 +21,7 @@ const post = (path: string, body: unknown) =>
 /** Opens a localhost page in the system browser (server side: Tauri has no opener). */
 export const openExternal = (url: string) => post("/api/open-external", { url });
 
-/** Sidebar → Ports: servers started from Crux terminals. Always shown, so it is easy to find. */
+/** Sidebar → Ports: servers started from Crux terminals. The header always shows; collapsed when none run. */
 export default function PortsPanel({
   labels,
   onOpen,
@@ -74,16 +74,20 @@ export default function PortsPanel({
     setPorts((ps) => ps.filter((x) => x.pid !== p.pid));
   };
 
+  // Nothing running: just the collapsed header.
+  const shown = open && ports.length > 0;
   return (
     <div className="ports-panel">
-      <button className="ports-head" onClick={toggle} aria-expanded={open}>
-        <span className={`ports-chevron ${open ? "open" : ""}`}>▸</span>
+      <button className={`ports-head ${shown ? "" : "collapsed"}`} onClick={toggle} aria-expanded={shown}>
+        <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M2.5 3.75 5 6.25l2.5-2.5" />
+        </svg>
         Ports
         <span className="ports-count">{ports.length}</span>
       </button>
-      {open && (
+      {/* Same grid-rows collapse as the sidebar's other sections (side-sub). */}
+      <div className={`ports-body ${shown ? "" : "collapsed"}`}>
         <div className="ports-list">
-          {!ports.length && <div className="ports-empty">No servers running from Crux terminals</div>}
           {ports.map((p) => (
             <button
               key={p.port}
@@ -102,7 +106,7 @@ export default function PortsPanel({
             </button>
           ))}
         </div>
-      )}
+      </div>
       {menu && (
         <ContextMenu
           x={menu.x}
