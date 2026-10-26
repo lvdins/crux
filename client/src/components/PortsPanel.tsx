@@ -10,7 +10,6 @@ export interface PortInfo {
   termId: string;
   ws: string;
   isShell: boolean;
-  title?: string;
 }
 
 const OPEN_KEY = "crux.portsOpen";
@@ -89,21 +88,35 @@ export default function PortsPanel({
       <div className={`ports-body ${shown ? "" : "collapsed"}`}>
         <div className="ports-list">
           {ports.map((p) => (
-            <button
+            <div
               key={p.port}
               className="ports-row"
-              title={`${urlOf(p)} · ${p.command} (pid ${p.pid})`}
-              onClick={() => onOpen(urlOf(p))}
               onContextMenu={(e) => {
                 e.preventDefault();
                 setMenu({ p, x: e.clientX, y: e.clientY });
               }}
             >
-              <span className="ports-dot" />
-              <span className="ports-port">:{p.port}</span>
-              <span className="ports-name">{p.title ?? p.command}</span>
-              <span className="ports-ws">{labels[p.ws] ?? p.ws}</span>
-            </button>
+              <button className="ports-open" title={`Open ${urlOf(p)} · ${p.command} (pid ${p.pid})`} onClick={() => onOpen(urlOf(p))}>
+                <span className="ports-dot" />
+                <span className="ports-port">:{p.port}</span>
+                <span className="ports-ws">{labels[p.ws] ?? p.ws}</span>
+              </button>
+              <button
+                className="ports-more"
+                title="More"
+                aria-label={`More for :${p.port}`}
+                onClick={(e) => {
+                  const r = e.currentTarget.getBoundingClientRect();
+                  setMenu({ p, x: r.right, y: r.bottom });
+                }}
+              >
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                  <circle cx="3.5" cy="8" r="1.3" />
+                  <circle cx="8" cy="8" r="1.3" />
+                  <circle cx="12.5" cy="8" r="1.3" />
+                </svg>
+              </button>
+            </div>
           ))}
         </div>
       </div>

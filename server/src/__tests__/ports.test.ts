@@ -1,6 +1,6 @@
 // Run: npx tsx server/src/__tests__/ports.test.ts
 import assert from "node:assert/strict";
-import { isLocalUrl, matchPorts, parseLsof, parseNetstat, parsePs, parseSs, parseTitle, parseWinProcs } from "../ports.js";
+import { isLocalUrl, matchPorts, parseLsof, parseNetstat, parsePs, parseSs, parseWinProcs } from "../ports.js";
 
 /* ---------- lsof -F pn: p line, then f/n pairs per fd ---------- */
 assert.deepEqual(
@@ -57,10 +57,6 @@ assert.deepEqual(parseWinProcs("4,0,0,System\r\n800,4,133000000000000000,node.ex
   { pid: 4, ppid: 0, created: 0, command: "System" },
   { pid: 800, ppid: 4, created: 133000000000000000, command: "node.exe" },
 ]);
-
-/* ---------- page title ---------- */
-assert.equal(parseTitle("<html><head><title>\n  Crux &amp; Dev </title></head>"), "Crux & Dev");
-assert.equal(parseTitle("<html>no title</html>"), undefined);
 
 /* ---------- localhost-only URL guard ---------- */
 assert.equal(isLocalUrl("http://localhost:5173/"), true);

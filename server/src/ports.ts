@@ -26,7 +26,6 @@ export interface PortInfo {
   ws: string;
   /** The listener is the pty shell itself: stopping it ends the terminal. */
   isShell: boolean;
-  title?: string;
 }
 
 const portOf = (addr: string) => Number(addr.slice(addr.lastIndexOf(":") + 1)) || 0;
@@ -88,15 +87,6 @@ export function parseWinProcs(out: string): Proc[] {
     if (m) res.push({ pid: Number(m[1]), ppid: Number(m[2]), created: Number(m[3]), command: m[4].trim() });
   }
   return res;
-}
-
-const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', "#39": "'", apos: "'" };
-
-export function parseTitle(html: string): string | undefined {
-  const m = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-  if (!m) return undefined;
-  const title = m[1].replace(/&(amp|lt|gt|quot|#39|apos);/g, (_, e: string) => ENTITIES[e]).replace(/\s+/g, " ").trim();
-  return title ? title.slice(0, 80) : undefined;
 }
 
 /** Only plain localhost pages: the URL ends up on a command line (`cmd /c start`). */
@@ -171,42 +161,16 @@ async function scan(): Promise<PortInfo[]> {
   return matchPorts(listeners, procs, roots);
 }
 
-/* Titles: fetched once per port+pid, in the background; shown from the next poll. */
-const titles = new Map<string, string | null>();
-async function fetchTitle(port: number): Promise<string | null> {
-  for (const host of ["127.0.0.1", "[::1]"]) {
-    try {
-      const res = await fetch(`http://${host}:${port}/`, { signal: AbortSignal.timeout(1000) });
-      if (!(res.headers.get("content-type") ?? "").includes("html")) return null;
-      return parseTitle((await res.text()).slice(0, 64_000)) ?? null;
-    } catch {
-      /* try the next host */
-    }
-  }
-  return null;
-}
-function withTitles(ports: PortInfo[]): PortInfo[] {
-  return ports.map((p) => {
-    const key = `${p.port}:${p.pid}`;
-    if (!titles.has(key)) {
-      titles.set(key, null);
-      void fetchTitle(p.port).then((t) => titles.set(key, t));
-    }
-    const title = titles.get(key);
-    return title ? { ...p, title } : p;
-  });
-}
-
 let cache = { at: 0, ports: [] as PortInfo[] };
 let inflight: Promise<PortInfo[]> | null = null;
 
 /** Last scan if younger than maxAge ms, else a new one (one at a time). */
 export function getPorts(maxAge = 2000): Promise<PortInfo[]> {
-  if (Date.now() - cache.at < maxAge) return Promise.resolve(withTitles(cache.ports));
+  if (Date.now() - cache.at < maxAge) return Promise.resolve(cache.ports);
   inflight ??= scan()
     .then((ports) => (cache = { at: Date.now(), ports }).ports)
     .finally(() => (inflight = null));
-  return inflight.then(withTitles);
+  return inflight;
 }
 
 /** 200 stopped, 404 not a Crux port (any more), 409 it is the terminal's shell and force is off. */
