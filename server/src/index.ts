@@ -1,5 +1,6 @@
 // First: on Windows every child process must start hidden (see winproc.ts).
 import "./winproc.js";
+import "./appimage.js";
 import express from "express";
 import http from "node:http";
 import { execFile } from "node:child_process";

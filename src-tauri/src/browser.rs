@@ -68,7 +68,18 @@ pub fn browser_reveal_download(path: String) -> Result<(), String> {
     if !file.starts_with(&downloads) || !file.exists() {
         return Err("Not a download".into());
     }
+    #[cfg(target_os = "macos")]
     std::process::Command::new("/usr/bin/open").arg("-R").arg(&file).spawn().map_err(|e| e.to_string())?;
+    #[cfg(target_os = "windows")]
+    std::process::Command::new("explorer").arg(format!("/select,{}", file.display())).spawn().map_err(|e| e.to_string())?;
+    // Linux file managers have no common "select this file": open its folder.
+    #[cfg(target_os = "linux")]
+    {
+        let mut cmd = std::process::Command::new("xdg-open");
+        cmd.arg(file.parent().unwrap_or(downloads.as_path()));
+        crate::without_appimage_env(&mut cmd);
+        cmd.spawn().map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 

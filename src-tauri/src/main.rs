@@ -626,6 +626,32 @@ fn region_capture(file: &std::path::Path) {
     let _ = Command::new("/usr/sbin/screencapture").args(["-i", "-x"]).arg(file).status();
 }
 
+/// Linux AppImage: its runtime points LD_LIBRARY_PATH, PATH, XDG_DATA_DIRS…
+/// into the mounted image ($APPDIR). Desktop tools started from here would
+/// load Crux's bundled libraries and crash, so drop those entries for them.
+#[cfg(target_os = "linux")]
+pub fn without_appimage_env(cmd: &mut Command) {
+    let Some(app_dir) = std::env::var_os("APPDIR").map(|d| d.to_string_lossy().trim_end_matches('/').to_string()) else {
+        return;
+    };
+    if app_dir.is_empty() {
+        return;
+    }
+    let inside = |p: &str| p == app_dir || p.starts_with(&format!("{app_dir}/"));
+    for (key, value) in std::env::vars_os() {
+        let value = value.to_string_lossy();
+        if !value.contains(app_dir.as_str()) {
+            continue;
+        }
+        let kept: Vec<&str> = value.split(':').filter(|p| !p.is_empty() && !inside(*p)).collect();
+        if kept.is_empty() {
+            cmd.env_remove(&key);
+        } else {
+            cmd.env(&key, kept.join(":"));
+        }
+    }
+}
+
 /// Linux: whichever region screenshot tool the desktop has.
 #[cfg(target_os = "linux")]
 fn region_capture(file: &std::path::Path) {
@@ -638,7 +664,10 @@ elif command -v maim >/dev/null; then maim -s "$f"
 elif command -v scrot >/dev/null; then scrot -s "$f"
 elif command -v import >/dev/null; then import "$f"
 fi"#;
-    let _ = Command::new("sh").args(["-c", PICK, "crux-capture"]).arg(file).status();
+    let mut cmd = Command::new("sh");
+    cmd.args(["-c", PICK, "crux-capture"]).arg(file);
+    without_appimage_env(&mut cmd);
+    let _ = cmd.status();
     // An empty file (cancelled flameshot) is no screenshot.
     if std::fs::metadata(file).map(|m| m.len() == 0).unwrap_or(false) {
         let _ = std::fs::remove_file(file);

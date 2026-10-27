@@ -76,9 +76,14 @@ export function attachTerm(
     const shell = WIN ? windowsShell() : process.env.SHELL || (process.platform === "darwin" ? "/bin/zsh" : "/bin/bash");
     // Strip Claude-session markers: if the Crux server itself was started
     // from a Claude Code session, child shells would otherwise be treated as
-    // nested sessions (transcript saving off, etc.).
+    // nested sessions (transcript saving off, etc.). Crux's own launch settings
+    // stay out too: a Crux started from one of these shells would otherwise
+    // take the installed app's root, port or data folder. Agents get what they
+    // need (CRUX_URL, token…) from agentEnv below.
     const env = Object.fromEntries(
-      Object.entries(process.env).filter(([key]) => !/^CLAUDE/i.test(key)),
+      Object.entries(process.env).filter(
+        ([key]) => !/^CLAUDE/i.test(key) && !/^(CRUX_(ROOT|PORT|HOME|CONFIG|FRESH)|VITE_CRUX_\w+)$/.test(key),
+      ),
     ) as Record<string, string>;
     // Boot tabs run the command as part of the shell invocation — typing it
     // into an interactive shell races fancy prompt init (p10k discards

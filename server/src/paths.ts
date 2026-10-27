@@ -23,13 +23,16 @@ export const SERVER_URL = `http://127.0.0.1:${PORT}`;
 
 /**
  * Apps launched from Finder get a bare PATH (/usr/bin:/bin:…), so git, uv,
- * claude and codex would be "missing". Ask the user's login shell for the
- * PATH it really uses.
+ * claude and codex would be "missing". Linux desktop launchers do include
+ * /usr/local/bin but not what the profile adds (nvm, ~/.local/bin…). Always
+ * ask the user's login shell for the PATH it really uses, then keep whatever
+ * the app was started with after it.
  */
 export function adoptLoginShellPath(): void {
   // Windows apps get the user's full PATH already.
   if (process.platform === "win32") return;
-  if (process.env.PATH?.includes("/opt/homebrew/bin") || process.env.PATH?.includes("/usr/local/bin")) return;
+  const merge = (...lists: (string | undefined)[]) =>
+    [...new Set(lists.flatMap((l) => (l ?? "").split(":")).filter(Boolean))].join(":");
   const shell = process.env.SHELL || (process.platform === "darwin" ? "/bin/zsh" : "/bin/bash");
   try {
     const out = execFileSync(shell, ["-ilc", 'printf "\\n__QLPATH__%s\\n" "$PATH"'], {
@@ -39,10 +42,10 @@ export function adoptLoginShellPath(): void {
     });
     const line = out.split("\n").find((l) => l.startsWith("__QLPATH__"));
     const found = line?.slice("__QLPATH__".length).trim();
-    if (found) process.env.PATH = found;
+    if (found) process.env.PATH = merge(found, process.env.PATH);
   } catch {
-    // Keep the bare PATH plus the usual install locations.
-    process.env.PATH = ["/opt/homebrew/bin", "/usr/local/bin", `${process.env.HOME}/.local/bin`, process.env.PATH].join(":");
+    // Keep the PATH plus the usual install locations.
+    process.env.PATH = merge("/opt/homebrew/bin", "/usr/local/bin", `${process.env.HOME}/.local/bin`, process.env.PATH);
   }
 }
 
