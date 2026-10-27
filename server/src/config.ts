@@ -60,6 +60,8 @@ export interface Settings {
   quickAsk: boolean;
   /** Start on the Home screen instead of the last view. */
   openHome: boolean;
+  /** The session tab bar above the chats. */
+  sessionBar: boolean;
   /** The session tab bar lists every workspace's chats (off: this workspace's). */
   tabsAll: boolean;
   /** Sidebar → Sessions (past sessions of every workspace). */
@@ -83,11 +85,16 @@ export const VIEW_KEYS = [
   "writeGuard",
 ] as const;
 /** Personal preferences: kept when the mode changes. */
-export const PREF_KEYS = ["askChatName", "confirmClose", "notifyAgent", "notifyPipeline", "keepRunning", "quickAsk", "openHome", "tabsAll", "sessionsView"] as const;
+export const PREF_KEYS = ["askChatName", "confirmClose", "notifyAgent", "notifyPipeline", "keepRunning", "quickAsk", "openHome", "sessionBar", "tabsAll", "sessionsView"] as const;
+/** QA-only parts: off (and hidden in Settings) in Regular mode. */
+export const QA_KEYS = [
+  "docPreview", "tests", "coverage", "pipelines", "qaRuns", "connections", "connCoverage", "connGraph", "flow", "labAccounts", "writeGuard", "notifyPipeline",
+] as const;
+const QA_OFF = Object.fromEntries(QA_KEYS.map((k) => [k, false])) as Record<(typeof QA_KEYS)[number], false>;
 export const SETTING_KEYS = [...VIEW_KEYS, ...PREF_KEYS] as const;
 export const DEFAULT_CHATS = ["pick", "claude", "codex", "shell"] as const;
 
-const PREFS = { jiraProject: "", qaRoot: "", defaultChat: "pick", askChatName: true, confirmClose: true, notifyAgent: true, notifyPipeline: true, keepRunning: true, quickAsk: true, openHome: true, tabsAll: true, sessionsView: true } as const;
+const PREFS = { jiraProject: "", qaRoot: "", defaultChat: "pick", askChatName: true, confirmClose: true, notifyAgent: true, notifyPipeline: true, keepRunning: true, quickAsk: true, openHome: true, sessionBar: true, tabsAll: true, sessionsView: true } as const;
 const views = (on: boolean) => Object.fromEntries(VIEW_KEYS.map((k) => [k, on])) as Record<(typeof VIEW_KEYS)[number], boolean>;
 export const MODE_PRESETS: Record<Settings["mode"], Settings> = {
   qa: { mode: "qa", ...views(true), ...PREFS },
@@ -106,7 +113,8 @@ export function currentSettings(): Settings {
   const { qaPanels, ...saved } = (config.settings ?? {}) as Partial<Settings> & { qaPanels?: boolean };
   // Before 0.1.11 one "QA panels" switch covered these tabs.
   const legacy = qaPanels === false ? { docPreview: false, tests: false, coverage: false, pipelines: false } : {};
-  return { ...MODE_PRESETS[saved.mode ?? "qa"], ...legacy, ...saved, ...(BROWSER_SUPPORTED ? {} : NO_BROWSER) };
+  const regular = saved.mode === "regular" ? QA_OFF : {};
+  return { ...MODE_PRESETS[saved.mode ?? "qa"], ...legacy, ...saved, ...regular, ...(BROWSER_SUPPORTED ? {} : NO_BROWSER) };
 }
 
 // Bundled defaults; used only to seed a first-run user config with the repos

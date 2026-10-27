@@ -62,8 +62,14 @@
 }
 .modal .settings-nav button:hover { color: var(--ink); background: var(--bg); }
 .modal .settings-nav button.on { color: var(--ink); background: var(--accent-soft); font-weight: 700; }
-/* Mode sits last and quieter */
-.modal .settings-nav button:last-child { margin-top: auto; font-size: 12px; }
+/* one highlight that springs to the selected page (SettingsModal) */
+.settings-nav.has-glide { position: relative; }
+.settings-nav-glide {
+  position: absolute; top: 0; left: 0; width: 0; height: 0; border-radius: 7px; pointer-events: none;
+  background: var(--accent-soft); z-index: 0;
+}
+.modal .settings-nav.has-glide button { position: relative; z-index: 1; transition: color 160ms ease, background 160ms ease; }
+.modal .settings-nav.has-glide button.on { background: transparent; }
 .settings-page { overflow-y: auto; min-height: 380px; padding-right: 2px; }
 .settings-page > :first-child, .settings-page > div:first-child > .settings-section { margin-top: 0; }
 .settings-row.child { padding-left: 30px; }
@@ -100,7 +106,6 @@
 @media (max-width: 600px) {
   .settings-body { grid-template-columns: 1fr; }
   .settings-nav { flex-direction: row; overflow-x: auto; border-right: none; border-bottom: 1px solid var(--line); padding: 0 0 6px; }
-  .modal .settings-nav button:last-child { margin-top: 0; }
 }
 
 /* sidebar: a chat whose agent finished or needs input */
@@ -137,7 +142,7 @@
 /* Settings → Appearance */
 .appearance-inline { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .appearance-inline.wrap { flex-wrap: wrap; justify-content: flex-end; max-width: 330px; }
-.settings-page > .appearance-inline { display: flex; }
+.settings-page > .appearance-inline, .settings-page-in > .appearance-inline { display: flex; }
 .appearance-gap { margin-top: 8px; }
 .settings-input.appearance-select { width: auto; padding: 5px 8px; font-size: 12.5px; }
 .settings-input.appearance-num { width: 62px; padding: 5px 8px; font-size: 12.5px; }
@@ -151,3 +156,55 @@
   width: 30px; height: 26px; padding: 2px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); cursor: pointer;
 }
 .appearance-override { flex-wrap: wrap; }
+
+/* ---------- Appearance: accent swatches, folded fine-tuning ---------- */
+.appearance-swatches { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.appearance-swatch {
+  width: 20px; height: 20px; border-radius: 50%; padding: 0; border: 0; cursor: pointer; position: relative;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25); transition: transform 120ms ease, box-shadow 120ms ease;
+}
+.appearance-swatch:hover { transform: scale(1.1); }
+.appearance-swatch:active { transform: scale(0.94); }
+.appearance-swatch.on { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--ink-soft); }
+/* the theme's own accent: half page, half accent */
+.appearance-swatch.theme { background: linear-gradient(135deg, var(--surface-2) 50%, var(--accent) 50%); }
+.appearance-swatch.custom { background: conic-gradient(#ef4444, #f59e0b, #10b981, #06b6d4, #7c5cff, #ec4899, #ef4444); overflow: hidden; }
+.appearance-swatch.custom input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+.settings-more > summary, .settings-advanced > summary {
+  list-style: none; cursor: pointer; user-select: none; font-size: 12.5px; color: var(--ink-soft);
+  display: flex; align-items: center; gap: 6px;
+}
+.settings-more > summary::-webkit-details-marker, .settings-advanced > summary::-webkit-details-marker { display: none; }
+.settings-more > summary::before, .settings-advanced > summary::before {
+  content: ""; width: 5px; height: 5px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg); transition: transform 200ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.settings-more[open] > summary::before, .settings-advanced[open] > summary::before { transform: rotate(45deg); }
+.settings-more > summary:hover, .settings-advanced > summary:hover { color: var(--ink); }
+.settings-more > summary { padding: 10px 12px; background: var(--bg); border-top: 1px solid var(--line); }
+.settings-more > .settings-fold > .settings-row { border-top: 1px solid var(--line); }
+.settings-advanced { margin-top: 22px; }
+.settings-advanced > summary { padding: 4px 0; }
+
+/* ---------- motion: pages, folds, switches, choices ---------- */
+:root {
+  /* slightly under-damped spring (damping 0.72, response 0.32s) for small physical things */
+  --spring-bounce: linear(0, 0.046 3%, 0.155 7%, 0.295 10%, 0.442 13%, 0.581 17%, 0.703 20%, 0.804 23%, 0.884 27%,
+    0.944 30%, 0.986 33%, 1.013 37%, 1.029 40%, 1.037 43%, 1.038 47%, 1.036 50%, 1.026 57%, 1.015 63%, 1.007 70%,
+    1.002 77%, 1 80%, 0.999 90%, 1);
+}
+.settings-page-in { animation: settings-page-in var(--spring-time) var(--spring) both; }
+.smooth-height { overflow: hidden; }
+/* the first-child margin rule, one level down */
+.settings-page-in > :first-child, .settings-page-in > div:first-child > .settings-section { margin-top: 0; }
+@keyframes settings-page-in { from { opacity: 0; transform: translateY(6px); } }
+.settings-switch { transition: background 0.2s ease; }
+.settings-switch::after { transition: transform 0.4s var(--spring-bounce), width 0.2s ease; }
+.settings-switch:active:not(:disabled)::after { width: 19px; }
+.settings-switch:checked:active:not(:disabled)::after { transform: translateX(11px); }
+.settings-row { transition: opacity 200ms ease, background 160ms ease; }
+.modal .settings-choice button, .modal .settings-mode {
+  transition: border-color 160ms ease, box-shadow 220ms var(--spring), color 160ms ease, transform 120ms ease;
+}
+.modal .settings-choice button:active, .modal .settings-mode:active { transform: scale(0.97); }
+.settings-fold { overflow: hidden; }

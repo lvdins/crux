@@ -76,6 +76,8 @@ export interface Settings {
   keepRunning: boolean;
   quickAsk: boolean;
   openHome: boolean;
+  /** The session tab bar above the chats. */
+  sessionBar: boolean;
   /** The session tab bar lists every workspace's chats (off: this workspace's). */
   tabsAll: boolean;
   /** Sidebar → Sessions (past sessions of every workspace). */
@@ -94,7 +96,7 @@ export const QA_SETTINGS: Settings = {
   mode: "qa",
   docPreview: true, tests: true, coverage: true, pipelines: true, browser: true, network: true, picker: true, qaRuns: true,
   connections: true, connCoverage: true, connGraph: true, jira: true, flow: true, labAccounts: true, writeGuard: true,
-  defaultChat: "pick", askChatName: true, confirmClose: true, notifyAgent: true, notifyPipeline: true, keepRunning: true, quickAsk: true, openHome: true, tabsAll: true, sessionsView: true, jiraProject: "", qaRoot: "",
+  defaultChat: "pick", askChatName: true, confirmClose: true, notifyAgent: true, notifyPipeline: true, keepRunning: true, quickAsk: true, openHome: true, sessionBar: true, tabsAll: true, sessionsView: true, jiraProject: "", qaRoot: "",
 };
 
 // Flow view: the live agent flowchart (copied from server/src/activity.ts).

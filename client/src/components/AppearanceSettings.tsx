@@ -30,6 +30,14 @@ const APP_THEMES: [AppTheme, string][] = [
   ["cyberpunk", "Cyberpunk"],
   ["unicorn", "Unicorn"],
 ];
+// Picking a theme brings its terminal colours along, unless you chose your own.
+const THEME_SCHEME: Partial<Record<AppTheme, string>> = {
+  "crux-dark": "crux-dark",
+  "crux-light": "solarized-light",
+  cyberpunk: "cyberpunk-neon",
+  unicorn: "unicorn-rainbow",
+};
+const ACCENTS = ["#7c5cff", "#3b82f6", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#ec4899"];
 const FONTS = ["SF Mono", "Menlo", "Monaco", "JetBrains Mono", "Fira Code", "Cascadia Code", "Source Code Pro", "IBM Plex Mono", "Hack", "Consolas"];
 const CURSORS: [CursorStyle, string][] = [["block", "Block"], ["bar", "Bar"], ["underline", "Underline"]];
 const BG_KINDS: [Background["kind"], string][] = [
@@ -107,6 +115,43 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
       </span>
       {children}
     </div>
+  );
+}
+
+/** Fine-tuning, folded away until asked for. Opens and shuts with a spring. */
+export function More({ label, className = "settings-more", children }: { label: string; className?: string; children: React.ReactNode }) {
+  const ref = useRef<HTMLDetailsElement>(null);
+  const toggle = (e: React.MouseEvent) => {
+    const d = ref.current;
+    const body = d?.querySelector<HTMLElement>(":scope > .settings-fold");
+    if (!d || !body || document.documentElement.hasAttribute("data-reduce-motion")) return;
+    e.preventDefault();
+    const opening = !d.open;
+    // Start from the current height, so a click mid-fold turns it around.
+    const from = d.open ? body.getBoundingClientRect().height : 0;
+    body.getAnimations().forEach((a) => a.cancel());
+    d.open = true;
+    const to = opening ? body.scrollHeight : 0;
+    const frames = [
+      { height: `${from}px`, opacity: opening ? 0 : 1 },
+      { height: `${to}px`, opacity: opening ? 1 : 0 },
+    ];
+    const spring = getComputedStyle(document.documentElement).getPropertyValue("--spring").trim();
+    let anim: Animation;
+    try {
+      anim = body.animate(frames, { duration: 380, easing: spring || "ease-out" });
+    } catch {
+      anim = body.animate(frames, { duration: 300, easing: "cubic-bezier(0.32, 0.72, 0, 1)" });
+    }
+    anim.onfinish = () => {
+      if (!opening) d.open = false;
+    };
+  };
+  return (
+    <details className={className} ref={ref}>
+      <summary onClick={toggle}>{label}</summary>
+      <div className="settings-fold">{children}</div>
+    </details>
   );
 }
 
@@ -356,6 +401,11 @@ export default function AppearanceSettings({ settings, onChange }: { settings: S
     }
   };
 
+  const pickTheme = (theme: AppTheme) => {
+    const follows = look.terminalScheme === (THEME_SCHEME[look.theme] ?? look.terminalScheme);
+    const scheme = THEME_SCHEME[theme];
+    patch({ theme, ...(follows && scheme ? { terminalScheme: scheme } : {}) });
+  };
   const bgStyle = (p: Partial<BackgroundStyle>) => patch({ backgroundStyle: { ...look.backgroundStyle, ...p } });
   const playlist: Playlist = look.playlist ?? { ids: [], every: 15, order: "shuffle" };
   const font = look.font;
@@ -364,28 +414,52 @@ export default function AppearanceSettings({ settings, onChange }: { settings: S
     <>
       {error && <p className="settings-note warn first">{error}</p>}
 
-      <div className="settings-section">App</div>
+      <div className="settings-section">Theme</div>
       <div className="settings-choice">
         {APP_THEMES.map(([id, label]) => (
-          <button key={id} className={look.theme === id ? "on" : ""} onClick={() => patch({ theme: id })}>
+          <button key={id} className={look.theme === id ? "on" : ""} onClick={() => pickTheme(id)}>
             {label}
           </button>
         ))}
       </div>
       <div className="settings-list appearance-gap">
-        <Row label="Accent colour" hint={look.accent ? look.accent : "The theme's own accent."}>
-          <span className="appearance-inline">
-            <input type="color" value={look.accent ?? "#7c5cff"} onChange={(e) => patch({ accent: e.target.value })} />
-            <button className="settings-btn-sm" disabled={!look.accent} onClick={() => patch({ accent: undefined })}>
-              Theme default
-            </button>
+        <Row label="Accent">
+          <span className="appearance-swatches" role="radiogroup" aria-label="Accent">
+            <button
+              role="radio"
+              aria-checked={!look.accent}
+              className={`appearance-swatch theme ${!look.accent ? "on" : ""}`}
+              title="The theme's own accent"
+              onClick={() => patch({ accent: undefined })}
+            />
+            {ACCENTS.map((c) => (
+              <button
+                key={c}
+                role="radio"
+                aria-checked={look.accent === c}
+                className={`appearance-swatch ${look.accent === c ? "on" : ""}`}
+                style={{ background: c }}
+                title={c}
+                onClick={() => patch({ accent: c })}
+              />
+            ))}
+            <label className={`appearance-swatch custom ${look.accent && !ACCENTS.includes(look.accent) ? "on" : ""}`} title="Pick any colour">
+              <input type="color" value={look.accent ?? "#7c5cff"} onChange={(e) => patch({ accent: e.target.value })} />
+            </label>
           </span>
         </Row>
+        <label className="settings-row">
+          <span className="settings-text">
+            <b>Reduce motion</b>
+            <span>Still frames instead of animation. Also on when macOS asks for less motion.</span>
+          </span>
+          <input type="checkbox" className="settings-switch" checked={look.reduceMotion} onChange={(e) => patch({ reduceMotion: e.target.checked })} />
+        </label>
       </div>
 
       <div className="settings-section">Terminal</div>
       <div className="settings-list">
-        <Row label="Colour scheme">
+        <Row label="Colours" hint={look.terminalScheme === THEME_SCHEME[look.theme] ? "Matches the theme." : undefined}>
           <span className="appearance-inline">
             <select className="settings-input appearance-select" value={look.terminalScheme} onChange={(e) => patch({ terminalScheme: e.target.value })}>
               {schemeOptions(look).map(([id, name]) => (
@@ -417,6 +491,7 @@ export default function AppearanceSettings({ settings, onChange }: { settings: S
         <Row label="Size">
           <Slider value={font.size ?? 12.5} min={10} max={24} step={0.5} unit="px" onChange={(size) => patch({ font: { ...font, size } })} />
         </Row>
+        <More label="Line height, ligatures, cursor">
         <Row label="Line height">
           <Slider value={font.lineHeight ?? 1} min={1} max={2} step={0.05} onChange={(lineHeight) => patch({ font: { ...font, lineHeight } })} />
         </Row>
@@ -446,6 +521,7 @@ export default function AppearanceSettings({ settings, onChange }: { settings: S
             </label>
           </span>
         </Row>
+        </More>
       </div>
 
       <div className="settings-section">Background</div>
@@ -453,6 +529,37 @@ export default function AppearanceSettings({ settings, onChange }: { settings: S
         <Row label="Background">
           <BackgroundFields value={look.background} onChange={(background) => patch({ background })} onError={fail} />
         </Row>
+        {look.background.kind !== "none" && (
+          <Row label="Dim" hint="A dark layer over it, so text stays readable.">
+            <Slider value={look.backgroundStyle.dim} min={0} max={90} unit="%" onChange={(dim) => bgStyle({ dim })} />
+          </Row>
+        )}
+        {look.background.kind !== "none" && (
+          <ContrastWarning
+            fg={getScheme(look.terminalScheme, look).foreground}
+            base={getScheme(look.terminalScheme, look).background}
+            background={look.background}
+            style={look.backgroundStyle}
+            onRaiseDim={(dim) => bgStyle({ dim })}
+          />
+        )}
+        {look.background.kind !== "none" && (
+          <More label={look.background.kind === "wild" ? "Fit, opacity, blur, playlist" : "Fit, opacity, blur"}>
+            <Row label="Fit">
+              <select className="settings-input appearance-select" value={look.backgroundStyle.fit} onChange={(e) => bgStyle({ fit: e.target.value as BgFit })}>
+                {FITS.map(([id, label]) => (
+                  <option key={id} value={id}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </Row>
+            <Row label="Opacity">
+              <Slider value={look.backgroundStyle.opacity} min={0} max={100} unit="%" onChange={(opacity) => bgStyle({ opacity })} />
+            </Row>
+            <Row label="Blur">
+              <Slider value={look.backgroundStyle.blur} min={0} max={20} unit="px" onChange={(blur) => bgStyle({ blur })} />
+            </Row>
         {look.background.kind === "wild" && (
           <Row label="Playlist" hint={playlist.ids.length ? `${playlist.ids.length} in rotation` : "Off: always the one above."}>
             <span className="appearance-inline wrap">
@@ -491,53 +598,20 @@ export default function AppearanceSettings({ settings, onChange }: { settings: S
             </span>
           </Row>
         )}
-        {look.background.kind !== "none" && (
-          <>
-            <Row label="Fit">
-              <select className="settings-input appearance-select" value={look.backgroundStyle.fit} onChange={(e) => bgStyle({ fit: e.target.value as BgFit })}>
-                {FITS.map(([id, label]) => (
-                  <option key={id} value={id}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </Row>
-            <Row label="Opacity">
-              <Slider value={look.backgroundStyle.opacity} min={0} max={100} unit="%" onChange={(opacity) => bgStyle({ opacity })} />
-            </Row>
-            <Row label="Blur">
-              <Slider value={look.backgroundStyle.blur} min={0} max={20} unit="px" onChange={(blur) => bgStyle({ blur })} />
-            </Row>
-            <Row label="Dim" hint="A dark layer over it, so text stays readable.">
-              <Slider value={look.backgroundStyle.dim} min={0} max={90} unit="%" onChange={(dim) => bgStyle({ dim })} />
-            </Row>
-          </>
+            {look.background.kind === "wild" && (
+              <label className="settings-row">
+                <span className="settings-text">
+                  <b>React to agent state</b>
+                  <span>Speeds up while an agent works and flashes when it needs you.</span>
+                </span>
+                <input type="checkbox" className="settings-switch" checked={look.reactToState} onChange={(e) => patch({ reactToState: e.target.checked })} />
+              </label>
+            )}
+          </More>
         )}
-        {look.background.kind !== "none" && (
-          <ContrastWarning
-            fg={getScheme(look.terminalScheme, look).foreground}
-            base={getScheme(look.terminalScheme, look).background}
-            background={look.background}
-            style={look.backgroundStyle}
-            onRaiseDim={(dim) => bgStyle({ dim })}
-          />
-        )}
-        <label className="settings-row">
-          <span className="settings-text">
-            <b>React to agent state</b>
-            <span>Wild backgrounds speed up while an agent works and flash when it needs you.</span>
-          </span>
-          <input type="checkbox" className="settings-switch" checked={look.reactToState} onChange={(e) => patch({ reactToState: e.target.checked })} />
-        </label>
-        <label className="settings-row">
-          <span className="settings-text">
-            <b>Reduce motion</b>
-            <span>Still frames instead of animation. Also on when macOS asks for less motion.</span>
-          </span>
-          <input type="checkbox" className="settings-switch" checked={look.reduceMotion} onChange={(e) => patch({ reduceMotion: e.target.checked })} />
-        </label>
       </div>
 
+      <More className="settings-advanced" label="Advanced: looks per chat kind and workspace, theme files">
       <div className="settings-section">Per chat kind</div>
       <div className="settings-list">
         {KINDS.map(([kind, label]) => (
@@ -628,6 +702,7 @@ export default function AppearanceSettings({ settings, onChange }: { settings: S
           Restore Crux Dark
         </button>
       </div>
+      </More>
       {notice && <p className="settings-note">{notice}</p>}
     </>
   );
