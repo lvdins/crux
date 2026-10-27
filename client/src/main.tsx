@@ -11,7 +11,11 @@ import TrayPanel from "./components/TrayPanel";
 import "@fontsource-variable/roboto";
 import "./styles.css";
 import "./themes.css";
+import { installSmoothModals } from "./smoothModals";
 import { initTheme } from "./theme";
+
+// Dialogs ease to their new height instead of jumping.
+installSmoothModals();
 
 // The ⌥Space window and the menu bar panel load this same page with
 // __CRUX_QUICK__ / __CRUX_TRAY__ set (main.rs).
@@ -21,6 +25,15 @@ if (quick) document.documentElement.classList.add("quick-window");
 if (tray) document.documentElement.classList.add("tray-window");
 // Saved appearance (theme, accent, motion) on <html> before the first paint.
 initTheme();
+
+// A file dropped anywhere nothing handles it would make the WebView open it in
+// place of the app (an image fills the window, with no way back). Swallow it.
+for (const type of ["dragover", "drop"] as const) {
+  window.addEventListener(type, (e) => {
+    const types = Array.from(e.dataTransfer?.types ?? []);
+    if (types.includes("Files") || types.some((t) => t.startsWith("image/") || t === "text/uri-list" || t === "public.file-url")) e.preventDefault();
+  });
+}
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>{quick ? <QuickAsk /> : tray ? <TrayPanel /> : <App />}</React.StrictMode>,

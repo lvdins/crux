@@ -332,7 +332,24 @@ export default function Term({
   // and their paths are pasted in, which is how Claude Code attaches images.
   const [drop, setDrop] = useState<null | "over" | "saving" | "failed">(null);
   const depth = useRef(0);
-  const hasFiles = (e: DragEvent) => e.dataTransfer.types.includes("Files");
+  // macOS hands drags over in different shapes: "Files" (Finder), a bare image
+  // type (the screenshot thumbnail, some apps) or only a file:// URL.
+  const hasFiles = (e: DragEvent) => {
+    const types = Array.from(e.dataTransfer.types ?? []);
+    return (
+      types.includes("Files") ||
+      types.some((t) => t.startsWith("image/") || t === "public.file-url") ||
+      Array.from(e.dataTransfer.items ?? []).some((i) => i.kind === "file") ||
+      /^file:\/\//m.test(e.dataTransfer.getData("text/uri-list"))
+    );
+  };
+  /** Paths of files given only as file:// URLs: these are pasted in as they are. */
+  const droppedPaths = (e: DragEvent) =>
+    e.dataTransfer
+      .getData("text/uri-list")
+      .split(/\r?\n/)
+      .filter((u) => u.startsWith("file://"))
+      .map((u) => decodeURIComponent(new URL(u).pathname));
 
   const attach = async (files: File[]) => {
     setDrop("saving");
@@ -386,9 +403,16 @@ export default function Term({
         if (!hasFiles(e)) return;
         e.preventDefault();
         depth.current = 0;
-        const files = [...e.dataTransfer.files];
-        if (files.length) void attach(files);
-        else setDrop(null);
+        let files = Array.from(e.dataTransfer.files ?? []);
+        if (!files.length) files = Array.from(e.dataTransfer.items ?? []).map((i) => (i.kind === "file" ? i.getAsFile() : null)).filter((f): f is File => !!f);
+        if (files.length) return void attach(files);
+        const paths = droppedPaths(e);
+        const term = cache.get(id)?.term;
+        if (paths.length && term) {
+          term.paste(paths.map((p) => p.replace(/([^\w/.-])/g, "\\$1")).join(" ") + " ");
+          term.focus();
+        }
+        setDrop(null);
       }}
     >
       {drop && (
