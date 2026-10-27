@@ -1,4 +1,4 @@
-import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { QA_SETTINGS, type AppConfig, type RepoInfo, type Settings } from "./types";
 import { api, WS_URL } from "./net";
 import Term, { disposeTerm, focusTerm } from "./components/Term";
@@ -59,11 +59,13 @@ import {
   type PaneNode,
 } from "./paneLayout";
 import ContextMenu, { MenuIcons } from "./components/ContextMenu";
+import PortsPanel, { openExternal } from "./components/PortsPanel";
 import { WebIcon, ClaudeLogo, CodexLogo, FlowIcon, GlobeIcon, OrchestrateIcon, TerminalIcon } from "./components/icons";
 // --- Appearance (C) ---
 import { APPEARANCE_EVENT, type ChatKind, type TermLook } from "./appearance";
 import { getAppearance, setTermTransparent } from "./components/Term";
 import { getScheme, listSchemes } from "./terminalThemes";
+import { setValue, springValue } from "./spring";
 // --- end Appearance (C) ---
 
 const CHIP_COLORS: Record<string, string> = {
@@ -187,6 +189,9 @@ interface SavedSession {
   chatTitles?: Record<string, string>;
   /** Session tab bar order (chat keys). */
   chatOrder?: string[];
+  /** Tab groups made by dropping one tab onto another: chat → group id, and names. */
+  tabGroups?: Record<string, string>;
+  groupNames?: Record<string, string>;
 }
 
 // A chat is one screen inside a workspace: its own tabs and splits. Tab,
@@ -238,7 +243,7 @@ export default function App() {
   // Flow view (QA tooling); dev builds also show it with ?flowMock=1.
   const showFlow = settings.flow || FLOW_MOCK;
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsPage, setSettingsPage] = useState<SettingsPage>("profile");
+  const [settingsPage, setSettingsPage] = useState<SettingsPage>("general");
   // { mode } applies that mode's preset; other keys flip single toggles.
   // Quick clicks send several saves; only the newest reply may replace the
   // local copy, or an older one would undo a switch just flipped.
@@ -307,6 +312,9 @@ export default function App() {
   const [chatTitles, setChatTitles] = useState<Record<string, string>>({});
   // Session tab bar order; chats not in it yet go at the end (order opened).
   const [chatOrder, setChatOrder] = useState<string[]>([]);
+  // Tab groups the user made (drop a tab onto another); others group by workspace.
+  const [tabGroups, setTabGroups] = useState<Record<string, string>>({});
+  const [groupNames, setGroupNames] = useState<Record<string, string>>({});
   const orderedChats = [...chatOrder.filter((k) => tabs[k]), ...Object.keys(tabs).filter((k) => !chatOrder.includes(k))];
   // Recently closed chats, for ⌘⇧T.
   const closedChats = useRef<{ ws: string; title: string; tabs: TermTab[] }[]>([]);
@@ -329,12 +337,12 @@ export default function App() {
     try {
       localStorage.setItem(
         SESSION_KEY,
-        JSON.stringify({ tabs, activeTab, layouts, activeChat, chatTitles, chatOrder: orderedChats } satisfies SavedSession),
+        JSON.stringify({ tabs, activeTab, layouts, activeChat, chatTitles, chatOrder: orderedChats, tabGroups, groupNames } satisfies SavedSession),
       );
     } catch {
       /* storage full or blocked: chats just won't be remembered */
     }
-  }, [tabs, activeTab, layouts, activeChat, chatTitles, chatOrder]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tabs, activeTab, layouts, activeChat, chatTitles, chatOrder, tabGroups, groupNames]); // eslint-disable-line react-hooks/exhaustive-deps
   const [rightHidden, setRightHidden] = useState(() => localStorage.getItem("crux.rightHidden") === "1");
   const [sideHidden, setSideHidden] = useState(() => localStorage.getItem("crux.sideHidden") === "1");
   const toggleSide = () =>
@@ -505,12 +513,101 @@ export default function App() {
   const [renamingChat, setRenamingChat] = useState<string | null>(null);
   // "Are you sure?" before a chat / terminal is closed.
   // id "" = close the whole chat `key`; otherwise one terminal in it.
-  const [confirmClose, setConfirmClose] = useState<null | { key: string; id: string; name: string }>(null);
-  const doClose = (c: { key: string; id: string }) => (c.id ? closeTab(c.key, c.id) : closeChat(c.key));
+  // keys: several chats at once (the tab bar's "Close other tabs"…).
+  const [confirmClose, setConfirmClose] = useState<null | { key: string; id: string; name: string; keys?: string[] }>(null);
+  const doClose = (c: { key: string; id: string; keys?: string[] }) =>
+    c.keys ? c.keys.forEach((k) => closeChat(k)) : c.id ? closeTab(c.key, c.id) : closeChat(c.key);
   // Close a chat or terminal, asking first unless that's turned off in Settings.
-  const requestClose = (c: { key: string; id: string; name: string }) => (settings.confirmClose ? setConfirmClose(c) : doClose(c));
+  const requestClose = (c: { key: string; id: string; name: string; keys?: string[] }) => (settings.confirmClose ? setConfirmClose(c) : doClose(c));
   // Workspaces whose chat list is unfolded in the sidebar; all start folded.
   const [chatsOpen, setChatsOpen] = useState<Set<string>>(() => new Set());
+  // The selected sidebar row's background is one shape that slides to whichever
+  // row is selected, rather than each row lighting up on its own.
+  const navRef = useRef<HTMLElement>(null);
+  const glideRef = useRef<HTMLDivElement>(null);
+  const glideAt = useRef({ x: 0, y: 0, w: 0, h: 0 });
+  const placeGlide = useCallback((animate = true) => {
+    const glide = glideRef.current;
+    const row = navRef.current?.querySelector<HTMLElement>(":scope > .side-item.active");
+    if (!glide) return;
+    if (!row) {
+      glide.style.opacity = "0";
+      return;
+    }
+    // Position and size are separate springs: clicking down the list quickly
+    // re-targets them mid-way and keeps their speed, instead of restarting.
+    const at = glideAt.current;
+    const paint = () => {
+      glide.style.transform = `translate(${at.x}px, ${at.y}px)`;
+      glide.style.width = `${at.w}px`;
+      glide.style.height = `${at.h}px`;
+    };
+    const jump = !animate || glide.style.opacity !== "1";
+    const to = { x: row.offsetLeft, y: row.offsetTop, w: row.offsetWidth, h: row.offsetHeight };
+    glide.style.borderRadius = getComputedStyle(row).borderRadius; // same shape as the row it sits on
+    for (const k of ["x", "y", "w", "h"] as const) {
+      const apply = (v: number) => ((at[k] = v), paint());
+      if (jump) setValue(glide, k, to[k], apply);
+      else springValue(glide, k, to[k], apply, { response: 0.32, at: at[k] });
+    }
+    glide.style.opacity = "1";
+  }, []);
+  useLayoutEffect(() => placeGlide(), [view, chatsOpen, sideHidden, config, placeGlide]);
+  // While the sidebar itself is moving (hiding to the rail, a chat list
+  // folding), the selected row draws its own background, so it moves with the
+  // row exactly; the sliding highlight takes over again once all is at rest.
+  useEffect(() => {
+    // On document: the sidebar mounts later than App (after config loads).
+    const inNav = (t: EventTarget | null) => t instanceof Node && !!navRef.current?.contains(t);
+    const LAYOUT = /^(width|height|padding|margin|grid-template-rows|max-height|min-width|max-width)/;
+    const running = new Set<EventTarget>();
+    let cap: ReturnType<typeof setTimeout> | undefined;
+    const settle = () => {
+      clearTimeout(cap);
+      running.clear();
+      placeGlide(false);
+      navRef.current?.classList.remove("glide-follow");
+    };
+    const run = (e: TransitionEvent) => {
+      if (!inNav(e.target) || e.target === glideRef.current || !LAYOUT.test(e.propertyName)) return;
+      running.add(e.target!);
+      navRef.current?.classList.add("glide-follow");
+      clearTimeout(cap);
+      cap = setTimeout(settle, 1000); // a missed transitionend can't hold it forever
+    };
+    const end = (e: TransitionEvent) => {
+      if (!running.has(e.target!) || !LAYOUT.test(e.propertyName)) return;
+      running.delete(e.target!);
+      if (!running.size) settle();
+    };
+    document.addEventListener("transitionrun", run);
+    document.addEventListener("transitionend", end);
+    document.addEventListener("transitioncancel", end);
+    return () => {
+      clearTimeout(cap);
+      document.removeEventListener("transitionrun", run);
+      document.removeEventListener("transitionend", end);
+      document.removeEventListener("transitioncancel", end);
+    };
+  }, [placeGlide]);
+  // Entering another view or chat: the main column fades in instead of popping.
+  const mainColRef = useRef<HTMLDivElement>(null);
+  const shownKey = `${view}|${activeChat[view] ?? ""}`;
+  const firstShow = useRef(true);
+  useLayoutEffect(() => {
+    if (firstShow.current) {
+      firstShow.current = false;
+      return;
+    }
+    if (document.documentElement.hasAttribute("data-reduce-motion")) return;
+    mainColRef.current?.animate(
+      [
+        { opacity: 0, transform: "translateY(6px)" },
+        { opacity: 1, transform: "none" },
+      ],
+      { duration: 240, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" },
+    );
+  }, [shownKey]);
   const [gitMenu, setGitMenu] = useState<null | { anchor: DOMRect; mode: "agent" | "shell"; tabId: string; target: string }>(null);
   const [branches, setBranches] = useState<Record<string, string | null>>({});
   // Last terminal the user clicked / typed in, per workspace (Git targets it).
@@ -670,6 +767,8 @@ export default function App() {
         setActiveChat(initialChat);
         setChatTitles(initialTitles);
         setChatOrder((saved?.chatOrder ?? []).filter((k) => initialTabs[k]));
+        setTabGroups(Object.fromEntries(Object.entries(saved?.tabGroups ?? {}).filter(([k]) => initialTabs[k])));
+        setGroupNames(saved?.groupNames ?? {});
         sessionReady.current = true;
       });
   }, []);
@@ -818,7 +917,7 @@ export default function App() {
           listen<string>("menu:browser", (e) => routeKeyRef.current(e.payload)),
           listen("menu:search-chats", () => setSearchOpen(true)),
           listen("menu:check-updates", () => {
-            setSettingsPage("updates");
+            setSettingsPage("app");
             setSettingsOpen(true);
           }),
           listen<QuickAsk>("quick:ask", (e) => quickAskRef.current(e.payload)),
@@ -1792,6 +1891,7 @@ export default function App() {
     setActiveChat((prev) => ({ ...prev, [key]: chat }));
     setView(key);
     setChatsShown(key, true);
+    return chat;
   };
 
   // Orchestrator mode: a new chat whose Claude leads a team. The server learns
@@ -1946,8 +2046,24 @@ export default function App() {
   if (!config) return <div className="loading">Loading Crux…</div>;
 
   // Session tab bar: open chats of every workspace (or this one's).
-  const sessionTabs: SessionTab[] = orderedChats
-    .filter((chat) => config.repos[wsOf(chat)] && (settings.tabsAll !== false || wsOf(chat) === view))
+  const barChats = orderedChats.filter((chat) => config.repos[wsOf(chat)]);
+  // Tabs are on their own unless the user grouped them; a group needs two tabs on the bar.
+  const groupSize = new Map<string, number>();
+  for (const chat of barChats) if (tabGroups[chat]) groupSize.set(tabGroups[chat], (groupSize.get(tabGroups[chat]) ?? 0) + 1);
+  const madeGroup = (chat: string) => (tabGroups[chat] && groupSize.get(tabGroups[chat])! > 1 ? tabGroups[chat] : undefined);
+  // Put chats in a made group (named when it's new), or null: back to their workspace's.
+  const assignGroup = (chats: string[], group: string | null, name?: string) => {
+    setTabGroups((prev) => {
+      const next = { ...prev };
+      for (const c of chats) {
+        if (group) next[c] = group;
+        else delete next[c];
+      }
+      return next;
+    });
+    if (group && name) setGroupNames((prev) => ({ ...prev, [group]: name }));
+  };
+  const sessionTabs: SessionTab[] = barChats
     .map((chat) => {
       const r = config.repos[wsOf(chat)];
       const a = attention.get(chat);
@@ -1959,12 +2075,13 @@ export default function App() {
         kind: tabs[chat].find((t) => t.agent && t.role !== "worker")?.agent ?? "shell",
         status: working.has(chat) ? "working" : a === "input" ? "input" : a === "stop" ? "done" : undefined,
         detail: chatDetail.get(chat),
-        group: wsOf(chat),
+        group: madeGroup(chat) ?? chat,
+        groupName: madeGroup(chat) && (groupNames[madeGroup(chat)!] ?? "Group"),
         tint: r.color,
       };
     });
   {
-    // Same grouping as the bar shows (⌘1–9 follow what you see).
+    // Grouped tabs side by side, as the bar shows them (⌘1–9 follow what you see).
     const groups = [...new Set(sessionTabs.map((t) => t.group))];
     sessionTabs.splice(0, sessionTabs.length, ...groups.flatMap((g) => sessionTabs.filter((t) => t.group === g)));
   }
@@ -2002,7 +2119,7 @@ export default function App() {
     if (showFlow) go("flow", "Flow", <FlowIcon />, () => setView("flow"), "agents steps modules chart live");
     for (const [key, r] of repos) go(`ws:${key}`, r.label, <span className="avatar search-avatar" style={avatarStyle(r)}>{r.label[0]?.toUpperCase()}</span>, () => setView(key), `workspace ${r.path}`);
     for (const [page, label] of SETTINGS_PAGES) {
-      if (page === "accounts" && (!settings.labAccounts || config.browserSupported === false)) continue;
+      if (page === "accounts" && (settings.mode !== "qa" || !settings.labAccounts || config.browserSupported === false)) continue;
       go(`set:${page}`, `Settings: ${label}`, MenuIcons.rename, () => {
         setSettingsPage(page);
         setSettingsOpen(true);
@@ -2021,7 +2138,7 @@ export default function App() {
     if (closedChats.current.length) act("reopen", "Reopen closed session", MenuIcons.read, reopenClosed, "undo", "⌘⇧T");
     act("add-ws", "Add workspace…", MenuIcons.folder, () => setAdding(true), "folder repo new");
     act("updates", "Check for updates", MenuIcons.read, () => {
-      setSettingsPage("updates");
+      setSettingsPage("app");
       setSettingsOpen(true);
     }, "version");
     act("sidebar", sideHidden ? "Show sidebar" : "Hide sidebar", MenuIcons.read, toggleSide, "toggle", KEY.sidebar);
@@ -2220,11 +2337,13 @@ export default function App() {
       </header>
       <div className="body">
         <nav
-          className={`sidebar ${sideHidden ? "collapsed" : ""}`}
+          ref={navRef}
+          className={`sidebar has-glide ${sideHidden ? "collapsed" : ""}`}
           onTransitionEnd={(e) => {
-            if (e.propertyName === "width") window.dispatchEvent(new Event("resize"));
+            if (e.propertyName === "width" && e.target === e.currentTarget) window.dispatchEvent(new Event("resize"));
           }}
         >
+          <div className="side-glide" ref={glideRef} aria-hidden />
           <button className="side-search" onClick={() => setSearchOpen(true)} title="Search open chats and past conversations">
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
               <circle cx="7" cy="7" r="4.5" />
@@ -2247,6 +2366,7 @@ export default function App() {
           <button
             className={`side-item view-item ${view === "sessions" ? "active" : ""}`}
             onClick={() => setView("sessions")}
+            title="Sessions"
           >
             <span className="avatar view-icon"><TerminalIcon /></span>
             <span className="side-label">Sessions</span>
@@ -2256,6 +2376,7 @@ export default function App() {
           <button
             className={`side-item view-item ${view === "connections" ? "active" : ""}`}
             onClick={() => setView("connections")}
+            title="Connections"
           >
             <span className="avatar view-icon"><WebIcon /></span>
             <span className="side-label">Connections</span>
@@ -2276,6 +2397,7 @@ export default function App() {
           <button
             className={`side-item view-item ${view === "jira" ? "active" : ""}`}
             onClick={() => setView("jira")}
+            title="Browser"
           >
             <span className="avatar view-icon"><GlobeIcon /></span>
             <span className="side-label">Browser</span>
@@ -2369,6 +2491,7 @@ export default function App() {
               >
                 <button
                   className="side-item-main"
+                  title={r.label}
                   onClick={() => {
                     // The whole row up to + opens the workspace and folds /
                     // unfolds its chats.
@@ -2494,7 +2617,7 @@ export default function App() {
             ),
           )}
           {Object.keys(config.repos).length === 0 && (
-            <button className="side-item side-empty" onClick={() => setAdding(true)}>
+            <button className="side-item side-empty" title="Add a repo folder" onClick={() => setAdding(true)}>
               <span className="avatar">+</span>
               <span className="side-label">Add a repo folder</span>
             </button>
@@ -2510,6 +2633,18 @@ export default function App() {
               {update.installing ? "Updating…" : `Update to ${update.latest.replace(/^v/, "")}`}
             </button>
           )}
+          <PortsPanel
+            labels={Object.fromEntries(Object.entries(config.repos).map(([k, r]) => [k, r.label]))}
+            onOpen={(url) => {
+              // The in-app browser when it's there (macOS, view on); else the system browser.
+              if (settings.jira && config.browserSupported !== false) {
+                setBrowserOpen({ url, nonce: Date.now() });
+                setView("jira");
+              } else void openExternal(url);
+            }}
+            onToast={setToast}
+            rail={sideHidden}
+          />
           <div className="side-footer">
             <span className="avatar">{(config.userName || config.user || "?")[0].toUpperCase()}</span>
             {/* A long name shortens with "…"; the version and the gear always fit. */}
@@ -2530,25 +2665,56 @@ export default function App() {
             </button>
           </div>
         </nav>
-        <div className="main-col">
-        {sessionTabs.length > 0 && (
+        <div className="main-col" ref={mainColRef}>
+        {sessionTabs.length > 0 && settings.sessionBar !== false && (
           <SessionBar
             tabs={sessionTabs}
             active={isSpecialView ? "" : ck}
-            showBadges={settings.tabsAll !== false}
+            showBadges
             onOpen={(chat) => {
               openChat(chat);
               setChatsShown(wsOf(chat), true);
             }}
             onClose={(chat) => requestClose({ key: chat, id: "", name: chatTitle(chat) })}
             onRename={renameChat}
-            onMove={(from, to) =>
+            onPlace={(chats, to, after, group) => {
+              // Move these tabs (in order) next to `to`, or to the end.
               setChatOrder(() => {
-                const next = orderedChats.filter((k) => k !== from);
-                next.splice(next.indexOf(to) + (orderedChats.indexOf(from) < orderedChats.indexOf(to) ? 1 : 0), 0, from);
+                const next = orderedChats.filter((k) => !chats.includes(k));
+                const at = to && next.includes(to) ? next.indexOf(to) + (after ? 1 : 0) : next.length;
+                next.splice(at, 0, ...chats);
                 return next;
-              })
-            }
+              });
+              if (group !== undefined) assignGroup(chats, group);
+            }}
+            onAssign={assignGroup}
+            onRenameGroup={(g, name) => setGroupNames((prev) => ({ ...prev, [g]: name }))}
+            onDuplicate={(chat) => {
+              // A fresh session of the same kind, next to this one (and in its group).
+              const ws = wsOf(chat);
+              const t = tabs[chat]?.find((x) => x.agent && x.role !== "worker") ?? tabs[chat]?.[0];
+              const kind = t?.agent === "claude" || t?.agent === "codex" ? t.agent : "shell";
+              const base = chatTitle(chat).replace(/ \d+$/, "");
+              const taken = new Set(chatsOf(ws).map(chatTitle));
+              let name = base;
+              for (let n = 2; taken.has(name); n++) name = `${base} ${n}`;
+              const dup = newChat(ws, kind, name);
+              setChatOrder(() => {
+                const next = orderedChats.filter((k) => k !== dup);
+                next.splice(next.indexOf(chat) + 1, 0, dup);
+                return next;
+              });
+              const g = madeGroup(chat);
+              if (g) setTabGroups((prev) => ({ ...prev, [dup]: g }));
+            }}
+            onCopyPath={(chat) => {
+              const r = config.repos[wsOf(chat)];
+              if (r) void copyText(r.path, "path");
+            }}
+            onCloseMany={(chats, name) => {
+              if (chats.length === 1) requestClose({ key: chats[0], id: "", name: chatTitle(chats[0]) });
+              else if (chats.length) requestClose({ key: chats[0], id: "", name, keys: chats });
+            }}
             onAdd={(e) => setSessionMenu({ x: e.clientX, y: e.clientY + 8 })}
           />
         )}
@@ -2943,7 +3109,7 @@ export default function App() {
           onChange={saveSettings}
           onClose={() => {
             setSettingsOpen(false);
-            setSettingsPage("profile");
+            setSettingsPage("general");
           }}
           onReplayIntro={() => {
             setSettingsOpen(false);
@@ -3102,7 +3268,7 @@ export default function App() {
               <div>
                 <div className="chat-modal-title">Close “{confirmClose.name}”?</div>
                 <div className="chat-modal-sub">
-                  {confirmClose.id ? "Its session" : "Every terminal in this chat"}
+                  {confirmClose.keys ? "Every terminal in them" : confirmClose.id ? "Its session" : "Every terminal in this chat"}
                   {config.repos[wsOf(confirmClose.key)] ? ` in ${config.repos[wsOf(confirmClose.key)].label}` : ""} will be stopped.
                 </div>
               </div>
@@ -3117,7 +3283,7 @@ export default function App() {
                   setConfirmClose(null);
                 }}
               >
-                Close chat
+                {confirmClose.keys ? `Close ${confirmClose.keys.length}` : "Close chat"}
               </button>
             </div>
           </div>

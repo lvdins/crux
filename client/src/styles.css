@@ -87,7 +87,7 @@ body {
   transition: width 0.5s cubic-bezier(0.32, 0.72, 0, 1), padding 0.5s cubic-bezier(0.32, 0.72, 0, 1),
     opacity 0.35s ease, border-color 0.3s ease;
 }
-.sidebar.collapsed { width: 0; padding-left: 0; padding-right: 0; opacity: 0; border-right-width: 0; pointer-events: none; }
+/* hidden sidebar: a narrow rail of icons (rules at the end of this file) */
 /* same pill as the Claude / Codex buttons */
 .side-toggle {
   display: inline-flex; align-items: center; justify-content: center;
@@ -123,6 +123,39 @@ body {
 .side-footer-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-footer-version { white-space: nowrap; }
 .side-footer > .settings-btn { margin-left: auto; }
+
+/* sidebar → Ports (servers started from Crux terminals) */
+.ports-panel { margin-top: auto; border-top: 1px solid var(--line); padding: 4px 6px; min-height: 0; display: flex; flex-direction: column; max-height: 40%; }
+.ports-panel + .side-footer { margin-top: 0; }
+.ports-head {
+  display: flex; align-items: center; gap: 6px; width: 100%; padding: 4px 4px;
+  background: none; border: none; color: var(--ink-faint); font: inherit; font-size: 11.5px;
+  cursor: pointer; text-align: left; flex: none;
+}
+.ports-head:hover { color: var(--ink); }
+.ports-head svg { flex: none; transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1); }
+.ports-head.collapsed svg { transform: rotate(-90deg); }
+.ports-body { display: grid; grid-template-rows: 1fr; min-height: 0; transition: grid-template-rows 0.3s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.2s ease; }
+.ports-body.collapsed { grid-template-rows: 0fr; opacity: 0; pointer-events: none; }
+.ports-count { margin-left: auto; font-size: 10.5px; }
+.ports-list { overflow-y: auto; min-height: 0; }
+.ports-row { animation: slot-in-y 0.28s cubic-bezier(0.32, 0.72, 0, 1); }
+.ports-row { display: flex; align-items: center; border-radius: 6px; min-width: 0; }
+.ports-row:hover { background: var(--surface-2); }
+.ports-open {
+  display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0; padding: 4px 6px;
+  background: none; border: none; color: var(--ink-soft); font: inherit; font-size: 12px;
+  cursor: pointer; text-align: left;
+}
+.ports-row:hover .ports-open { color: var(--ink); }
+.ports-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); flex: none; }
+.ports-port { font-variant-numeric: tabular-nums; flex: none; }
+.ports-more {
+  flex: none; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 20px;
+  margin-right: 2px; background: none; border: none; border-radius: 5px; color: var(--ink-faint); cursor: pointer;
+}
+.ports-more:hover { color: var(--ink); background: var(--raise); }
+.ports-ws { color: var(--ink-faint); font-size: 11px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---------- terminal pane ---------- */
 .term-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg); }
@@ -2031,7 +2064,9 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); }
 .home h1, .home-greeting, .ws-home-head h2 { font-size: 28px; letter-spacing: -0.03em; }
 
 /* Dialogs, menus, ⌘K */
-.modal-backdrop { background: var(--scrim); backdrop-filter: blur(6px); }
+/* No backdrop blur: blurring the whole window (live terminals included) on
+   every frame of the fade is what made dialogs stutter as they opened. */
+.modal-backdrop { background: var(--scrim); }
 .modal { background: var(--surface); border: 1px solid rgba(var(--hi-rgb), 0.08); border-radius: 18px;
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(var(--hi-rgb), 0.04); }
 .chat-name-input, .settings-input, .search-input { border-radius: var(--r-control); background: var(--bg); }
@@ -2070,6 +2105,60 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); }
   content: ""; position: absolute; left: -7px; top: 25%; bottom: 25%; width: 1px; background: var(--line);
 }
 .session-badge { border-radius: 5px; border: 0; }
+/* group chip: just the group's letter; click to fold its tabs into it */
+.session-group {
+  --tint: var(--ink-faint); display: flex; align-items: center; justify-content: center; flex: none; position: relative;
+  min-height: 32px; padding: 0 3px; border-radius: 10px; cursor: pointer; user-select: none;
+}
+.session-group.group-start { margin-left: 11px; }
+.session-group.group-start::before {
+  content: ""; position: absolute; left: -7px; top: 25%; bottom: 25%; width: 1px; background: var(--line);
+}
+.session-group-letter {
+  display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 6px;
+  font-size: 11px; font-weight: 700; color: var(--ink); background: color-mix(in srgb, var(--tint) 35%, var(--surface-2));
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+.session-group:hover .session-group-letter { transform: scale(1.08); }
+.session-group.shut .session-group-letter { box-shadow: 0 0 0 1.5px var(--tint); }
+.session-group-status { position: absolute; top: 4px; right: 0; width: 7px; height: 7px; border-radius: 50%; box-shadow: 0 0 0 2px var(--bg); }
+.session-group-status.input { background: var(--warn); }
+.session-group-status.done { background: var(--ok); }
+.session-group-status.working { background: var(--accent); animation: session-pulse 1.2s ease-in-out infinite; }
+@keyframes session-pulse { 50% { opacity: 0.35; } }
+.session-group .session-rename { width: 110px; flex: none; }
+/* a group's tabs: underlined in its colour from the letter to its last tab, a gap after */
+.session-tab.in-group::after {
+  content: ""; position: absolute; left: 4px; right: 4px; bottom: 0; height: 2px; border-radius: 2px;
+  background: color-mix(in srgb, var(--tint) 70%, transparent);
+}
+.session-group::after {
+  content: ""; position: absolute; left: 50%; right: -3px; bottom: 0; height: 2px; border-radius: 2px 0 0 2px;
+  background: color-mix(in srgb, var(--tint) 70%, transparent);
+}
+.session-group.shut::after { display: none; }
+.session-tab.group-end { margin-right: 8px; }
+.session-bar.drop-end .session-strip { box-shadow: inset -2px 0 0 var(--accent); }
+/* folding: tabs slide shut into the letter and back out, on a critically
+   damped spring (response 0.3s) sampled into linear(). CSS transitions
+   reverse from the current value, so clicking the letter again mid-fold
+   turns it around without a jump. */
+:root {
+  --spring: linear(0, 0.067 5%, 0.205 9%, 0.358 14%, 0.499 18%, 0.619 23%, 0.715 27%, 0.79 32%, 0.848 36%, 0.89 41%,
+    0.921 45%, 0.944 50%, 0.96 55%, 0.972 59%, 0.981 64%, 0.986 68%, 0.991 73%, 0.995 82%, 0.998 91%, 1);
+  --spring-time: 440ms;
+}
+.session-tab {
+  overflow: hidden;
+  transition: background 120ms, max-width var(--spring-time) var(--spring), min-width var(--spring-time) var(--spring),
+    padding var(--spring-time) var(--spring), margin var(--spring-time) var(--spring), opacity 180ms ease;
+}
+.session-tab.tucked { max-width: 0; min-width: 0; padding-left: 0; padding-right: 0; margin-left: -3px; opacity: 0; pointer-events: none; }
+/* dragging a tab: edges reorder, the middle groups */
+.session-bar.dragging, .session-bar.dragging * { cursor: grabbing !important; }
+/* the dragged tab rides above the others, which slide aside */
+.session-tab.lifted, .session-group.lifted { z-index: 3; opacity: 0.95; background: var(--surface-2); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); }
+.session-tab.drop-into, .session-group.drop-into { box-shadow: 0 0 0 2px var(--accent); background: var(--accent-soft); }
 .session-close { border-radius: 6px; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
 .session-close:hover { background: rgba(var(--hi-rgb), 0.08); }
 .session-add { width: 30px; height: 30px; border: 0; border-radius: 999px; font-size: 17px; }
@@ -2087,3 +2176,87 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); }
 }
 .scheme-swatch i { flex: 1; height: 6px; border-radius: 1px; }
 /* --- end Appearance (C) --- */
+
+/* ---------- hidden sidebar: icon rail ----------
+   Hiding the sidebar keeps a narrow column of its icons (views, workspaces,
+   settings); hover one for its name. */
+nav.sidebar.collapsed { width: 50px; padding: 10px 6px; align-items: center; overflow-y: auto; scrollbar-width: none; }
+.sidebar.collapsed .side-label, .sidebar.collapsed .side-sub, .sidebar.collapsed .side-sub-toggle,
+.sidebar.collapsed .side-remove, .sidebar.collapsed .side-add-chat, .sidebar.collapsed .side-pin,
+.sidebar.collapsed .side-search kbd, .sidebar.collapsed .side-section span, .sidebar.collapsed .side-confirm,
+.sidebar.collapsed .side-footer-name, .sidebar.collapsed .side-footer-version, .sidebar.collapsed .side-footer > .avatar { display: none; }
+.sidebar.collapsed .side-item, .sidebar.collapsed .side-item.view-item { width: 38px; padding: 0; justify-content: center; flex: none; }
+.sidebar.collapsed .side-item-main, .sidebar.collapsed .side-item.view-item, .sidebar.collapsed .side-empty { justify-content: center; padding: 9px 0; gap: 0; }
+.sidebar.collapsed .avatar { width: 22px; height: 22px; font-size: 11.5px; border-radius: 6px; }
+.sidebar.collapsed .avatar.view-icon svg { width: 13px; height: 13px; }
+/* search: just the magnifier */
+.sidebar.collapsed .side-search { width: 38px; height: 30px; padding: 0; justify-content: center; font-size: 0; gap: 0; flex: none; }
+.sidebar.collapsed .side-search svg { width: 13px; height: 13px; }
+/* the Workspaces header becomes a divider with its + */
+.sidebar.collapsed .side-section-row { width: 38px; padding: 6px 0 2px; justify-content: center; border-top: 1px solid var(--line); margin-top: 6px; }
+/* counts and spinners sit on the icon's corner */
+.sidebar.collapsed .home-count { position: absolute; top: 2px; right: 0; margin: 0; min-width: 14px; padding: 0 3px; line-height: 14px; font-size: 9.5px; }
+.sidebar.collapsed .side-spin { position: absolute; top: 3px; right: 3px; margin: 0; width: 8px; height: 8px; }
+.sidebar.collapsed .update-bubble { width: 30px; height: 30px; padding: 0; justify-content: center; font-size: 0; gap: 0; }
+.sidebar.collapsed .side-footer { width: 38px; padding: 8px 0 0; justify-content: center; }
+.sidebar.collapsed .side-footer > .settings-btn { margin: 0; }
+
+/* ---------- selected sidebar row: one background that slides between rows ---------- */
+.sidebar { position: relative; }
+.side-glide {
+  position: absolute; top: 0; left: 0; width: 0; height: 0; opacity: 0; z-index: 0; pointer-events: none;
+  border-radius: 7px; background: rgba(var(--hi-rgb), 0.08);
+  transition: opacity 160ms ease; /* position and size are springs (App.tsx placeGlide) */
+}
+html[data-theme="unicorn"] .side-glide { background: linear-gradient(90deg, rgba(244, 166, 255, 0.22), rgba(159, 230, 255, 0.18)); }
+.sidebar.has-glide > .side-item { z-index: 1; }
+.sidebar.has-glide > .side-item.active { background: transparent; }
+
+/* ---------- tab groups forming: the letter grows in, the underline draws across ---------- */
+.session-group { animation: session-group-in 280ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+@keyframes session-group-in {
+  from { max-width: 0; padding-left: 0; padding-right: 0; margin-left: 0; opacity: 0; transform: scale(0.6); }
+  to { max-width: 160px; opacity: 1; transform: none; }
+}
+.session-tab.in-group::after { transform-origin: left center; animation: session-underline-in 320ms 60ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+@keyframes session-underline-in { from { transform: scaleX(0); opacity: 0; } to { transform: none; opacity: 1; } }
+/* the tab a dragged tab would group with: a ring that pulses once */
+.session-tab.drop-into, .session-group.drop-into { animation: session-into 520ms ease; }
+@keyframes session-into { 0% { box-shadow: 0 0 0 0 var(--accent); } 45% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 45%, transparent); } }
+
+/* ---------- dialogs open smoothly ----------
+   Fade and lift only (no scale: scaling re-rasterizes the text and the big
+   shadow each frame in WebKit), on their own compositor layer. */
+.modal { animation: modal-rise var(--spring-time) var(--spring); will-change: transform, opacity; }
+@keyframes modal-rise { from { opacity: 0; transform: translateY(10px); } }
+.modal-backdrop { animation: fade-in 0.16s ease-out; will-change: opacity; }
+/* closing: the same, in reverse (the dialog unmounts when it's done) */
+.modal-backdrop.closing { animation: fade-out 0.16s ease-in forwards; pointer-events: none; }
+.modal-backdrop.closing .modal { animation: modal-sink 0.16s ease-in forwards; }
+@keyframes fade-out { to { opacity: 0; } }
+@keyframes modal-sink { to { opacity: 0; transform: translateY(8px); } }
+
+/* Ports on the folded sidebar rail: one icon, a count, the list in a menu */
+.ports-panel.rail { padding: 6px 0; align-items: center; border-top: 1px solid var(--line); width: 38px; flex: none; }
+.ports-rail {
+  position: relative; width: 38px; height: 32px; display: flex; align-items: center; justify-content: center;
+  background: none; border: 0; border-radius: 7px; color: var(--ink-faint); cursor: pointer;
+  transition: color 160ms ease, background 160ms ease, transform 120ms ease;
+}
+.ports-rail:hover { color: var(--ink); background: var(--surface-2); }
+.ports-rail:active { transform: scale(0.94); }
+.ports-rail.live { color: var(--ink-soft); }
+.ports-rail-count {
+  position: absolute; top: 2px; right: 2px; min-width: 14px; padding: 0 3px; line-height: 14px; border-radius: 7px;
+  font-size: 9.5px; font-weight: 700; color: var(--on-accent, #fff); background: var(--ok); font-variant-numeric: tabular-nums;
+  animation: slot-in-y 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* tabs are dragged, not selected */
+.session-bar { -webkit-user-select: none; user-select: none; }
+.session-bar input { -webkit-user-select: text; user-select: text; }
+
+/* sidebar resizing: the selected row carries its own background until it settles (App.tsx) */
+.sidebar.has-glide.glide-follow > .side-glide { visibility: hidden; }
+.sidebar.has-glide.glide-follow > .side-item.active { background: rgba(var(--hi-rgb), 0.08); }
+html[data-theme="unicorn"] .sidebar.has-glide.glide-follow > .side-item.active { background: linear-gradient(90deg, rgba(244, 166, 255, 0.22), rgba(159, 230, 255, 0.18)); }

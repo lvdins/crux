@@ -25,7 +25,10 @@ export default function PortsPanel({
   labels,
   onOpen,
   onToast,
+  rail = false,
 }: {
+  /** The sidebar is folded to its icon rail: one icon, the list in a menu. */
+  rail?: boolean;
   /** workspace key → label */
   labels: Record<string, string>;
   onOpen: (url: string) => void;
@@ -40,6 +43,7 @@ export default function PortsPanel({
     }
   });
   const [menu, setMenu] = useState<null | { p: PortInfo; x: number; y: number }>(null);
+  const [railMenu, setRailMenu] = useState<null | { x: number; y: number }>(null);
 
   useEffect(() => {
     let alive = true;
@@ -72,6 +76,39 @@ export default function PortsPanel({
     else if (!r?.ok) onToast(`Couldn't stop :${p.port}`);
     setPorts((ps) => ps.filter((x) => x.pid !== p.pid));
   };
+
+  if (rail)
+    return (
+      <div className="ports-panel rail">
+        <button
+          className={`ports-rail ${ports.length ? "live" : ""}`}
+          title={ports.length ? `Ports: ${ports.length} running` : "Ports: nothing running"}
+          aria-label="Ports"
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            setRailMenu({ x: r.right + 6, y: r.top });
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="2" y="3" width="12" height="10" rx="2" />
+            <path d="M5 7l2 1.5L5 10M8.5 10H11" />
+          </svg>
+          {ports.length > 0 && <span className="ports-rail-count">{ports.length}</span>}
+        </button>
+        {railMenu && (
+          <ContextMenu
+            x={railMenu.x}
+            y={railMenu.y}
+            onClose={() => setRailMenu(null)}
+            groups={[
+              ports.length
+                ? ports.map((p) => ({ label: `:${p.port}  ${labels[p.ws] ?? p.ws}`, icon: <GlobeIcon />, onSelect: () => onOpen(urlOf(p)) }))
+                : [{ label: "Nothing running", icon: <GlobeIcon />, onSelect: () => undefined }],
+            ]}
+          />
+        )}
+      </div>
+    );
 
   // Nothing running: just the collapsed header.
   const shown = open && ports.length > 0;
