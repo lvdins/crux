@@ -1808,22 +1808,65 @@ html.tray-window, html.tray-window body, html.tray-window #root { background: tr
 
 /* ---------- orchestrator ---------- */
 .chat-modal-icon.orch { color: var(--accent-ink); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
-.orch-modal { width: min(520px, 100%); }
-.orch-task { min-height: 92px; resize: vertical; line-height: 1.45; }
-.orch-field { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--ink-soft); }
-.orch-field > span:first-child { width: 64px; flex: none; }
-.orch-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-.orch-seg button {
-  display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; border-left: 1px solid var(--line);
-  padding: 5px 11px; color: var(--ink-soft); font: inherit; font-size: 12.5px; cursor: pointer; min-width: 34px; justify-content: center;
+/* Orchestrate dialog: a centred sheet. The team preview on top shows who will
+   work (lead + workers) and grows as you pick more agents. */
+.modal.orch-modal { width: min(540px, 100%); padding: 26px 24px 18px; gap: 18px; overflow-y: auto; }
+.orch-hero { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; }
+.orch-team { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; height: 44px; }
+.orch-workers { display: flex; align-items: center; position: relative; padding-left: 14px; }
+/* the line from the lead to its workers */
+.orch-workers::before { content: ""; position: absolute; left: 0; top: 50%; width: 14px; height: 1px; background: rgba(var(--hi-rgb), 0.18); }
+.orch-node {
+  display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 9px;
+  background: var(--surface-2); color: var(--hi); box-shadow: 0 0 0 2px var(--surface);
+  animation: orch-node-in 380ms var(--spring, cubic-bezier(0.32, 0.72, 0, 1)) both;
 }
-.orch-seg button:first-child { border-left: 0; }
-.orch-seg button:hover { color: var(--ink); background: var(--surface-2); }
-.orch-seg button.on { color: var(--ink); background: var(--surface-2); box-shadow: inset 0 -2px 0 var(--accent); }
+.orch-workers .orch-node + .orch-node { margin-left: -6px; }
+.orch-node svg { width: 14px; height: 14px; }
+.orch-node.claude { background: rgba(var(--c-claude-rgb), 0.16); }
+.orch-node.lead { width: 44px; height: 44px; border-radius: 13px; box-shadow: 0 0 0 1px rgba(var(--hi-rgb), 0.08), 0 8px 24px rgba(0, 0, 0, 0.35); }
+.orch-node.lead svg { width: 22px; height: 22px; }
+@keyframes orch-node-in { from { opacity: 0; transform: scale(0.6); } }
+.orch-title { margin: 0; font-size: 22px; line-height: 1.15; letter-spacing: -0.025em; color: var(--hi); }
+.orch-sub { margin: 0; font-size: 12.5px; color: var(--ink-faint); max-width: 34em; }
+.orch-sub b { color: var(--ink-soft); }
+.modal .orch-task {
+  width: 100%; box-sizing: border-box; min-height: 84px; max-height: 220px; resize: vertical; padding: 12px 14px;
+  border: 1px solid rgba(var(--hi-rgb), 0.08); border-radius: 14px; background: var(--bg); color: var(--hi); outline: none;
+  font: inherit; font-size: 15px; line-height: 1.45; letter-spacing: -0.01em;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+.modal .orch-task::placeholder { color: rgba(var(--hi-rgb), 0.3); }
+.modal .orch-task:focus { border-color: rgba(var(--accent-rgb), 0.6); box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.14); }
+.orch-grid { display: grid; grid-template-columns: 64px 1fr; align-items: center; gap: 10px 12px; }
+.orch-label { font-size: 12px; color: var(--ink-faint); }
+.orch-seg { position: relative; justify-self: start; display: inline-flex; padding: 3px; border-radius: 999px; background: rgba(var(--hi-rgb), 0.05); }
+.orch-seg-glide {
+  position: absolute; top: 3px; bottom: 3px; left: 0; width: 0; border-radius: 999px; pointer-events: none;
+  background: rgba(var(--hi-rgb), 0.12); box-shadow: inset 0 1px 0 rgba(var(--hi-rgb), 0.06);
+}
+.modal .orch-seg button {
+  position: relative; z-index: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 34px;
+  background: none; border: 0; border-radius: 999px; padding: 5px 12px; color: rgba(var(--hi-rgb), 0.55);
+  font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; transition: color 160ms ease;
+}
+.modal .orch-seg button:hover:not(.on) { color: rgba(var(--hi-rgb), 0.85); }
+.modal .orch-seg button.on { color: var(--hi); }
+.modal .orch-seg button:active { transform: scale(0.96); }
 .orch-seg svg { width: 12px; height: 12px; }
-.orch-check { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-soft); cursor: pointer; }
-.orch-check input { accent-color: var(--accent); }
-.orch-note { font-size: 11.5px; color: var(--ink-faint); line-height: 1.45; margin: -6px 0 0; }
+.orch-approve {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 14px; cursor: pointer;
+  background: rgba(var(--hi-rgb), 0.035); border: 1px solid rgba(var(--hi-rgb), 0.06);
+}
+.orch-approve-text { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.orch-approve-text b { font-size: 13px; color: var(--ink); }
+.orch-approve-text span { font-size: 12px; color: var(--ink-faint); }
+.orch-note { margin: -6px 0 0; text-align: center; font-size: 11.5px; color: var(--ink-faint); line-height: 1.45; }
+.orch-foot { display: flex; gap: 8px; justify-content: center; }
+.modal .orch-foot button { flex: 1; max-width: 200px; padding: 9px 16px; font-size: 13px; border-radius: 999px; }
+.modal .orch-foot button:active:not(:disabled) { transform: scale(0.97); }
+.orch-foot kbd { margin-left: 6px; font: inherit; font-size: 11px; opacity: 0.7; }
+@media (prefers-reduced-motion: reduce) { .orch-node { animation: none; } }
 /* workers of an orchestrator chat, in Home / menu bar rows */
 .team-strip { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .team-chip {
