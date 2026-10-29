@@ -467,6 +467,9 @@ g.dim { opacity: 0.18; }
   transition: opacity 0.15s;
 }
 .side-item:hover .side-remove { opacity: 1; }
+/* Extension views: the × sits at the right edge (after the badge when there is one). */
+.view-item > .side-remove { margin-left: auto; margin-right: 0; flex: none; }
+.view-item > .home-count + .side-remove { margin-left: 4px; }
 .side-remove:hover { background: var(--raise); color: var(--fail); }
 .side-confirm {
   display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
