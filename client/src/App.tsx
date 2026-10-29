@@ -11,6 +11,8 @@ import { CANCEL_REPORT_SCRIPT, REPORT_SCRIPT, cropShot, jiraPrompt, type MarkedI
 import ChatSearch, { type PaletteItem, type PastChat } from "./components/ChatSearch";
 import ChatPicker from "./components/ChatPicker";
 import PipelinesPanel, { overallTone, type PipelineInfo } from "./components/PipelinesPanel";
+import ExtensionPane from "./components/ExtensionPane";
+import { isExtensionView, onShowExtensionView, reloadExtensions, setExtensionHost, useExtensionViews } from "./extensions";
 import QaPanel, { QA_EVENT } from "./components/QaPanel";
 import FeatureMap from "./components/FeatureMap";
 import Home, { reviewPrompt, type InboxMr } from "./components/Home";
@@ -80,7 +82,7 @@ const CHIP_COLORS: Record<string, string> = {
 type View = string | "connections" | "jira" | "home";
 /** Views that are not a workspace. */
 const SPECIAL_VIEWS = new Set(["connections", "jira", "home", "sessions", "flow"]);
-const isSpecial = (v: string) => SPECIAL_VIEWS.has(v);
+const isSpecial = (v: string) => SPECIAL_VIEWS.has(v) || isExtensionView(v);
 /** Sent by the ⌥Space quick-ask window. */
 type QuickAsk = { ws: string; text: string; agent?: "claude" | "codex" };
 /** From Claude's hooks (working / stop / input) or Codex's output (codex-*). */
@@ -283,6 +285,13 @@ export default function App() {
       setView(Object.keys(config?.repos ?? {})[0] ?? "");
     }
   }, [view, settings.connections, settings.jira, showFlow, config]);
+  // Views added by local extensions (extensions.ts); one that's gone: leave it.
+  const ext = useExtensionViews();
+  const extView = ext.views.find((v) => v.key === view);
+  useEffect(() => onShowExtensionView(setView), []);
+  useEffect(() => {
+    if (isExtensionView(view) && ext.settled && !extView) setView("home");
+  }, [view, ext.settled, extView]);
   // Right-panel tab per workspace: tree / coverage / preview / browser.
   const [panelTabs, setPanelTabs] = useState<Record<string, string>>(() => {
     try {
@@ -797,6 +806,11 @@ export default function App() {
           runAgentCommand(SHARED_BROWSER, msg.op, msg.args ?? {})
             .then((result) => ws.send(JSON.stringify({ type: "browser:result", id: msg.id, ok: true, result })))
             .catch((err) => ws.send(JSON.stringify({ type: "browser:result", id: msg.id, ok: false, error: String(err?.message ?? err) })));
+          return;
+        }
+        // A local extension's files changed on disk (extensions.ts).
+        if (msg.type === "ext:reload") {
+          void reloadExtensions();
           return;
         }
         // Lab account switcher (AccountPill listens).
@@ -1449,6 +1463,38 @@ export default function App() {
     setTimeout(() => focusTerm(target), 150);
     return chat;
   };
+
+  // What extensions may do with chats (extensions.ts): start one in a workspace (key or label, else the first), open one, list workspaces.
+  useEffect(() =>
+    setExtensionHost({
+      ask: async (prompt, { workspace, title }) => {
+        const repos = Object.entries(config?.repos ?? {});
+        const want = workspace?.toLowerCase();
+        const ws = repos.find(([k, r]) => k.toLowerCase() === want || r.label.toLowerCase() === want)?.[0] ?? repos[0]?.[0];
+        if (!ws) {
+          setToast("Add a workspace first");
+          return undefined;
+        }
+        return deliverToAgent({ newIn: ws }, prompt, true, title ?? "ops").catch((err) => {
+          setToast(String(err));
+          return undefined;
+        });
+      },
+      openChat: (chat) => {
+        if (!tabs[chat]?.length) return setToast("That chat is closed");
+        openChat(chat);
+        setChatsShown(wsOf(chat), true);
+      },
+      workspaces: () => Object.entries(config?.repos ?? {}).map(([key, r]) => ({ key, label: r.label })),
+      // Same as Ports: the in-app browser when it's there, else the system browser.
+      openUrl: (url) => {
+        if (settings.jira && config?.browserSupported !== false) {
+          setBrowserOpen({ url, nonce: Date.now() });
+          setView("jira");
+        } else void openExternal(url);
+      },
+    }),
+  );
 
   const notePipelines = useCallback((info: PipelineInfo | null) => {
     const ws = viewRef.current;
@@ -2392,6 +2438,34 @@ export default function App() {
             <span className="side-label">Flow</span>
           </button>
           )}
+          {ext.views.map((v) => (
+            <div
+              key={v.key}
+              role="button"
+              tabIndex={0}
+              className={`side-item view-item ${view === v.key ? "active" : ""}`}
+              onClick={() => setView(v.key)}
+              onKeyDown={(e) => e.key === "Enter" && setView(v.key)}
+              title={v.label}
+            >
+              <span className="avatar view-icon" dangerouslySetInnerHTML={{ __html: v.icon ?? "" }} />
+              <span className="side-label">{v.label}</span>
+              {!!v.badge?.count && <span className={`home-count ${v.badge.tone === "fail" ? "fail" : ""}`}>{v.badge.count}</span>}
+              {v.onClose && (
+                <button
+                  className="side-remove"
+                  title={`Remove ${v.label} from the sidebar`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (view === v.key) setView("home");
+                    v.onClose?.();
+                  }}
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          ))}
           {settings.jira && (
           <>
           <button
@@ -2794,6 +2868,8 @@ export default function App() {
           <Suspense fallback={<section className="full-pane" />}>
             <FlowView wsLabel={(ws) => (ws && config.repos[ws]?.label) || ws || ""} onJump={jumpToTerm} />
           </Suspense>
+        ) : isExtensionView(view) ? (
+          extView ? <ExtensionPane view={extView} /> : <section className="full-pane" />
         ) : view === "jira" ? (
           // Browser view (internally still "jira", so saved tabs and logins carry over).
           <section className="full-pane jira-pane">

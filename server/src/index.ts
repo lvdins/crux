@@ -29,6 +29,7 @@ import { registerQaRoutes } from "./qa.js";
 import { registerLabAccounts } from "./labAccounts.js";
 import { releaseAll as releaseAccounts } from "./fixtures.js";
 import { guardRoutes } from "./guard.js";
+import { installExtensions, listExtensions, onExtensionsChanged } from "./extensions.js";
 import { adoptLoginShellPath, checkTools, CRUX_HOME, PACKAGED, PORT, rootPath } from "./paths.js";
 
 adoptLoginShellPath();
@@ -50,6 +51,11 @@ app.use((req, res, next) => (req.path === "/api/agent-event" || req.path === "/a
 // http://localhost:8787) works without vite.
 const clientDist = rootPath("client", "dist");
 app.use(express.static(clientDist));
+
+// Local extensions (CRUX_HOME/extensions): routes and files, see extensions.ts.
+void installExtensions(app);
+onExtensionsChanged(() => broadcast({ type: "ext:reload" }));
+app.get("/api/extensions", (_req, res) => res.json(listExtensions()));
 
 app.get("/api/config", (_req, res) => {
   res.json({

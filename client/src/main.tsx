@@ -13,6 +13,7 @@ import "./styles.css";
 import "./themes.css";
 import { installSmoothModals } from "./smoothModals";
 import { initTheme } from "./theme";
+import { activateExtensions } from "./extensions";
 
 // Dialogs ease to their new height instead of jumping.
 installSmoothModals();
@@ -38,3 +39,5 @@ for (const type of ["dragover", "drop"] as const) {
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>{quick ? <QuickAsk /> : tray ? <TrayPanel /> : <App />}</React.StrictMode>,
 );
+// Local extensions (extensions.ts) live in the main window only.
+if (!quick && !tray) void activateExtensions();
