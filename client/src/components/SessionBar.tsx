@@ -22,6 +22,18 @@ export interface SessionTab {
   tint?: string;
 }
 
+/** A split view group, shown as one tab: its chats' tabs fold into it. */
+export interface SplitTab {
+  id: string;
+  name: string;
+  /** Chats on screen in the split (their own tabs are hidden). */
+  chats: string[];
+  /** One letter per pane, drawn as one block. */
+  badges: { letter: string; style?: CSSProperties }[];
+  on: boolean;
+  status?: "working" | "input" | "done";
+}
+
 const kindIcon = (k: string) => (k === "claude" ? <ClaudeLogo /> : k === "codex" ? <CodexLogo /> : <TerminalIcon />);
 const STATUS = { working: "Working", input: "Needs your input", done: "Finished" };
 const COLLAPSED_KEY = "crux.collapsedTabGroups";
@@ -64,6 +76,13 @@ export default function SessionBar({
   onCopyPath,
   onCloseMany,
   onAdd,
+  splits = [],
+  onOpenSplit,
+  onSplitMenu,
+  onCloseSplit,
+  renamingSplit,
+  onRenameSplit,
+  onStartRenameSplit,
 }: {
   tabs: SessionTab[];
   active: string;
@@ -81,6 +100,14 @@ export default function SessionBar({
   /** Close several tabs (asks first, per Settings); name is for the prompt. */
   onCloseMany: (chats: string[], name: string) => void;
   onAdd: (e: React.MouseEvent) => void;
+  splits?: SplitTab[];
+  onOpenSplit?: (id: string) => void;
+  onSplitMenu?: (id: string, e: React.MouseEvent) => void;
+  onCloseSplit?: (id: string) => void;
+  /** The split tab being renamed; its new name, or null to keep the old. */
+  renamingSplit?: string | null;
+  onRenameSplit?: (id: string, name: string | null) => void;
+  onStartRenameSplit?: (id: string) => void;
 }) {
   const [renaming, setRenaming] = useState<{ chat: string; name: string } | null>(null);
   const [renamingGroup, setRenamingGroup] = useState<{ group: string; name: string } | null>(null);
@@ -429,6 +456,68 @@ export default function SessionBar({
     if (renamingGroup && renamingGroup.name.trim()) onRenameGroup(renamingGroup.group, renamingGroup.name.trim());
     setRenamingGroup(null);
   };
+  // Split groups: drawn where their first chat's tab would be; ones with no
+  // chat (Ops + Browser…) after the tabs.
+  const splitOf = new Map(splits.flatMap((s) => s.chats.map((c) => [c, s] as const)));
+  const drawnSplits = new Set<string>();
+  const splitTab = (s: SplitTab) => (
+    <div
+      key={`s:${s.id}`}
+      role="button"
+      className={`session-tab split-tab ${s.on ? "on" : ""}`}
+      title={`${s.name}${s.status ? ` · ${STATUS[s.status]}` : ""}\nSplit view · right-click for more`}
+      onClick={() => onOpenSplit?.(s.id)}
+      onDoubleClick={() => onStartRenameSplit?.(s.id)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onSplitMenu?.(s.id, e);
+      }}
+    >
+      {showBadges && (
+        <span className="session-badges">
+          {s.badges.map((b, i) => (
+            <span key={i} className="session-badge" style={b.style}>
+              {b.letter}
+            </span>
+          ))}
+        </span>
+      )}
+      {renamingSplit === s.id ? (
+        <input
+          className="session-rename"
+          defaultValue={s.name}
+          autoFocus
+          spellCheck={false}
+          onFocus={(e) => e.currentTarget.select()}
+          onClick={(e) => e.stopPropagation()}
+          // Unchanged keeps the name made from its views (it follows them).
+          onBlur={(e) => onRenameSplit?.(s.id, e.currentTarget.value.trim() === s.name ? null : e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+            if (e.key === "Escape") {
+              e.currentTarget.value = s.name;
+              e.currentTarget.blur();
+            }
+          }}
+        />
+      ) : (
+        <span className="session-label">
+          <span className="session-name">{s.name}</span>
+        </span>
+      )}
+      {s.status === "working" ? <span className="agent-spin session-state" /> : s.status && <span className={`session-dot ${s.status}`} />}
+      <button
+        className="session-close"
+        title="Ungroup this split"
+        onClick={(e) => {
+          e.stopPropagation();
+          onCloseSplit?.(s.id);
+        }}
+      >
+        ×
+      </button>
+    </div>
+  );
   const markFor = (key: string) => (into === key ? "drop-into" : "");
   const lifted = (t: SessionTab) => dragging?.chat === t.chat || dragging?.group === t.group;
 
@@ -436,6 +525,12 @@ export default function SessionBar({
     <div className={`session-bar ${dragging ? "dragging" : ""}`}>
       <div className="session-strip" ref={strip}>
         {ordered.map((t, i) => {
+          const inSplit = splitOf.get(t.chat);
+          if (inSplit) {
+            if (drawnSplits.has(inSplit.id)) return null;
+            drawnSplits.add(inSplit.id);
+            return splitTab(inSplit);
+          }
           const first = i === 0 || ordered[i - 1].group !== t.group;
           const shut = !!t.groupName && collapsed.has(t.group);
           // A made group takes its first tab's colour for every tab in it.
@@ -538,6 +633,7 @@ export default function SessionBar({
             </div>,
           ];
         })}
+        {splits.filter((s) => !s.chats.some((c) => ordered.some((t) => t.chat === c))).map(splitTab)}
       </div>
       <button className="session-add" title="New session or past sessions" onClick={onAdd}>
         +

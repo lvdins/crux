@@ -95,6 +95,10 @@ body {
   border-radius: 99px; padding: 5px 12px; cursor: pointer;
 }
 .side-toggle:hover { border-color: var(--ink-soft); }
+/* A split view's session tab: its panes' letters joined into one block. */
+.session-badges { display: inline-flex; flex: none; border-radius: 5px; overflow: hidden; }
+.session-badges .session-badge { border-radius: 0; }
+.session-badges .session-badge + .session-badge { box-shadow: inset 1px 0 0 rgba(0, 0, 0, 0.18); }
 .side-section {
   font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase;
   color: var(--ink-faint); padding: 10px 10px 5px; user-select: none;
@@ -1917,6 +1921,58 @@ html.tray-window, html.tray-window body, html.tray-window #root { background: tr
 /* ---------- session tab bar (every open session) ---------- */
 .main-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .main-col > :not(.session-bar) { flex: 1; min-height: 0; }
+
+/* ---------- split view: views side by side (viewSplit.ts) ---------- */
+.view-split { display: flex; min-width: 0; }
+.view-node { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; }
+.view-group.row { flex-direction: row; }
+.view-group.col { flex-direction: column; }
+.view-cell { position: relative; flex-direction: column; }
+.view-group.row > .view-cell { min-width: 220px; }
+.view-group.col > .view-cell { min-height: 120px; }
+.view-body { flex: 1; min-height: 0; min-width: 0; display: flex; }
+.view-body > * { flex: 1; min-width: 0; min-height: 0; }
+.view-head {
+  position: relative; flex: none; display: flex; align-items: center; gap: 7px;
+  height: 28px; padding: 0 6px 0 10px; border-bottom: 1px solid var(--line);
+  font-size: 12px; color: var(--ink-faint); transition: color 0.2s ease;
+}
+/* The focused pane: its header text is brighter. */
+.view-cell.focused .view-head { color: var(--ink); }
+.view-head-avatar { width: 16px; height: 16px; font-size: 9px; border-radius: 4px; }
+.view-head-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: none; max-width: 50%; }
+.view-head-chat { color: var(--ink-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.view-head-btn {
+  margin-left: auto; flex: none; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px;
+  background: transparent; color: var(--ink-faint); display: inline-flex; align-items: center; justify-content: center;
+  font-size: 15px; line-height: 1; cursor: pointer;
+}
+.view-head-btn + .view-head-btn { margin-left: 0; }
+.view-head-btn:hover { background: var(--surface-2); color: var(--ink); }
+.view-head { cursor: grab; user-select: none; }
+.view-divider { flex: none; width: 1px; background: var(--line); cursor: col-resize; position: relative; z-index: 5; transition: background 0.15s; }
+.view-divider::before { content: ""; position: absolute; top: 0; bottom: 0; left: -4px; right: -4px; }
+.view-divider.col { width: auto; height: 1px; cursor: row-resize; }
+.view-divider.col::before { left: 0; right: 0; top: -4px; bottom: -4px; }
+/* Where a dragged view lands: a half for an edge, the whole pane to swap. */
+.view-drop {
+  position: absolute; inset: 4px; z-index: 40; pointer-events: none; border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent); border: 2px solid var(--accent);
+  transition: inset 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.view-drop.left { right: 50%; }
+.view-drop.right { left: 50%; }
+.view-drop.top { bottom: 50%; }
+.view-drop.bottom { top: 50%; }
+.view-drag-ghost {
+  position: fixed; left: 0; top: 0; z-index: 1000; pointer-events: none;
+  padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 600;
+  background: var(--surface-2); color: var(--ink); border: 1px solid var(--line);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+}
+.view-divider:hover, .view-split.dragging .view-divider { background: var(--ink-faint); }
+.view-split.dragging { user-select: none; }
+.view-split.dragging iframe { pointer-events: none; }
 .session-bar { display: flex; align-items: stretch; border-bottom: 1px solid var(--line); background: var(--bg); min-height: 32px; flex: none; }
 .session-strip { display: flex; overflow-x: auto; scrollbar-width: none; flex: 1; min-width: 0; }
 .session-strip::-webkit-scrollbar { display: none; }

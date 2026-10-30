@@ -84,6 +84,16 @@ export function iconFor(kind: string) {
 }
 
 /** Generic ticket-board mark (not the Atlassian logo). */
+/** A split view group: two panes side by side. */
+export function SplitIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round">
+      <rect x="2" y="3" width="12" height="10" rx="2" />
+      <path d="M8 3v10" />
+    </svg>
+  );
+}
+
 export function GlobeIcon() {
   return (
     <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">

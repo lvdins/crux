@@ -28,7 +28,7 @@ import { notify } from "./notify";
 import { IS_MAC, KEY, isAppShortcut } from "./platform";
 import type { TeamMember, TrayAgent } from "./components/TrayPanel";
 import OrchestrateModal, { type OrchestrateOpts } from "./components/OrchestrateModal";
-import SessionBar, { type SessionTab } from "./components/SessionBar";
+import SessionBar, { type SessionTab, type SplitTab } from "./components/SessionBar";
 import SessionsPanel from "./components/SessionsPanel";
 import WorkspaceHome from "./components/WorkspaceHome";
 import { FLOW_MOCK, handleGraphMessage } from "./flow/store";
@@ -51,6 +51,7 @@ import {
   leafIds,
   paneActive,
   paneTabs,
+  removeLeaf,
   removeTab,
   rootLayout,
   setPaneActive,
@@ -60,9 +61,10 @@ import {
   type DropSide,
   type PaneNode,
 } from "./paneLayout";
+import { MAX_VIEW_PANES, SOLO, loadViewGroups, newPaneId, replaceLeaf, saveViewGroups, type ViewGroup, type ViewGroups, type ViewPane, type ViewSplit } from "./viewSplit";
 import ContextMenu, { MenuIcons } from "./components/ContextMenu";
 import PortsPanel, { openExternal } from "./components/PortsPanel";
-import { WebIcon, ClaudeLogo, CodexLogo, FlowIcon, GlobeIcon, OrchestrateIcon, TerminalIcon } from "./components/icons";
+import { WebIcon, ClaudeLogo, CodexLogo, FlowIcon, GlobeIcon, OrchestrateIcon, SplitIcon, TerminalIcon } from "./components/icons";
 // --- Appearance (C) ---
 import { APPEARANCE_EVENT, type ChatKind, type TermLook } from "./appearance";
 import { getAppearance, setTermTransparent } from "./components/Term";
@@ -278,7 +280,230 @@ export default function App() {
     }
   }, [appearanceJson]); // eslint-disable-line react-hooks/exhaustive-deps
   // --- end Appearance (A) ---
-  const [view, setView] = useState<View>("");
+  const [view, setViewRaw] = useState<View>("");
+  // Split view (viewSplit.ts): views side by side; `view` is the focused pane.
+  // Each split is a group: the one open is on screen, the rest wait in the sidebar.
+  const [viewGroups, setViewGroups] = useState<ViewGroups>(loadViewGroups);
+  const groupsRef = useRef(viewGroups);
+  const viewSplit = viewGroups.groups.find((g) => g.id === viewGroups.active)?.split ?? null;
+  const splitRef = useRef(viewSplit);
+  const liveView = useRef(view);
+  // The focused workspace's chat, for when a pane loses focus (set each render).
+  const ckRef = useRef("");
+  const commitGroups = (next: ViewGroups) => {
+    groupsRef.current = next;
+    splitRef.current = next.groups.find((g) => g.id === next.active)?.split ?? null;
+    setViewGroups(next);
+    saveViewGroups(next);
+  };
+  // Change the open split; down to one pane, its group is done.
+  const commitSplit = useCallback((next: ViewSplit | null) => {
+    const g = groupsRef.current;
+    const s = next && next.panes.length > 1 ? next : null;
+    if (!s) return commitGroups({ groups: g.groups.filter((x) => x.id !== g.active), active: null });
+    if (g.active) return commitGroups({ ...g, groups: g.groups.map((x) => (x.id === g.active ? { ...x, split: s } : x)) });
+    const id = newPaneId();
+    commitGroups({ groups: [...g.groups, { id, split: s }], active: id });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Show something outside the split: the group stays as it is, off screen.
+  const leaveSplit = () => {
+    const g = groupsRef.current;
+    const s = splitRef.current;
+    if (!s || !g.active) return;
+    const kept = { ...s, panes: withSnapshot(s) };
+    commitGroups({ groups: g.groups.map((x) => (x.id === g.active ? { ...x, split: kept } : x)), active: null });
+  };
+  // Back into a group: its split as it was left, focus and chats included.
+  const openGroup = (id: string) => {
+    const target = groupsRef.current.groups.find((x) => x.id === id);
+    if (!target) return;
+    if (groupsRef.current.active === id) return;
+    leaveSplit();
+    commitGroups({ ...groupsRef.current, active: id });
+    const s = target.split;
+    s.panes.forEach((p, i) => {
+      if (i === s.focus && p.chat && !isSpecial(p.view)) setActiveChat((prev) => ({ ...prev, [p.view]: p.chat! }));
+    });
+    focusView(s.panes[s.focus].view);
+  };
+  const removeGroup = (id: string) => {
+    const g = groupsRef.current;
+    commitGroups({ groups: g.groups.filter((x) => x.id !== id), active: g.active === id ? null : g.active });
+  };
+  const renameGroup = (id: string, name: string) => {
+    const g = groupsRef.current;
+    commitGroups({ ...g, groups: g.groups.map((x) => (x.id === id ? { ...x, name: name.trim() || undefined } : x)) });
+  };
+  const [renamingGroup, setRenamingGroup] = useState<string | null>(null);
+  // Top bar menus: the workspace switcher, or a split group pill's right-click.
+  const [topMenu, setTopMenu] = useState<null | { kind: "group"; id?: string; x: number; y: number }>(null);
+  // The unsplit screen as a one-pane split, for starting one.
+  const soloSplit = (): ViewSplit => ({ panes: [{ id: SOLO, view: liveView.current }], focus: 0, tree: { kind: "leaf", id: SOLO } });
+  const focusView = useCallback((v: View) => {
+    liveView.current = v;
+    setViewRaw(v);
+  }, []);
+  // The focused pane's chat, saved on it as it loses focus.
+  const withSnapshot = (s: ViewSplit) =>
+    s.panes.map((p, i) => (i === s.focus ? { ...p, chat: isSpecial(p.view) ? undefined : ckRef.current || p.chat } : p));
+  /**
+   * Show a view. In a split: focus the pane already showing it. The panes are
+   * locked to what they show: anything else (another workspace, or another
+   * chat of a workspace in the split) shows alone, and the split waits as its
+   * group.
+   */
+  const setView = useCallback((v: View, chat?: string) => {
+    const s = splitRef.current;
+    if (s && v) {
+      const shows = (i: number) => {
+        const p = s.panes[i];
+        if (p.view !== v) return false;
+        if (!chat || isSpecial(v)) return true;
+        const live = i === s.focus ? ckRef.current : p.chat;
+        return !live || live === chat;
+      };
+      let j = shows(s.focus) ? s.focus : -1;
+      if (j < 0) j = s.panes.findIndex((_, i) => shows(i));
+      if (j < 0) leaveSplit();
+      else if (j !== s.focus) {
+        const panes = withSnapshot(s);
+        const kept = panes[j].chat;
+        if (kept && !chat) setActiveChat((prev) => ({ ...prev, [v]: kept }));
+        commitSplit({ ...s, panes, focus: j });
+      }
+    }
+    focusView(v);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // ⌘-click: open a view (or a workspace chat) in a new pane beside the others.
+  const splitWith = (v: View, chat?: string) => {
+    if (!v) return;
+    const s = splitRef.current ?? soloSplit();
+    const live = (i: number) => (i === s.focus ? ckRef.current : s.panes[i].chat);
+    const at = s.panes.findIndex((p, i) => p.view === v && (!chat || isSpecial(v) || live(i) === chat));
+    if (at >= 0) return setView(v, chat);
+    if (s.panes.length >= MAX_VIEW_PANES) return setToast(`A split shows up to ${MAX_VIEW_PANES} views: close one first (× on its header)`);
+    const id = newPaneId();
+    const panes = [...withSnapshot(s), { id, view: v }];
+    // Beside the focused pane, on its right.
+    commitSplit({ panes, focus: panes.length - 1, tree: insertAt(s.tree, s.panes[s.focus].id, "right", id) });
+    if (chat) setActiveChat((prev) => ({ ...prev, [v]: chat }));
+    focusView(v);
+  };
+  // Click into a pane: it becomes the current view, with the chat it showed.
+  const focusPane = (i: number) => {
+    const s = splitRef.current;
+    if (!s || i === s.focus || !s.panes[i]) return;
+    const panes = withSnapshot(s);
+    const p = panes[i];
+    if (p.chat) setActiveChat((prev) => ({ ...prev, [p.view]: p.chat! }));
+    commitSplit({ ...s, panes, focus: i });
+    focusView(p.view);
+  };
+  // × on a pane's header; the last one left fills the window again.
+  const closePane = (i: number) => {
+    const s = splitRef.current;
+    if (!s) return;
+    const panes = withSnapshot(s).filter((_, j) => j !== i);
+    const focus = i === s.focus ? Math.min(i, panes.length - 1) : s.focus - (i < s.focus ? 1 : 0);
+    const p = panes[focus];
+    if (i === s.focus && p.chat) setActiveChat((prev) => ({ ...prev, [p.view]: p.chat! }));
+    commitSplit(panes.length > 1 ? { panes, focus, tree: removeLeaf(s.tree, s.panes[i].id) } : null);
+    focusView(p.view);
+  };
+  // Undo the split, keeping only pane `i` on screen.
+  const unsplit = (i: number) => {
+    const s = splitRef.current;
+    if (!s) return;
+    const p = withSnapshot(s)[i];
+    if (i !== s.focus && p.chat) setActiveChat((prev) => ({ ...prev, [p.view]: p.chat! }));
+    commitSplit(null);
+    focusView(p.view);
+  };
+  // ⌘-drag a sidebar item / session tab, or drag a pane's header, onto a pane:
+  // an edge puts it beside (left / right) or above / below that pane, the
+  // middle swaps it in.
+  type ViewDragInfo = { v: string; chat?: string; from?: string; label: string };
+  type ViewDrop = { paneId: string; mode: DropSide | "replace" };
+  const [viewDrag, setViewDrag] = useState<(ViewDragInfo & { drop?: ViewDrop }) | null>(null);
+  const ghostRef = useRef<HTMLDivElement>(null);
+  const ghostAt = useRef({ x: 0, y: 0 });
+  const swallowSplitClick = useRef(false);
+  const placeAt = (info: ViewDragInfo, drop: ViewDrop) => {
+    const s = splitRef.current ?? soloSplit();
+    let panes = withSnapshot(s);
+    let tree = s.tree;
+    const live = (i: number) => (i === s.focus ? ckRef.current : s.panes[i].chat);
+    // Already on screen: move that pane rather than adding a second copy.
+    const from = info.from
+      ? panes.findIndex((p) => p.id === info.from)
+      : panes.findIndex((p, i) => p.view === info.v && (!info.chat || isSpecial(info.v) || live(i) === info.chat));
+    let moving: ViewPane = { id: newPaneId(), view: info.v };
+    if (from >= 0) {
+      if (panes[from].id === drop.paneId) return; // dropped on itself
+      moving = panes[from];
+      panes = panes.filter((_, i) => i !== from);
+      tree = removeLeaf(tree, moving.id);
+    }
+    if (info.chat && !isSpecial(info.v)) moving = { ...moving, chat: info.chat };
+    if (!panes.some((p) => p.id === drop.paneId)) return;
+    if (drop.mode === "replace") {
+      tree = replaceLeaf(tree, drop.paneId, moving.id);
+      panes = panes.map((p) => (p.id === drop.paneId ? moving : p));
+    } else {
+      tree = insertAt(tree, drop.paneId, drop.mode, moving.id);
+      panes = [...panes, moving];
+    }
+    if (panes.length > MAX_VIEW_PANES) return setToast(`A split shows up to ${MAX_VIEW_PANES} views: close one first (× on its header)`);
+    commitSplit({ panes, tree, focus: panes.findIndex((p) => p.id === moving.id) });
+    const chat = moving.chat;
+    if (chat && !isSpecial(moving.view)) setActiveChat((prev) => ({ ...prev, [moving.view]: chat }));
+    focusView(moving.view);
+  };
+  const startViewDrag = (e: React.PointerEvent, info: ViewDragInfo) => {
+    const sx = e.clientX;
+    const sy = e.clientY;
+    let on = false;
+    let key = "";
+    let drop: ViewDrop | undefined;
+    const move = (ev: PointerEvent) => {
+      if (!on) {
+        if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < 5) return;
+        on = true;
+        window.getSelection()?.removeAllRanges();
+      }
+      ghostAt.current = { x: ev.clientX + 12, y: ev.clientY + 10 };
+      if (ghostRef.current) ghostRef.current.style.transform = `translate(${ghostAt.current.x}px, ${ghostAt.current.y}px)`;
+      const cell = document
+        .elementsFromPoint(ev.clientX, ev.clientY)
+        .find((el): el is HTMLElement => el instanceof HTMLElement && !!el.dataset.pane);
+      drop = undefined;
+      if (cell) {
+        const side = sideAt(cell.getBoundingClientRect(), ev.clientX, ev.clientY);
+        drop = { paneId: cell.dataset.pane!, mode: side === "center" ? "replace" : side };
+      }
+      const k = drop ? drop.paneId + drop.mode : "-";
+      if (k !== key) {
+        key = k;
+        setViewDrag({ ...info, drop });
+      }
+    };
+    const end = (apply: boolean) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("keydown", esc, true);
+      if (!on) return;
+      // The click that ends a drag isn't a click.
+      swallowSplitClick.current = true;
+      setTimeout(() => (swallowSplitClick.current = false), 0);
+      setViewDrag(null);
+      if (apply && drop) placeAt(info, drop);
+    };
+    const up = () => end(true);
+    const esc = (ev: KeyboardEvent) => ev.key === "Escape" && end(false);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("keydown", esc, true);
+  };
   // A view switched off in Settings: leave it.
   useEffect(() => {
     if ((view === "connections" && !showConnections) || (view === "jira" && !settings.jira) || (view === "flow" && !showFlow)) {
@@ -292,6 +517,39 @@ export default function App() {
   useEffect(() => {
     if (isExtensionView(view) && ext.settled && !extView) setView("home");
   }, [view, ext.settled, extView]);
+  // Split panes whose view is gone (workspace removed, view switched off) close.
+  useEffect(() => {
+    if (!config) return;
+    const ok = (v: string) =>
+      isExtensionView(v) ? !ext.settled || ext.views.some((x) => x.key === v)
+        : isSpecial(v) ? (v !== "connections" || !!showConnections) && (v !== "jira" || !!settings.jira) && (v !== "flow" || !!showFlow)
+        : !!config.repos[v];
+    // Groups waiting in the sidebar: the same, and one left with a single view is gone.
+    const g = groupsRef.current;
+    if (g.groups.some((x) => x.id !== g.active && !x.split.panes.every((p) => ok(p.view)))) {
+      const groups = g.groups.flatMap((x) => {
+        if (x.id === g.active || x.split.panes.every((p) => ok(p.view))) return [x];
+        const panes = x.split.panes.filter((p) => ok(p.view));
+        if (panes.length < 2) return [];
+        const tree = x.split.panes.filter((p) => !ok(p.view)).reduce((t, p) => removeLeaf(t, p.id), x.split.tree);
+        return [{ ...x, split: { panes, tree, focus: Math.max(0, panes.indexOf(x.split.panes[x.split.focus])) } }];
+      });
+      commitGroups({ ...g, groups });
+    }
+    const s = splitRef.current;
+    if (!s || s.panes.every((p) => ok(p.view))) return;
+    const keep = s.panes.map((p, i) => ({ p, i })).filter((x) => ok(x.p.view));
+    const focused = keep.findIndex((x) => x.i === s.focus);
+    const tree = s.panes.filter((p) => !ok(p.view)).reduce((t, p) => removeLeaf(t, p.id), s.tree);
+    commitSplit({ panes: keep.map((x) => x.p), tree, focus: Math.max(0, focused) });
+    if (focused < 0 && keep.length) setView(keep[0].p.view);
+  }, [viewGroups, config, ext.settled, ext.views, showConnections, settings.jira, showFlow]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Terminals and the native browser re-fit when panes come, go or resize.
+  const splitShape = viewSplit ? JSON.stringify(viewSplit.tree) : "";
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+    return () => cancelAnimationFrame(raf);
+  }, [splitShape]);
   // Right-panel tab per workspace: tree / coverage / preview / browser.
   const [panelTabs, setPanelTabs] = useState<Record<string, string>>(() => {
     try {
@@ -331,6 +589,7 @@ export default function App() {
   const chatTitle = (chat: string) => chatTitles[chat] ?? tabs[chat]?.[0]?.title ?? "chat";
   // The chat on screen for the current workspace ("" = it has none yet).
   const ck = activeChat[view] && tabs[activeChat[view]] ? activeChat[view] : chatsOf(view)[0] ?? "";
+  ckRef.current = ck;
   // The chat new terminals go into: the one on screen, or a new one.
   const chatForNew = () => {
     if (ck) return ck;
@@ -737,7 +996,10 @@ export default function App() {
         const keys = Object.keys(c.repos);
         const last = localStorage.getItem("crux.view");
         const openHome = { ...QA_SETTINGS, ...c.settings }.openHome && keys.length > 0;
-        setView(openHome ? "home" : last && (isSpecial(last) || keys.includes(last)) ? last : keys[0] ?? "");
+        // A split from last time comes back as it was, focus included.
+        const split = splitRef.current;
+        if (split) setView(split.panes[split.focus].view);
+        else setView(openHome ? "home" : last && (isSpecial(last) || keys.includes(last)) ? last : keys[0] ?? "");
         const initialTabs: Record<string, TermTab[]> = {};
         const initialActive: Record<string, string> = {};
         const initialLayouts: Record<string, PaneNode> = {};
@@ -1908,7 +2170,7 @@ export default function App() {
   // Show a chat (its whole layout) from the sidebar.
   const openChat = (chat: string) => {
     const ws = wsOf(chat);
-    setView(ws);
+    setView(ws, chat);
     setActiveChat((prev) => ({ ...prev, [ws]: chat }));
   };
   // Flow view → "Jump to terminal": show the chat holding it; false if it's closed.
@@ -1935,7 +2197,7 @@ export default function App() {
     else addTab(chat, title, kind, agentBoot(kind));
     setChatTitles((prev) => ({ ...prev, [chat]: title }));
     setActiveChat((prev) => ({ ...prev, [key]: chat }));
-    setView(key);
+    setView(key, chat);
     setChatsShown(key, true);
     return chat;
   };
@@ -1953,7 +2215,7 @@ export default function App() {
     send({ type: "orch:start", ws: key, chat, lead: id, max: opts.max, kind: opts.kind, model: opts.model, codexModel: opts.codexModel, approve: opts.approve, task: opts.task });
     setChatTitles((prev) => ({ ...prev, [chat]: title }));
     setActiveChat((prev) => ({ ...prev, [key]: chat }));
-    setView(key);
+    setView(key, chat);
     setChatsShown(key, true);
   };
 
@@ -2219,12 +2481,9 @@ export default function App() {
   const panelHidden = rightHidden || !hasPanel;
   const panelTab = panelTabList.some(([k]) => k === panelTabs[view]) ? panelTabs[view] : panelTabList[0]?.[0];
   // Native browser views float above HTML: hide them under overlays.
-  const overlayOpen = adding || !!menu || !!confirmDelete || !!agentDrag || dragging || !!gitMenu || !!chatMenu || !!nameChat || !!confirmClose || !!onboarding || !!chatCtx || !!tabTheme /* Appearance (C) */ || settingsOpen || !!shotPick || searchOpen;
-  const viewLayout = (!isSpecialView && layouts[ck]) || rootLayout();
-  const viewSplits = splitTabIds(viewLayout);
-
-  // Drag a divider: resize the two panes either side of it.
-  const startPaneResize = (e: React.PointerEvent, path: number[], index: number, dir: "row" | "col", sizes: number[]) => {
+  const overlayOpen = adding || !!menu || !!confirmDelete || !!agentDrag || dragging || !!gitMenu || !!chatMenu || !!nameChat || !!confirmClose || !!onboarding || !!chatCtx || !!tabTheme /* Appearance (C) */ || settingsOpen || !!shotPick || searchOpen || !!viewDrag || !!topMenu;
+  // Drag a divider: resize the two panes either side of it (in chat `ck`'s layout).
+  const startPaneResize = (e: React.PointerEvent, ck: string, path: number[], index: number, dir: "row" | "col", sizes: number[]) => {
     e.preventDefault();
     const container = (e.currentTarget as HTMLElement).parentElement;
     if (!container) return;
@@ -2250,8 +2509,12 @@ export default function App() {
     window.addEventListener("pointerup", up);
   };
 
-  const hasSplits = viewLayout.kind === "split";
-  const renderPane = (node: PaneNode, path: number[]): React.ReactNode => {
+  // A chat's terminal layout. `view` / `ck` shadow the app's: in a split view
+  // this draws another workspace's chat; only the `primary` one takes drops.
+  const renderPane = (node: PaneNode, path: number[], view: string, ck: string, primary: boolean): React.ReactNode => {
+    const viewLayout = layouts[ck] ?? rootLayout();
+    const viewSplits = splitTabIds(viewLayout);
+    const hasSplits = viewLayout.kind === "split";
     if (node.kind === "split") {
       return (
         <div className={`pane-split ${node.dir}`} key={path.join(".") || "root"}>
@@ -2262,11 +2525,11 @@ export default function App() {
                   className={`pane-divider ${node.dir}`}
                   // Outer dividers stay grabbable where nested ones cross them.
                   style={{ zIndex: 20 - path.length }}
-                  onPointerDown={(e) => startPaneResize(e, path, i - 1, node.dir, node.sizes)}
+                  onPointerDown={(e) => startPaneResize(e, ck, path, i - 1, node.dir, node.sizes)}
                 />
               )}
               <div className="pane-cell" style={{ flexGrow: node.sizes[i], flexBasis: 0 }}>
-                {renderPane(child, [...path, i])}
+                {renderPane(child, [...path, i], view, ck, primary)}
               </div>
             </Fragment>
           ))}
@@ -2276,7 +2539,7 @@ export default function App() {
     if (node.id === MAIN) {
       const t = (tabs[ck] ?? []).find((x) => x.id === activeTab[ck] && !viewSplits.includes(x.id));
       return (
-        <div className={`term-slot ${hasSplits && t && focusedTerm[view] === t.id ? "focused" : ""}`} data-pane-id={MAIN} key={MAIN}>
+        <div className={`term-slot ${hasSplits && t && focusedTerm[view] === t.id ? "focused" : ""}`} data-pane-id={primary ? MAIN : undefined} key={MAIN}>
           {t && termBg(t, view)}
           {t && <Term key={t.id} id={t.id} repo={view} look={t.look} kind={tabKind(t)} bootCmd={t.bootCmd} connected={connected} send={send} subscribe={subscribe} onFocus={noteFocus} />}
         </div>
@@ -2289,7 +2552,7 @@ export default function App() {
     const shown = paneTabList.find((x) => x.id === activeId) ?? paneTabList[paneTabList.length - 1];
     if (!shown) return null;
     return (
-      <div className={`term-slot split ${focusedTerm[view] === shown.id ? "focused" : ""}`} data-pane-id={node.id} key={node.id}>
+      <div className={`term-slot split ${focusedTerm[view] === shown.id ? "focused" : ""}`} data-pane-id={primary ? node.id : undefined} key={node.id}>
         <div className="term-slot-head">
           <div className="pane-tabs">
             {paneTabList.map((t) => (
@@ -2338,6 +2601,186 @@ export default function App() {
     );
   };
 
+  // ⌘-click (Ctrl on Windows / Linux) a sidebar item or session tab: open it
+  // beside the current view. Items carry data-split (+ data-split-chat); a
+  // session tab its data-chat. data-split-pass lets the item's own click run too.
+  const splitTarget = (e: React.MouseEvent) => {
+    if (e.button !== 0 || !(IS_MAC ? e.metaKey : e.ctrlKey)) return null;
+    const t = e.target as HTMLElement;
+    if (t.closest(".side-remove, .side-sub-toggle, .session-close, input")) return null;
+    const item = t.closest<HTMLElement>("[data-split], .session-tab[data-chat]");
+    if (!item) return null;
+    const chat = item.dataset.splitChat ?? item.dataset.chat;
+    const v = item.dataset.split ?? (chat ? wsOf(chat) : "");
+    return v ? { item, v, chat } : null;
+  };
+  // ⌘-press: dragging from here places it in the split (a plain ⌘-click still splits).
+  const onSplitPointerDown = (e: React.PointerEvent) => {
+    const hit = splitTarget(e);
+    if (!hit) return;
+    // The session bar's own tab drag (reorder / group) stays out of it.
+    if (hit.item.classList.contains("session-tab")) e.stopPropagation();
+    const label = hit.item.querySelector(".side-label, .side-sub-label, .session-name")?.textContent || viewName(hit.v);
+    startViewDrag(e, { v: hit.v, chat: hit.chat, label });
+  };
+  const onSplitClick = (e: React.MouseEvent) => {
+    if (swallowSplitClick.current) {
+      swallowSplitClick.current = false;
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    const hit = splitTarget(e);
+    if (!hit) return;
+    const { item, v, chat } = hit;
+    splitWith(v, chat);
+    if (item.dataset.splitPass === undefined) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  };
+  // Sidebar: a view or chat on screen in a pane that isn't focused.
+  const inOtherPane = (v: string, chat?: string) =>
+    !!viewSplit && viewSplit.panes.some((p, i) => i !== viewSplit.focus && p.view === v && (!chat || paneChat(viewSplit, i) === chat));
+  // A split group's sidebar name: the user's, else its views ("Ops + Crux").
+  const groupName = (g: ViewGroup) => g.name ?? g.split.panes.map((p) => viewName(p.view)).join(" + ");
+  // Split view: what a pane is called on its header.
+  const viewName = (v: string) =>
+    v === "home" ? "Home" : v === "sessions" ? "Sessions" : v === "connections" ? "Connections" : v === "flow" ? "Flow"
+      : v === "jira" ? "Browser" : ext.views.find((x) => x.key === v)?.label ?? config?.repos[v]?.label ?? v;
+  // The chat a pane that isn't focused shows: its own, never the focused one's.
+  const paneChat = (s: ViewSplit, i: number) => {
+    const p = s.panes[i];
+    if (isSpecial(p.view)) return "";
+    if (i === s.focus) return ck;
+    const taken = (c: string) => p.view === view && c === ck;
+    if (p.chat && tabs[p.chat] && !taken(p.chat)) return p.chat;
+    const last = activeChat[p.view];
+    if (last && tabs[last] && !taken(last)) return last;
+    return chatsOf(p.view).find((c) => !taken(c)) ?? "";
+  };
+  // Drag the line between two views (in the split at `path`). Moves the boxes
+  // directly; the sizes are saved on release.
+  const startViewResize = (e: React.PointerEvent, path: number[], i: number, dir: "row" | "col", sizes: number[]) => {
+    const host = (e.currentTarget as HTMLElement).parentElement;
+    if (!splitRef.current || !host) return;
+    e.preventDefault();
+    const cells = [...host.children].filter((el): el is HTMLElement => el instanceof HTMLElement && el.classList.contains("view-node"));
+    const rect = host.getBoundingClientRect();
+    const span = dir === "row" ? rect.width : rect.height;
+    const total = sizes.reduce((a, b) => a + b, 0);
+    const start = dir === "row" ? e.clientX : e.clientY;
+    const pair = sizes[i - 1] + sizes[i];
+    const next = [...sizes];
+    setDragging(true);
+    const move = (ev: PointerEvent) => {
+      const a = Math.min(pair * 0.85, Math.max(pair * 0.15, sizes[i - 1] + (((dir === "row" ? ev.clientX : ev.clientY) - start) / span) * total));
+      next[i - 1] = a;
+      next[i] = pair - a;
+      cells[i - 1].style.flexGrow = String(a);
+      cells[i].style.flexGrow = String(pair - a);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setDragging(false);
+      const s = splitRef.current;
+      if (s) commitSplit({ ...s, tree: setSizesAt(s.tree, path, next) });
+      window.dispatchEvent(new Event("resize"));
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+  // Where a dragged view would land on this pane.
+  const dropMark = (id: string) =>
+    viewDrag?.drop?.paneId === id ? <div className={`view-drop ${viewDrag.drop.mode}`} aria-hidden /> : null;
+  // The main area: one view, or the split's views side by side / stacked.
+  const renderViews = (draw: (v: string, c: string, primary: boolean, inSplit: boolean) => React.ReactNode) => {
+    const s = viewSplit;
+    if (!s) {
+      return (
+        <div className="view-split">
+          <div className="view-node view-cell" key={SOLO} data-pane={SOLO}>
+            <div className="view-body" key="b">{draw(view, ck, true, false)}</div>
+            {dropMark(SOLO)}
+          </div>
+        </div>
+      );
+    }
+    const cell = (id: string, grow: number) => {
+      const i = s.panes.findIndex((p) => p.id === id);
+      const p = s.panes[i];
+      if (!p) return null;
+      const focused = i === s.focus;
+      const c = paneChat(s, i);
+      return (
+        <div
+          key={p.id}
+          data-pane={p.id}
+          className={`view-node view-cell ${focused ? "focused" : ""}`}
+          style={{ flexGrow: grow }}
+          // Click anywhere in a pane to work in it.
+          onPointerDownCapture={(e) => !(e.target as HTMLElement).closest(".view-head-btn") && focusPane(i)}
+        >
+          <div
+            className="view-head"
+            key="h"
+            title="Drag to move this pane"
+            onPointerDown={(e) => {
+              if (e.button !== 0 || (e.target as HTMLElement).closest(".view-head-btn")) return;
+              startViewDrag(e, { v: p.view, from: p.id, label: viewName(p.view) });
+            }}
+          >
+            {config?.repos[p.view] && <span className="avatar view-head-avatar" style={avatarStyle(config.repos[p.view])}>{config.repos[p.view].label[0]?.toUpperCase()}</span>}
+            <span className="view-head-name">{viewName(p.view)}</span>
+            {c && <span className="view-head-chat">{chatTitle(c)}</span>}
+            <button className="view-head-btn" title="Show only this (undo split)" onClick={() => unsplit(i)}>
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9.5 2.5h4v4M6.5 13.5h-4v-4M13.5 2.5 9 7M2.5 13.5 7 9" />
+              </svg>
+            </button>
+            <button className="view-head-btn" title="Close this pane" onClick={() => closePane(i)}>
+              ×
+            </button>
+          </div>
+          <div className="view-body" key="b">{draw(p.view, c, focused, true)}</div>
+          {dropMark(p.id)}
+        </div>
+      );
+    };
+    const node = (n: PaneNode, path: number[], grow: number): React.ReactNode => {
+      if (n.kind === "leaf") return cell(n.id, grow);
+      return (
+        <div key={path.join(".") || "root"} className={`view-node view-group ${n.dir}`} style={{ flexGrow: grow }}>
+          {n.children.flatMap((child, i) => {
+            const out = node(child, [...path, i], n.sizes[i] ?? 1);
+            return i === 0
+              ? [out]
+              : [<div key={`d${i}`} className={`view-divider ${n.dir}`} style={{ zIndex: 20 - path.length }} onPointerDown={(e) => startViewResize(e, path, i, n.dir, n.sizes)} />, out];
+          })}
+        </div>
+      );
+    };
+    return <div className={`view-split split ${dragging ? "dragging" : ""}`}>{node(s.tree, [], 1)}</div>;
+  };
+
+  // Split groups in the session tab row: one tab each, its chats folded into it.
+  const splitTabs: SplitTab[] = viewGroups.groups.map((g) => {
+    const on = g.id === viewGroups.active;
+    const parts = g.split.panes.map((p, i) => {
+      const r = isSpecial(p.view) ? undefined : config.repos[p.view];
+      const chat = r ? (on ? paneChat(g.split, i) : p.chat ?? "") : "";
+      return {
+        chat: chat && tabs[chat] ? chat : "",
+        letter: (r?.label ?? viewName(p.view))[0]?.toUpperCase() ?? "?",
+        style: r ? avatarStyle(r) : undefined,
+        name: chat && tabs[chat] ? chatTitle(chat) : viewName(p.view),
+      };
+    });
+    const chats = parts.map((x) => x.chat).filter(Boolean);
+    const status = (["input", "working", "done"] as const).find((st) => sessionTabs.some((t) => chats.includes(t.chat) && t.status === st));
+    return { id: g.id, on, chats, status, badges: parts.map(({ letter, style }) => ({ letter, style })), name: g.name ?? parts.map((x) => x.name).join(" + ") };
+  });
   return (
     <div className="app">
       {/* data-tauri-drag-region: the top bar moves the window (no title bar). */}
@@ -2381,7 +2824,7 @@ export default function App() {
         </div>
         <span className={`conn ${connected ? "on" : "off"}`}>{connected ? "connected" : "offline"}</span>
       </header>
-      <div className="body">
+      <div className="body" onClickCapture={onSplitClick} onPointerDownCapture={onSplitPointerDown}>
         <nav
           ref={navRef}
           className={`sidebar has-glide ${sideHidden ? "collapsed" : ""}`}
@@ -2398,7 +2841,7 @@ export default function App() {
             Search chats
             <kbd>{KEY.search}</kbd>
           </button>
-          <button className={`side-item view-item side-home ${view === "home" ? "active" : ""}`} onClick={() => setView("home")} title="Home: what needs you">
+          <button data-split="home" className={`side-item view-item side-home ${view === "home" ? "active" : inOtherPane("home") ? "split-shown" : ""}`} onClick={() => setView("home")} title="Home: what needs you">
             <span className="avatar view-icon">
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round">
                 <path d="M2.5 7.2 8 2.5l5.5 4.7V13a.5.5 0 0 1-.5.5H9.8V10H6.2v3.5H3a.5.5 0 0 1-.5-.5z" />
@@ -2410,7 +2853,8 @@ export default function App() {
           {/* Views, right under Home (each can be hidden in Settings → Tabs & views). */}
           {settings.sessionsView !== false && (
           <button
-            className={`side-item view-item ${view === "sessions" ? "active" : ""}`}
+            data-split="sessions"
+            className={`side-item view-item ${view === "sessions" ? "active" : inOtherPane("sessions") ? "split-shown" : ""}`}
             onClick={() => setView("sessions")}
             title="Sessions"
           >
@@ -2420,7 +2864,8 @@ export default function App() {
           )}
           {showConnections && (
           <button
-            className={`side-item view-item ${view === "connections" ? "active" : ""}`}
+            data-split="connections"
+            className={`side-item view-item ${view === "connections" ? "active" : inOtherPane("connections") ? "split-shown" : ""}`}
             onClick={() => setView("connections")}
             title="Connections"
           >
@@ -2430,7 +2875,8 @@ export default function App() {
           )}
           {showFlow && (
           <button
-            className={`side-item view-item ${view === "flow" ? "active" : ""}`}
+            data-split="flow"
+            className={`side-item view-item ${view === "flow" ? "active" : inOtherPane("flow") ? "split-shown" : ""}`}
             onClick={() => setView("flow")}
             title="Live chart of what each agent is doing"
           >
@@ -2443,7 +2889,8 @@ export default function App() {
               key={v.key}
               role="button"
               tabIndex={0}
-              className={`side-item view-item ${view === v.key ? "active" : ""}`}
+              data-split={v.key}
+              className={`side-item view-item ${view === v.key ? "active" : inOtherPane(v.key) ? "split-shown" : ""}`}
               onClick={() => setView(v.key)}
               onKeyDown={(e) => e.key === "Enter" && setView(v.key)}
               title={v.label}
@@ -2469,7 +2916,8 @@ export default function App() {
           {settings.jira && (
           <>
           <button
-            className={`side-item view-item ${view === "jira" ? "active" : ""}`}
+            data-split="jira"
+            className={`side-item view-item ${view === "jira" ? "active" : inOtherPane("jira") ? "split-shown" : ""}`}
             onClick={() => setView("jira")}
             title="Browser"
           >
@@ -2497,6 +2945,8 @@ export default function App() {
               {jiraTabs.tabs.map((t) => (
                 <div
                   key={t.id}
+                  data-split="jira"
+                  data-split-pass=""
                   className={`side-sub-item ${view === "jira" && jiraTabs.active === t.id ? "active" : ""}`}
                   onClick={() => openJiraTab(t.id)}
                 >
@@ -2557,7 +3007,8 @@ export default function App() {
             ) : (
               <Fragment key={key}>
               <div
-                className={`side-item ${view === key ? "active" : ""}`}
+                data-split={key}
+                className={`side-item ${view === key ? "active" : inOtherPane(key) ? "split-shown" : ""}`}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   setMenu({ key, x: e.clientX, y: e.clientY });
@@ -2628,7 +3079,9 @@ export default function App() {
                       return (
                       <div
                         key={chat}
-                        className={`side-sub-item ws-chat ${view === key && shown === chat ? "active" : ""}`}
+                        data-split={key}
+                        data-split-chat={chat}
+                        className={`side-sub-item ws-chat ${view === key && shown === chat ? "active" : inOtherPane(key, chat) ? "split-shown" : ""}`}
                         onClick={() => openChat(chat)}
                         onContextMenu={(e) => {
                           e.preventDefault();
@@ -2740,8 +3193,18 @@ export default function App() {
           </div>
         </nav>
         <div className="main-col" ref={mainColRef}>
-        {sessionTabs.length > 0 && settings.sessionBar !== false && (
+        {(sessionTabs.length > 0 || splitTabs.length > 0) && settings.sessionBar !== false && (
           <SessionBar
+            splits={splitTabs}
+            onOpenSplit={openGroup}
+            onCloseSplit={removeGroup}
+            renamingSplit={renamingGroup}
+            onRenameSplit={(id, name) => {
+              if (name !== null) renameGroup(id, name);
+              setRenamingGroup(null);
+            }}
+            onStartRenameSplit={setRenamingGroup}
+            onSplitMenu={(id, e) => setTopMenu({ kind: "group", id, x: e.clientX, y: e.clientY + 6 })}
             tabs={sessionTabs}
             active={isSpecialView ? "" : ck}
             showBadges
@@ -2792,7 +3255,15 @@ export default function App() {
             onAdd={(e) => setSessionMenu({ x: e.clientX, y: e.clientY + 8 })}
           />
         )}
-        {!repo && !isSpecialView ? (
+        {renderViews((v, c, primary, inSplit) => {
+          // One view's content; in a split each pane renders its own (`v`, chat `c`).
+          // Only the focused (`primary`) pane takes drops and the shared refs.
+          const vRepo = isSpecial(v) ? undefined : config.repos[v];
+          const vExt = ext.views.find((x) => x.key === v);
+          const vLayout = (c && layouts[c]) || rootLayout();
+          const vSplits = splitTabIds(vLayout);
+          const vPanelHidden = inSplit || panelHidden;
+          return !vRepo && !isSpecial(v) ? (
           <section className="full-pane empty-state">
             {settings.mode === "qa" ? (
               <>
@@ -2819,7 +3290,7 @@ export default function App() {
             </ol>
             <SetupChecklist />
           </section>
-        ) : view === "home" ? (
+        ) : v === "home" ? (
           <Home
             userName={config.userName ?? ""}
             needs={[...attention]
@@ -2854,23 +3325,23 @@ export default function App() {
               setView("jira");
             }}
           />
-        ) : view === "sessions" ? (
+        ) : v === "sessions" ? (
           <SessionsPanel
             workspaces={Object.fromEntries(Object.entries(config.repos).map(([k, r]) => [k, { label: r.label, badge: avatarStyle(r) }]))}
             isOpen={(id) => Object.values(tabs).some((ts) => ts.some((t) => t.bootCmd?.includes(id)))}
             onResume={resumePast}
           />
-        ) : view === "connections" ? (
+        ) : v === "connections" ? (
           <section className="full-pane">
             <FeatureMap onAddWorkspace={() => setAdding(true)} showCoverage={settings.connCoverage} showGraph={settings.connGraph} />
           </section>
-        ) : view === "flow" ? (
+        ) : v === "flow" ? (
           <Suspense fallback={<section className="full-pane" />}>
             <FlowView wsLabel={(ws) => (ws && config.repos[ws]?.label) || ws || ""} onJump={jumpToTerm} />
           </Suspense>
-        ) : isExtensionView(view) ? (
-          extView ? <ExtensionPane view={extView} /> : <section className="full-pane" />
-        ) : view === "jira" ? (
+        ) : isExtensionView(v) ? (
+          vExt ? <ExtensionPane view={vExt} /> : <section className="full-pane" />
+        ) : v === "jira" ? (
           // Browser view (internally still "jira", so saved tabs and logins carry over).
           <section className="full-pane jira-pane">
             <Browser wsKey="jira" visible={!overlayOpen} network={settings.network} picker={settings.picker} writeGuard={settings.writeGuard} openRequest={browserOpen} />
@@ -2878,8 +3349,8 @@ export default function App() {
         ) : (
           <div
             className={`panes ${dragging ? "dragging" : ""}`}
-            ref={panesRef}
-            style={{ gridTemplateColumns: panelHidden ? "1fr 0px 0fr" : `${split}fr 1px ${100 - split}fr` }}
+            ref={primary ? panesRef : undefined}
+            style={{ gridTemplateColumns: vPanelHidden ? "1fr 0px 0fr" : `${split}fr 1px ${100 - split}fr` }}
             onTransitionEnd={(e) => {
               // Settle terminals and panels at the final size once the slide
               // finishes — mid-animation fits leave xterm garbled otherwise.
@@ -2888,21 +3359,21 @@ export default function App() {
               }
             }}
           >
-            <section className="term-pane" ref={termPaneRef}>
+            <section className="term-pane" ref={primary ? termPaneRef : undefined}>
               <div className="term-tabs">
-                {(tabs[ck] ?? [])
-                  .filter((t) => !viewSplits.includes(t.id))
+                {(tabs[c] ?? [])
+                  .filter((t) => !vSplits.includes(t.id))
                   .map((t) => (
                     <span
                       key={t.id}
-                      className={`term-tab ${activeTab[ck] === t.id ? "active" : ""}`}
+                      className={`term-tab ${activeTab[c] === t.id ? "active" : ""}`}
                       title="Drag onto a pane to split"
                       onPointerDown={startTabDrag(t)}
-                      onClick={() => setActiveTab((prev) => ({ ...prev, [ck]: t.id }))}
+                      onClick={() => setActiveTab((prev) => ({ ...prev, [c]: t.id }))}
                       // --- Appearance (C) ---
                       onContextMenu={(e) => {
                         e.preventDefault();
-                        setTabTheme({ key: ck, id: t.id, x: e.clientX, y: e.clientY, pick: false });
+                        setTabTheme({ key: c, id: t.id, x: e.clientX, y: e.clientY, pick: false });
                       }}
                     >
                       {t.agent === "claude" && <ClaudeLogo />}
@@ -2915,7 +3386,7 @@ export default function App() {
                           title="Close terminal"
                           onClick={(e) => {
                             e.stopPropagation();
-                            requestClose({ key: ck, id: t.id, name: t.title });
+                            requestClose({ key: c, id: t.id, name: t.title });
                           }}
                         >
                           ×
@@ -2941,29 +3412,29 @@ export default function App() {
                     <circle cx="11.5" cy="5" r="1.5" />
                     <path d="M4.5 5v6M11.5 6.5c0 3-7 2-7 4.5" />
                   </svg>
-                  <span className="git-btn-branch">{branches[view] ?? "Git"}</span>
+                  <span className="git-btn-branch">{branches[v] ?? "Git"}</span>
                   <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M2.5 3.75 5 6.25l2.5-2.5" />
                   </svg>
                 </button>
               </div>
               <div className="term-slots">
-                {ck ? (
-                  renderPane(viewLayout, [])
+                {c ? (
+                  renderPane(vLayout, [], v, c, primary)
                 ) : (
                   // No chat yet: nothing runs until the user starts one. Still a
                   // drop target, so dragging Claude / Codex here works too.
-                  <div className="term-slot chat-empty" data-pane-id={MAIN}>
-                    {repo ? (
+                  <div className="term-slot chat-empty" data-pane-id={primary ? MAIN : undefined}>
+                    {vRepo ? (
                       <WorkspaceHome
-                        ws={view}
-                        label={repo.label}
-                        path={repo.path}
-                        branch={branches[view]}
-                        onNew={(kind) => askChatName(view, kind)}
-                        onOrchestrate={() => setOrchestrate(view)}
+                        ws={v}
+                        label={vRepo.label}
+                        path={vRepo.path}
+                        branch={branches[v]}
+                        onNew={(kind) => askChatName(v, kind)}
+                        onOrchestrate={() => setOrchestrate(v)}
                         onResume={resumePast}
-                        onReview={(mr) => void deliverToAgent({ newIn: view }, reviewPrompt(mr), true, `review !${mr.iid}`).catch((err) => setToast(String(err)))}
+                        onReview={(mr) => void deliverToAgent({ newIn: v }, reviewPrompt(mr), true, `review !${mr.iid}`).catch((err) => setToast(String(err)))}
                         onOpenUrl={(url) => {
                           setBrowserOpen({ url, nonce: Date.now() });
                           setView("jira");
@@ -2975,19 +3446,22 @@ export default function App() {
                   </div>
                 )}
               </div>
-              {agentDrag?.drop && termPaneRef.current && (
+              {primary && agentDrag?.drop && termPaneRef.current && (
                 <DropPreview drop={agentDrag.drop} host={termPaneRef.current.getBoundingClientRect()} />
               )}
-              {tabDrag?.drop && termPaneRef.current && (
+              {primary && tabDrag?.drop && termPaneRef.current && (
                 <DropPreview drop={tabDrag.drop} host={termPaneRef.current.getBoundingClientRect()} move />
               )}
             </section>
+            {/* In a split the workspace shows its chats only; the panel is back once it's alone. */}
+            {!inSplit && (
             <div
               className={`splitter ${panelHidden ? "collapsed" : ""}`}
               onPointerDown={panelHidden ? undefined : onSplitDown}
               title="Drag to resize"
             />
-            {
+            )}
+            {!inSplit && (
               <section className={`right ${panelHidden ? "collapsed" : ""}`}>
                 {repo && (
                   <>
@@ -3025,16 +3499,35 @@ export default function App() {
                   </>
                 )}
               </section>
-            }
-            {rightHidden && hasPanel && (
+            )}
+            {!inSplit && rightHidden && hasPanel && (
               <button className="pane-reopen" title="Show panel" onClick={() => hideRight(false)}>
                 «
               </button>
             )}
           </div>
-        )}
+        );
+        })}
         </div>
       </div>
+      {topMenu?.kind === "group" && viewGroups.groups.some((g) => g.id === topMenu.id) && (
+        <ContextMenu
+          x={topMenu.x}
+          y={topMenu.y}
+          onClose={() => setTopMenu(null)}
+          groups={[
+            [
+              { label: "Open", icon: <SplitIcon />, onSelect: () => openGroup(topMenu.id!) },
+              {
+                label: "Rename",
+                icon: MenuIcons.rename,
+                onSelect: () => setRenamingGroup(topMenu.id!),
+              },
+            ],
+            [{ label: "Ungroup", icon: MenuIcons.remove, danger: true, onSelect: () => removeGroup(topMenu.id!) }],
+          ]}
+        />
+      )}
       {sessionMenu && (
         <ContextMenu
           x={sessionMenu.x}
@@ -3108,6 +3601,11 @@ export default function App() {
               <button className="danger-solid" onClick={() => trashWs(confirmDelete)}>Move to Trash</button>
             </div>
           </div>
+        </div>
+      )}
+      {viewDrag && (
+        <div className="view-drag-ghost" ref={ghostRef} style={{ transform: `translate(${ghostAt.current.x}px, ${ghostAt.current.y}px)` }}>
+          {viewDrag.label}
         </div>
       )}
       {toast && <div className="toast">{toast}</div>}
