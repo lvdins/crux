@@ -6,7 +6,7 @@ import { APPEARANCE_EVENT, DEFAULT_APPEARANCE, SAFE_MODE_KEY, emitAppearance, wi
 export const APPEARANCE_KEY = "crux.appearance";
 type ResolvedTheme = Exclude<AppTheme, "system">;
 
-const LIGHT: ReadonlySet<ResolvedTheme> = new Set(["crux-light", "unicorn"]);
+const LIGHT: ReadonlySet<ResolvedTheme> = new Set(["crux-light", "unicorn", "solarized-light", "everforest-light"]);
 const inTauri = "__TAURI_INTERNALS__" in window;
 const auxWindow = !!(window as { __CRUX_QUICK__?: boolean; __CRUX_TRAY__?: boolean }).__CRUX_QUICK__ ||
   !!(window as { __CRUX_TRAY__?: boolean }).__CRUX_TRAY__;
@@ -47,11 +47,60 @@ export function applyAppTheme(a: Appearance): void {
     for (const p of ["--accent", "--accent-rgb", "--accent-ink", "--accent-soft"]) root.style.removeProperty(p);
   }
 
+  applyStrength(root, theme, a.themeStrength ?? 100, !!(accent && rgb));
+
   root.toggleAttribute("data-reduce-motion", a.reduceMotion || motionQuery.matches);
   root.toggleAttribute("data-scanlines", theme === "cyberpunk");
   // Native window chrome: light for an explicitly light theme. "System"
   // leaves it to the OS, or the forced appearance would hide OS changes.
   setWindowTheme(a.theme !== "system" && LIGHT.has(theme) ? "light" : null);
+}
+
+// Theme strength: every colour token is blended between the theme's value and
+// plain Crux (Dark for a dark theme, Light for a light one). 100 = the theme.
+const COLOR_TOKENS = [
+  "--bg", "--surface", "--surface-2", "--raise", "--ink", "--ink-soft", "--ink-faint", "--line",
+  "--menu", "--menu-line", "--menu-hover", "--graph-bg", "--accent", "--accent-ink", "--accent-soft",
+  "--ok", "--ok-ink", "--ok-soft", "--fail", "--warn", "--hi", "--on-accent", "--on-warn", "--scrim",
+  "--danger-ink", "--danger-solid", "--danger-solid-hover", "--drop-bg", "--drop-over-bg",
+  "--c-green", "--c-blue", "--c-purple", "--c-pink", "--c-sage", "--c-jira", "--c-claude",
+];
+const RGB_TOKENS = ["--hi-rgb", "--bg-rgb", "--accent-rgb", "--ok-rgb", "--warn-rgb", "--fail-rgb", "--danger-ink-rgb", "--c-claude-rgb"];
+const ACCENT_TOKENS = new Set(["--accent", "--accent-ink", "--accent-soft", "--accent-rgb"]);
+let mixed: string[] = []; // properties the last blend set inline
+
+function applyStrength(root: HTMLElement, theme: ResolvedTheme, strength: number, ownAccent: boolean): void {
+  for (const p of mixed) root.style.removeProperty(p);
+  mixed = [];
+  const base: ResolvedTheme = LIGHT.has(theme) ? "crux-light" : "crux-dark";
+  const pct = Math.min(100, Math.max(0, Math.round(strength)));
+  if (pct >= 100 || theme === base) return;
+  const tokens = [...COLOR_TOKENS, ...RGB_TOKENS].filter((p) => !(ownAccent && ACCENT_TOKENS.has(p)));
+  const read = () => {
+    const cs = getComputedStyle(root);
+    return new Map(tokens.map((p) => [p, cs.getPropertyValue(p).trim()]));
+  };
+  // Read the theme's values, then plain Crux's (switching the attribute for a
+  // moment; nothing paints in between), then put the theme back.
+  const mine = read();
+  if (base === "crux-dark") root.removeAttribute("data-theme");
+  else root.setAttribute("data-theme", base);
+  const plain = read();
+  root.setAttribute("data-theme", theme);
+  const nums = (v: string) => v.split(",").map((n) => Number(n.trim()));
+  for (const p of tokens) {
+    const a = mine.get(p);
+    const b = plain.get(p);
+    if (!a || !b || a === b) continue;
+    let v: string;
+    if (RGB_TOKENS.includes(p)) {
+      const [x, y] = [nums(a), nums(b)];
+      if (x.length !== 3 || y.length !== 3 || [...x, ...y].some(Number.isNaN)) continue;
+      v = x.map((n, i) => Math.round((n * pct + y[i] * (100 - pct)) / 100)).join(", ");
+    } else v = `color-mix(in srgb, ${a} ${pct}%, ${b})`;
+    root.style.setProperty(p, v);
+    mixed.push(p);
+  }
 }
 
 /** "r, g, b" of any CSS colour (styles.css tints with rgba(var(--accent-rgb), a)); null if invalid. */

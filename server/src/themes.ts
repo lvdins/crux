@@ -25,7 +25,7 @@ export const ASSETS_DIR = path.join(THEMES_DIR, "assets");
 export const ASSET_PROTOCOL_OK = [DEFAULT_HOME, path.join(os.homedir(), ".crux-dev")].includes(CRUX_HOME);
 export const MAX_ASSET = 20 * 1024 * 1024;
 
-const THEMES = ["crux-dark", "crux-light", "system", "cyberpunk", "unicorn"];
+const THEMES = ["crux-dark", "crux-light", "system", "cyberpunk", "unicorn", "dracula", "nord", "one-dark", "gruvbox", "tokyo-night", "catppuccin", "solarized-light", "everforest", "matrix", "everforest-light", "khaki", "moss"];
 const KINDS = ["claude", "codex", "shell"];
 const CURSORS = ["block", "bar", "underline"];
 const FITS = ["cover", "contain", "tile", "center"];
@@ -140,7 +140,9 @@ export function cleanAppearance(v: unknown): Appearance | undefined {
   if (!obj(v)) return undefined;
   const p = v.playlist;
   return tidy({
-    theme: oneOf(THEMES, v.theme) ? v.theme : undefined,
+    // Known themes, and any well-formed id: a newer client may know themes this
+    // server doesn't, and dropping the id here would flip the app back to Crux Dark.
+    theme: oneOf(THEMES, v.theme) || (typeof v.theme === "string" && /^[a-z][a-z0-9-]{1,40}$/.test(v.theme)) ? v.theme : undefined,
     accent: hex(v.accent) ? v.accent : undefined,
     terminalScheme: id(v.terminalScheme) ? v.terminalScheme : undefined,
     font: cleanFont(v.font),
@@ -155,6 +157,7 @@ export function cleanAppearance(v: unknown): Appearance | undefined {
       : undefined,
     reactToState: typeof v.reactToState === "boolean" ? v.reactToState : undefined,
     reduceMotion: typeof v.reduceMotion === "boolean" ? v.reduceMotion : undefined,
+    themeStrength: typeof v.themeStrength === "number" && v.themeStrength >= 0 && v.themeStrength <= 100 ? Math.round(v.themeStrength) : undefined,
     perWorkspace: cleanRecord(v.perWorkspace, (k) => /^[\w.-]{1,64}$/.test(k), cleanLook),
     perKind: cleanRecord(v.perKind, (k) => KINDS.includes(k), cleanLook),
     customSchemes: cleanRecord(v.customSchemes, (k) => k.length > 0 && k.length <= 60, cleanScheme, 50),

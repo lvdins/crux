@@ -2,7 +2,9 @@
 // (client/src/appearance.ts). Do not edit it on your branch; put extra types
 // in your own module. Ask the lead if the contract needs to change.
 
-export type AppTheme = "crux-dark" | "crux-light" | "system" | "cyberpunk" | "unicorn";
+export type AppTheme =
+  | "crux-dark" | "crux-light" | "system" | "cyberpunk" | "unicorn"
+  | "dracula" | "nord" | "one-dark" | "gruvbox" | "tokyo-night" | "catppuccin" | "solarized-light" | "everforest" | "matrix" | "everforest-light" | "khaki" | "moss";
 export type ChatKind = "claude" | "codex" | "shell";
 export type CursorStyle = "block" | "bar" | "underline";
 export type BgFit = "cover" | "contain" | "tile" | "center";
@@ -50,6 +52,7 @@ export interface TermLook {
 export interface Appearance {
   theme: AppTheme;
   accent?: string;           // hex; undefined → theme's own accent
+  themeStrength?: number;    // 0–100: the theme blended with plain Crux Dark / Light; undefined → 100
   terminalScheme: string;    // app default scheme id
   font: TermFont;
   background: Background;

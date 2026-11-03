@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { api } from "../net";
-import { exitSafeMode, isSafeMode } from "../theme";
+import ContextMenu from "./ContextMenu";
+import { exitSafeMode, isLightTheme, isSafeMode } from "../theme";
 import {
   DEFAULT_APPEARANCE,
   emitAppearance,
@@ -23,19 +25,54 @@ import type { Settings } from "../types";
 
 const IN_TAURI = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
-const APP_THEMES: [AppTheme, string][] = [
-  ["crux-dark", "Crux Dark"],
-  ["crux-light", "Crux Light"],
-  ["system", "System"],
-  ["cyberpunk", "Cyberpunk"],
-  ["unicorn", "Unicorn"],
+// The Theme dropdown, in groups.
+const THEME_GROUPS: [string, [AppTheme, string][]][] = [
+  ["Crux", [["crux-dark", "Crux Dark"], ["crux-light", "Crux Light"], ["system", "System (light / dark)"]]],
+  ["Green & khaki", [["everforest", "Everforest"], ["everforest-light", "Everforest Light"], ["moss", "Moss"], ["khaki", "Khaki"], ["matrix", "Matrix"]]],
+  [
+    "Editor classics",
+    [["dracula", "Dracula"], ["nord", "Nord"], ["one-dark", "One Dark"], ["gruvbox", "Gruvbox"], ["tokyo-night", "Tokyo Night"], ["catppuccin", "Catppuccin"], ["solarized-light", "Solarized Light"]],
+  ],
+  ["Playful", [["cyberpunk", "Cyberpunk"], ["unicorn", "Unicorn"]]],
 ];
+// The dropdown's swatch per theme: [background, accent].
+const THEME_SWATCH: Partial<Record<AppTheme, [string, string]>> = {
+  "crux-dark": ["#1b1c20", "#0099ff"],
+  "crux-light": ["#f6f6f8", "#0a7fe0"],
+  system: ["#1b1c20", "#f6f6f8"],
+  everforest: ["#2d353b", "#a7c080"],
+  matrix: ["#030a05", "#3dff7a"],
+  "everforest-light": ["#fdf6e3", "#8da101"],
+  khaki: ["#2a2920", "#c9bb7c"],
+  moss: ["#171e19", "#8fc47e"],
+  dracula: ["#282a36", "#bd93f9"],
+  nord: ["#2e3440", "#88c0d0"],
+  "one-dark": ["#282c34", "#61afef"],
+  gruvbox: ["#282828", "#fabd2f"],
+  "tokyo-night": ["#1a1b26", "#7aa2f7"],
+  catppuccin: ["#1e1e2e", "#cba6f7"],
+  "solarized-light": ["#fdf6e3", "#268bd2"],
+  cyberpunk: ["#0e0b16", "#ff2bd6"],
+  unicorn: ["#fff6fc", "#b05ae8"],
+};
 // Picking a theme brings its terminal colours along, unless you chose your own.
 const THEME_SCHEME: Partial<Record<AppTheme, string>> = {
   "crux-dark": "crux-dark",
   "crux-light": "solarized-light",
   cyberpunk: "cyberpunk-neon",
   unicorn: "unicorn-rainbow",
+  dracula: "dracula",
+  nord: "nord",
+  "one-dark": "one-dark",
+  gruvbox: "gruvbox",
+  "tokyo-night": "tokyo-night",
+  catppuccin: "catppuccin",
+  "solarized-light": "solarized-light",
+  everforest: "everforest",
+  matrix: "matrix",
+  "everforest-light": "everforest-light",
+  khaki: "khaki",
+  moss: "moss",
 };
 const ACCENTS = ["#7c5cff", "#3b82f6", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#ec4899"];
 const FONTS = ["SF Mono", "Menlo", "Monaco", "JetBrains Mono", "Fira Code", "Cascadia Code", "Source Code Pro", "IBM Plex Mono", "Hack", "Consolas"];
@@ -119,6 +156,62 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
 }
 
 /** Fine-tuning, folded away until asked for. Opens and shuts with a spring. */
+export type PickOption = { value: string; label: string; swatch?: [string, string] };
+
+/**
+ * A dropdown drawn like the app's own menus (not the system's): a button with
+ * the current choice, opening a grouped list. `swatch` is [background, accent].
+ */
+export function MenuSelect({ value, groups, onChange, label }: { value: string; groups: [string, PickOption[]][]; onChange: (v: string) => void; label: string }) {
+  const [at, setAt] = useState<{ x: number; y: number } | null>(null);
+  // A click on the button while open closes the menu (on pointerdown); don't reopen it.
+  const closedAt = useRef(0);
+  const all = groups.flatMap(([, o]) => o);
+  const current = all.find((o) => o.value === value);
+  const chip = (o?: PickOption) =>
+    o?.swatch ? <span className="pick-swatch" style={{ background: o.swatch[0], borderColor: o.swatch[1], boxShadow: `inset -5px 0 0 ${o.swatch[1]}` }} /> : null;
+  return (
+    <>
+      <button
+        type="button"
+        className={`settings-input pick-select ${at ? "open" : ""}`}
+        aria-label={label}
+        aria-haspopup="menu"
+        onClick={(e) => {
+          if (at) return setAt(null);
+          if (performance.now() - closedAt.current < 250) return;
+          const r = e.currentTarget.getBoundingClientRect();
+          setAt({ x: r.left, y: r.bottom + 4 });
+        }}
+      >
+        {chip(current)}
+        <span className="pick-label">{current?.label ?? value}</span>
+        <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M2.5 3.75 5 6.25l2.5-2.5" />
+        </svg>
+      </button>
+      {at &&
+        // On <body>: the settings sheet is transformed, which would trap a fixed menu.
+        createPortal(
+          <ContextMenu
+            x={at.x}
+            y={at.y}
+            className="pick-menu"
+            headings={groups.map(([h]) => h || undefined)}
+            groups={groups.map(([, opts]) =>
+              opts.map((o) => ({ label: o.label, icon: chip(o), shortcut: o.value === value ? "✓" : undefined, onSelect: () => onChange(o.value) })),
+            )}
+            onClose={() => {
+              closedAt.current = performance.now();
+              setAt(null);
+            }}
+          />,
+          document.body,
+        )}
+    </>
+  );
+}
+
 export function More({ label, className = "settings-more", children }: { label: string; className?: string; children: React.ReactNode }) {
   const ref = useRef<HTMLDetailsElement>(null);
   const toggle = (e: React.MouseEvent) => {
@@ -390,11 +483,25 @@ export default function AppearanceSettings({ settings, onChange }: { settings: S
     if (!file) return;
     try {
       const body = await file.text();
-      JSON.parse(body);
+      // Not a Crux theme file (iTerm2 .itermcolors, a Windows Terminal scheme):
+      // it's terminal colours, so import it as a terminal scheme instead.
+      let parsed: unknown = null;
+      try {
+        parsed = JSON.parse(body);
+      } catch {
+        /* not JSON */
+      }
+      if (!parsed || (parsed as { crux?: string }).crux !== "theme") {
+        await onImportScheme(file);
+        setNotice(`Imported “${file.name.replace(/\.[^.]+$/, "")}” as terminal colours.`);
+        return;
+      }
       const r = await api("/api/themes/import", { method: "POST", headers: { "Content-Type": "application/json" }, body });
       const out = (await r.json().catch(() => ({}))) as ThemeFile & { error?: string };
       if (!r.ok) throw new Error(out.error ?? `status ${r.status}`);
-      setNotice(`Imported “${out.name}”. Apply it from the list.`);
+      // An imported theme is applied straight away (Undo changes takes it back).
+      applyTheme(out);
+      setNotice(`Imported and applied “${out.name}”.`);
       loadThemes();
     } catch (err) {
       fail(`Couldn't import that file: ${(err as Error).message}`);
@@ -415,14 +522,41 @@ export default function AppearanceSettings({ settings, onChange }: { settings: S
       {error && <p className="settings-note warn first">{error}</p>}
 
       <div className="settings-section">Theme</div>
-      <div className="settings-choice">
-        {APP_THEMES.map(([id, label]) => (
-          <button key={id} className={look.theme === id ? "on" : ""} onClick={() => pickTheme(id)}>
-            {label}
-          </button>
-        ))}
-      </div>
-      <div className="settings-list appearance-gap">
+      <div className="settings-list">
+        <Row label="Theme">
+          <span className="appearance-inline">
+            <MenuSelect
+              label="Theme"
+              value={look.theme}
+              groups={[
+                ...THEME_GROUPS.map(([group, list]): [string, PickOption[]] => [
+                  group,
+                  list.map(([id, label]) => ({ value: id, label, swatch: THEME_SWATCH[id] })),
+                ]),
+                // Saved / imported theme files (Advanced → Theme files) are listed too.
+                ...(themes.length ? [["Your themes", themes.map((t) => ({ value: `file:${t.file}`, label: t.name }))] as [string, PickOption[]]] : []),
+              ]}
+              onChange={(v) => {
+                if (v.startsWith("file:")) {
+                  const t = themes.find((x) => x.file === v.slice(5));
+                  if (t) applyTheme(t);
+                } else pickTheme(v as AppTheme);
+              }}
+            />
+            <button
+              className="settings-btn-sm"
+              title="Import a Crux theme file, or terminal colours (iTerm2 .itermcolors, Windows Terminal .json)"
+              onClick={() => themeRef.current?.click()}
+            >
+              Import…
+            </button>
+          </span>
+        </Row>
+        {!["crux-dark", "crux-light", "system"].includes(look.theme) && (
+          <Row label="Strength" hint={`0%: plain Crux ${isLightTheme(look.theme) ? "Light" : "Dark"} · 100%: the full theme.`}>
+            <Slider value={look.themeStrength ?? 100} min={0} max={100} step={5} unit="%" onChange={(themeStrength) => patch({ themeStrength })} />
+          </Row>
+        )}
         <Row label="Accent">
           <span className="appearance-swatches" role="radiogroup" aria-label="Accent">
             <button
@@ -461,13 +595,20 @@ export default function AppearanceSettings({ settings, onChange }: { settings: S
       <div className="settings-list">
         <Row label="Colours" hint={look.terminalScheme === THEME_SCHEME[look.theme] ? "Matches the theme." : undefined}>
           <span className="appearance-inline">
-            <select className="settings-input appearance-select" value={look.terminalScheme} onChange={(e) => patch({ terminalScheme: e.target.value })}>
-              {schemeOptions(look).map(([id, name]) => (
-                <option key={id} value={id}>
-                  {name}
-                </option>
-              ))}
-            </select>
+            <MenuSelect
+              label="Terminal colours"
+              value={look.terminalScheme}
+              groups={[
+                [
+                  "",
+                  schemeOptions(look).map(([id, name]) => {
+                    const s = getScheme(id, look);
+                    return { value: id, label: name, swatch: [s.background, s.foreground] as [string, string] };
+                  }),
+                ],
+              ]}
+              onChange={(terminalScheme) => patch({ terminalScheme })}
+            />
             <input ref={schemeRef} type="file" hidden accept=".itermcolors,.json" onChange={(e) => void onImportScheme(e.target.files?.[0]).then(() => (e.target.value = ""))} />
             <button className="settings-btn-sm" onClick={() => schemeRef.current?.click()}>
               Import…
@@ -522,10 +663,7 @@ export default function AppearanceSettings({ settings, onChange }: { settings: S
           </span>
         </Row>
         </More>
-      </div>
-
-      <div className="settings-section">Background</div>
-      <div className="settings-list">
+        {/* Backgrounds only ever show behind terminals, so they live here. */}
         <Row label="Background">
           <BackgroundFields value={look.background} onChange={(background) => patch({ background })} onError={fail} />
         </Row>
@@ -691,7 +829,7 @@ export default function AppearanceSettings({ settings, onChange }: { settings: S
         </div>
       )}
       <div className="appearance-inline appearance-gap">
-        <input ref={themeRef} type="file" hidden accept=".json" onChange={(e) => void importTheme(e.target.files?.[0]).then(() => (e.target.value = ""))} />
+        <input ref={themeRef} type="file" hidden accept=".json,.itermcolors" onChange={(e) => void importTheme(e.target.files?.[0]).then(() => (e.target.value = ""))} />
         <button className="settings-btn-sm" onClick={() => themeRef.current?.click()}>
           Import file…
         </button>

@@ -15,11 +15,14 @@ export default function ContextMenu({
   groups,
   top,
   className,
+  headings,
   onClose,
 }: {
   x: number;
   y: number;
   groups: MenuItem[][];
+  /** A small title over each group (same order as `groups`), e.g. in a picker. */
+  headings?: (string | undefined)[];
   /** Custom content above the items (e.g. colour swatches). */
   top?: ReactNode;
   /** Extra class on the menu (e.g. a scrolling list). */
@@ -62,6 +65,7 @@ export default function ContextMenu({
       {top && <div className="ctx-group ctx-top">{top}</div>}
       {groups.map((group, gi) => (
         <div key={gi} className="ctx-group">
+          {headings?.[gi] && <div className="ctx-heading">{headings[gi]}</div>}
           {group.map((item) => (
             <button
               key={item.label}
