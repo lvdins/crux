@@ -258,6 +258,32 @@ export default function Term({
       term.refresh(0, term.rows - 1);
     };
 
+    // xterm sometimes leaves rows of an old frame on screen while a TUI redraws
+    // fast (Claude Code's spinner and prompt box): the buffer is right, the
+    // drawn rows are not, and a selection or resize "fixes" it. Repaint every
+    // row once output settles (150 ms quiet), and at least every 600 ms while
+    // it keeps streaming.
+    let repaintTimer: ReturnType<typeof setTimeout> | undefined;
+    let firstPending = 0;
+    const repaint = () => {
+      repaintTimer = undefined;
+      firstPending = 0;
+      if (!disposed) term.refresh(0, term.rows - 1);
+    };
+    const scheduleRepaint = () => {
+      if (disposed) return;
+      const now = performance.now();
+      if (!firstPending) firstPending = now;
+      clearTimeout(repaintTimer);
+      repaintTimer = setTimeout(repaint, now - firstPending > 600 ? 0 : 150);
+    };
+    // Back into view (window focus, tab shown): repaint too.
+    const onShown = () => {
+      if (document.visibilityState === "visible") scheduleRepaint();
+    };
+    window.addEventListener("focus", onShown);
+    document.addEventListener("visibilitychange", onShown);
+
     // The PTY must be created with the settled size, or programs like claude
     // draw at the wrong width. Wait for fonts + two frames before opening.
     const boot = async () => {
@@ -282,7 +308,7 @@ export default function Term({
       // fresh-gated bootCmd disappear: the second effect run sees the cached
       // terminal, reports fresh=false, and the server may not have spawned yet.)
       send({ type: "term:open", id, repo, cols: term.cols, rows: term.rows, fresh, bootCmd });
-      unsubscribe = subscribe(id, (data) => term.write(data));
+      unsubscribe = subscribe(id, (data) => term.write(data, scheduleRepaint));
       // Live appearance changes may refit from now on (the PTY exists).
       entry.refit = doFit;
       // One more pass shortly after, in case a scrollbar or font swap shifted
@@ -310,6 +336,9 @@ export default function Term({
       term.textarea?.removeEventListener("focus", reportFocus);
       container.removeEventListener("pointerdown", reportFocus, true);
       clearTimeout(debounce);
+      clearTimeout(repaintTimer);
+      window.removeEventListener("focus", onShown);
+      document.removeEventListener("visibilitychange", onShown);
       unsubscribe?.();
       observer.disconnect();
       window.removeEventListener("resize", onResize);
