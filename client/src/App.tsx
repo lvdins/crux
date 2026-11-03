@@ -2608,7 +2608,7 @@ export default function App() {
     if (e.button !== 0 || !(IS_MAC ? e.metaKey : e.ctrlKey)) return null;
     const t = e.target as HTMLElement;
     if (t.closest(".side-remove, .side-sub-toggle, .session-close, input")) return null;
-    const item = t.closest<HTMLElement>("[data-split], .session-tab[data-chat]");
+    const item = t.closest<HTMLElement>("[data-split], .session-tab[data-chat]:not(.split-tab)");
     if (!item) return null;
     const chat = item.dataset.splitChat ?? item.dataset.chat;
     const v = item.dataset.split ?? (chat ? wsOf(chat) : "");

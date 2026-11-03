@@ -142,7 +142,7 @@ export default function SessionBar({
   };
 
   // ---- dragging (pointer events: HTML5 drag-and-drop is unreliable in the WebView) ----
-  const [dragging, setDragging] = useState<{ chat?: string; group?: string } | null>(null);
+  const [dragging, setDragging] = useState<{ chat?: string; group?: string; split?: boolean } | null>(null);
   // The tab or letter a dragged tab would group with ("g:<id>" for a letter).
   const [into, setInto] = useState<string | null>(null);
 
@@ -153,7 +153,7 @@ export default function SessionBar({
    * add it to that group. Where the gap is decides the group: between two
    * tabs of a group, in it; anywhere else, on its own.
    */
-  const startDrag = (what: { chat?: string; group?: string }) => (e: React.PointerEvent) => {
+  const startDrag = (what: { chat?: string; group?: string; split?: boolean }) => (e: React.PointerEvent) => {
     if (e.button !== 0 || (e.target as HTMLElement).closest("button,input")) return;
     e.preventDefault(); // no text selection while dragging (click still fires)
     const startX = e.clientX;
@@ -270,10 +270,12 @@ export default function SessionBar({
       } else {
         const o = rest[j];
         const rel = (x - (o.left + shiftOf(o, j, gap))) / o.width;
+        // Split tabs only move: they neither join a group nor take a tab in.
+        const groups = !!what.chat && !what.split && !o.el.dataset.splitChats;
         if (o.group) {
           // A letter: its front edge places a tab before the group (on its
           // own); the rest of it joins the group. A group moves by halves.
-          if (what.chat) {
+          if (what.chat && !what.split) {
             if (rel < 0.45) gap = j;
             else candidate = o.key;
           } else gap = rel < 0.5 ? j : j + 1;
@@ -282,11 +284,11 @@ export default function SessionBar({
           // on the near half (a tab) groups with it.
           if (rel < 0.5) gap = j;
           else if (j < gap - 1) gap = j + 1;
-          else if (what.chat && rel < 0.8) candidate = o.key;
+          else if (groups && rel < 0.8) candidate = o.key;
         } else {
           if (rel > 0.5) gap = j + 1;
           else if (j > gap) gap = j;
-          else if (what.chat && rel > 0.2) candidate = o.key;
+          else if (groups && rel > 0.2) candidate = o.key;
         }
       }
       // A group never lands inside another group.
@@ -336,7 +338,8 @@ export default function SessionBar({
       flip.current = new Map(all.map((o) => [o.key, { left: o.el.getBoundingClientRect().left, v: dragged.includes(o) ? v : velocityOf(o.el), thrown: dragged.includes(o) }]));
       setTimeout(settle, 300); // in case nothing re-renders
 
-      const chats = dragged.filter((o) => o.chat).map((o) => o.chat!);
+      // A split tab moves all its chats, in their order.
+      const chats = dragged.flatMap((o) => (o.el.dataset.splitChats ? o.el.dataset.splitChats.split("\n") : o.chat ? [o.chat] : []));
       if (target) {
         // Grouping: with a tab, or into a letter's group.
         if (target.startsWith("g:")) {
@@ -358,7 +361,7 @@ export default function SessionBar({
       }
       // In a group only when landing between two of its tabs (its letter counts as the start).
       const groupOf = (o?: Slot) => (o?.group ? o.group : o?.chat ? ordered.find((t) => t.chat === o.chat)?.groupName && ordered.find((t) => t.chat === o.chat)!.group : undefined);
-      const g = groupOf(next) && groupOf(next) === groupOf(prev) ? groupOf(next) || null : null;
+      const g = !what.split && groupOf(next) && groupOf(next) === groupOf(prev) ? groupOf(next) || null : null;
       if (next?.chat) onPlace(chats, next.chat, false, g);
       else if (next?.group) onPlace(chats, membersOf(next.group)[0].chat, false, null);
       else onPlace(chats, null, true, null);
@@ -460,13 +463,18 @@ export default function SessionBar({
   // chat (Ops + Browser…) after the tabs.
   const splitOf = new Map(splits.flatMap((s) => s.chats.map((c) => [c, s] as const)));
   const drawnSplits = new Set<string>();
-  const splitTab = (s: SplitTab) => (
+  // A split with chats drags like a tab: it carries as its first chat (`anchor`),
+  // and a drop moves all its chats there together. One without chats stays put.
+  const splitTab = (s: SplitTab, anchor?: string) => (
     <div
       key={`s:${s.id}`}
       role="button"
-      className={`session-tab split-tab ${s.on ? "on" : ""}`}
-      title={`${s.name}${s.status ? ` · ${STATUS[s.status]}` : ""}\nSplit view · right-click for more`}
-      onClick={() => onOpenSplit?.(s.id)}
+      data-chat={anchor}
+      data-split-chats={anchor ? ordered.filter((o) => s.chats.includes(o.chat)).map((o) => o.chat).join("\n") : undefined}
+      className={`session-tab split-tab ${s.on ? "on" : ""} ${anchor && dragging?.chat === anchor ? "lifted" : ""}`}
+      title={`${s.name}${s.status ? ` · ${STATUS[s.status]}` : ""}\nSplit view${anchor ? " · drag to move" : ""} · right-click for more`}
+      onPointerDown={anchor && renamingSplit !== s.id ? startDrag({ chat: anchor, split: true }) : undefined}
+      onClick={() => !swallowClick.current && onOpenSplit?.(s.id)}
       onDoubleClick={() => onStartRenameSplit?.(s.id)}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -529,7 +537,7 @@ export default function SessionBar({
           if (inSplit) {
             if (drawnSplits.has(inSplit.id)) return null;
             drawnSplits.add(inSplit.id);
-            return splitTab(inSplit);
+            return splitTab(inSplit, t.chat);
           }
           const first = i === 0 || ordered[i - 1].group !== t.group;
           const shut = !!t.groupName && collapsed.has(t.group);
@@ -633,7 +641,7 @@ export default function SessionBar({
             </div>,
           ];
         })}
-        {splits.filter((s) => !s.chats.some((c) => ordered.some((t) => t.chat === c))).map(splitTab)}
+        {splits.filter((s) => !s.chats.some((c) => ordered.some((t) => t.chat === c))).map((s) => splitTab(s))}
       </div>
       <button className="session-add" title="New session or past sessions" onClick={onAdd}>
         +
