@@ -164,6 +164,14 @@ ZDOTDIR=$__ql_zdotdir
 unset __ql_zdotdir
 `;
 
+// Codex draws fullscreen (alternate screen) by default, which leaves the
+// terminal no scrollback: the wheel only reaches what Codex keeps on screen.
+// Inline mode puts its history in the terminal's own scrollback. Skipped when
+// the user's config.toml picks a mode itself.
+const CODEX_SET = `grep -qs '^[[:space:]]*alternate_screen' "\${CODEX_HOME:-$HOME/.codex}/config.toml"`;
+const CODEX_INLINE_ZSH = `${CODEX_SET} || extra+=(-c 'tui.alternate_screen="never"')`;
+const CODEX_INLINE_SH = `${CODEX_SET} || set -- -c 'tui.alternate_screen="never"' "$@"`;
+
 const ZSHRC = `${forward(".zshrc")}
 # claude / codex in a Crux terminal: Crux's hooks (finished / needs input) and,
 # where the in-app browser exists (macOS), the crux-browser tools.
@@ -180,13 +188,16 @@ if [[ -n "$CRUX_TERM" ]]; then
     esac
   }
 fi
-if [[ -n "$CRUX_MCP_CONFIG" && -f "$CRUX_MCP_CONFIG" ]]; then
+if [[ -n "$CRUX_TERM" ]]; then
   codex() {
-    command codex \\
-      -c "mcp_servers.crux_browser.command=\\"$QL_NODE\\"" \\
-      -c "mcp_servers.crux_browser.args=[\\"$QL_BROWSER_MCP\\"]" \\
-      -c "mcp_servers.crux_browser.env={CRUX_WORKSPACE=\\"$CRUX_WORKSPACE\\",CRUX_URL=\\"$CRUX_URL\\",CRUX_TERM=\\"$CRUX_TERM\\"}" \\
-      "$@"
+    local extra=()
+    ${CODEX_INLINE_ZSH}
+    [[ -n "$CRUX_MCP_CONFIG" && -f "$CRUX_MCP_CONFIG" ]] && extra+=(
+      -c "mcp_servers.crux_browser.command=\\"$QL_NODE\\""
+      -c "mcp_servers.crux_browser.args=[\\"$QL_BROWSER_MCP\\"]"
+      -c "mcp_servers.crux_browser.env={CRUX_WORKSPACE=\\"$CRUX_WORKSPACE\\",CRUX_URL=\\"$CRUX_URL\\",CRUX_TERM=\\"$CRUX_TERM\\"}"
+    )
+    command codex "\${extra[@]}" "$@"
   }
 fi
 `;
@@ -209,7 +220,8 @@ esac
   -c "mcp_servers.crux_browser.command=\\"$QL_NODE\\"" \\
   -c "mcp_servers.crux_browser.args=[\\"$QL_BROWSER_MCP\\"]" \\
   -c "mcp_servers.crux_browser.env={CRUX_WORKSPACE=\\"$CRUX_WORKSPACE\\",CRUX_URL=\\"$CRUX_URL\\",CRUX_TERM=\\"$CRUX_TERM\\"}" \\
-  "$@"`
+  "$@"
+${CODEX_INLINE_SH}`
 }
 exec "$real" "$@"
 `;
