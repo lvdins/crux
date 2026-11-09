@@ -1747,6 +1747,7 @@ export default function App() {
         openChat(chat);
         setChatsShown(wsOf(chat), true);
       },
+      chatOpen: (chat) => !!tabs[chat]?.length,
       workspaces: () => Object.entries(config?.repos ?? {}).map(([key, r]) => ({ key, label: r.label })),
       // Same as Ports: the in-app browser when it's there, else the system browser.
       openUrl: (url) => {

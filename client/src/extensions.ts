@@ -46,6 +46,8 @@ export interface CruxExtensionApi {
   askAgent: (prompt: string, opts?: { workspace?: string; title?: string }) => Promise<string | undefined>;
   /** Switch to a chat (a key from askAgent). */
   openChat: (chat: string) => void;
+  /** Whether a chat (a key from askAgent) is still open in Crux. */
+  chatOpen: (chat: string) => boolean;
   /** The user's workspaces. */
   workspaces: () => { key: string; label: string }[];
   /** Open an http(s) link the way Crux does: its Browser view when on, else the system browser. */
@@ -77,10 +79,11 @@ let showHandler: (key: string) => void = () => {};
 export interface ExtensionHost {
   ask: (prompt: string, opts: { workspace?: string; title?: string }) => Promise<string | undefined>;
   openChat: (chat: string) => void;
+  chatOpen: (chat: string) => boolean;
   workspaces: () => { key: string; label: string }[];
   openUrl: (url: string) => void;
 }
-let host: ExtensionHost = { ask: async () => undefined, openChat: () => {}, workspaces: () => [], openUrl: (url) => window.open(url, "_blank", "noopener") };
+let host: ExtensionHost = { ask: async () => undefined, openChat: () => {}, chatOpen: () => false, workspaces: () => [], openUrl: (url) => window.open(url, "_blank", "noopener") };
 
 export const isExtensionView = (view: string) => view.startsWith("ext:");
 
@@ -127,6 +130,7 @@ function apiFor(name: string, version: number): CruxExtensionApi {
     apiUrl: `${API_BASE}/api/ext/${name}`,
     askAgent: (prompt, opts = {}) => host.ask(prompt, opts),
     openChat: (chat) => host.openChat(chat),
+    chatOpen: (chat) => host.chatOpen(chat),
     workspaces: () => host.workspaces(),
     openUrl: (url) => {
       if (/^https?:\/\//i.test(url)) host.openUrl(url);
