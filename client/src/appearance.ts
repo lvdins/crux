@@ -16,6 +16,7 @@ export interface TermFont {
   ligatures?: boolean;
   cursorStyle?: CursorStyle;
   cursorBlink?: boolean; // undefined → true (today)
+  gpu?: boolean;         // GPU (WebGL) renderer; undefined → on. Ligatures force it off.
 }
 
 export type Background =

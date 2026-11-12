@@ -18,7 +18,10 @@ import { codexLeadExtra, cwdFor, takeBoot } from "./orchestrator.js";
 
 interface Entry {
   pty: IPty;
-  buffer: string;
+  /** Recent output, newest last; joined only when read (see bufferOf). */
+  chunks: string[];
+  /** Total length of `chunks`. */
+  size: number;
   subs: Set<WebSocket>;
   cwd: string;
   /** Workspace key the terminal was opened in. */
@@ -35,6 +38,24 @@ interface Entry {
 
 const terms = new Map<string, Entry>();
 const MAX_BUFFER = 400_000;
+
+// Appending to one big string and slicing it copied up to 400 KB per output
+// chunk. Chunks are kept as a list and trimmed once they pass twice the cap.
+function append(e: Entry, data: string): void {
+  e.chunks.push(data);
+  e.size += data.length;
+  if (e.size > 2 * MAX_BUFFER) bufferOf(e);
+}
+
+/** The last MAX_BUFFER characters of output (compacts the chunk list). */
+function bufferOf(e: Entry): string {
+  if (e.chunks.length > 1 || e.size > MAX_BUFFER) {
+    const text = e.chunks.join("").slice(-MAX_BUFFER);
+    e.chunks = text ? [text] : [];
+    e.size = text.length;
+  }
+  return e.chunks[0] ?? "";
+}
 
 /** Debug ring buffer of recent attach calls (served at /api/debug/opens). */
 export const openLog: { at: string; id: string; repo: string; fresh: boolean; bootCmd?: string; existed: boolean }[] = [];
@@ -120,7 +141,8 @@ export function attachTerm(
     const restored = saved?.output && !resumes ? `${saved.output}\x1b[?1049l\x1b[0m\r\n\x1b[2m── reopened · output above is from before Crux quit ──\x1b[0m\r\n` : "";
     const e: Entry = {
       pty: proc,
-      buffer: restored,
+      chunks: restored ? [restored] : [],
+      size: restored.length,
       subs: new Set(),
       cwd,
       repo,
@@ -133,7 +155,7 @@ export function attachTerm(
     proc.onData((data) => {
       e.dirty = true;
       e.lastData = Date.now();
-      e.buffer = (e.buffer + data).slice(-MAX_BUFFER);
+      append(e, data);
       for (const sub of e.subs) send(sub, { type: "term:data", id, data });
     });
     proc.onExit(({ exitCode }) => {
@@ -148,8 +170,8 @@ export function attachTerm(
   }
   if (!ws) return;
   entry.subs.add(ws);
-  if (fresh && entry.buffer) {
-    send(ws, { type: "term:data", id, data: entry.buffer });
+  if (fresh && entry.size) {
+    send(ws, { type: "term:data", id, data: bufferOf(entry) });
   }
 }
 
@@ -185,7 +207,7 @@ export function termPids(): Map<number, { termId: string; ws: string }> {
 /** Screen output so far and how long it has been quiet (orchestrator). */
 export function termTail(id: string): { text: string; quietMs: number; alive: boolean } {
   const e = terms.get(id);
-  return e ? { text: e.buffer.slice(-20_000), quietMs: Date.now() - e.lastData, alive: true } : { text: "", quietMs: Infinity, alive: false };
+  return e ? { text: bufferOf(e).slice(-20_000), quietMs: Date.now() - e.lastData, alive: true } : { text: "", quietMs: Infinity, alive: false };
 }
 
 /** Working directory a terminal was started in. */
@@ -222,7 +244,7 @@ export function saveTerms(all = false): void {
     if (!e.dirty && !all) continue;
     e.dirty = false;
     try {
-      saveTerm(id, { output: e.buffer, codexSession: e.codexSession });
+      saveTerm(id, { output: bufferOf(e), codexSession: e.codexSession });
     } catch {
       /* disk full etc.: try again next time */
     }

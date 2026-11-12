@@ -3,6 +3,7 @@ import { api } from "../net";
 import { IS_MAC } from "../platform";
 import { Terminal, type ITerminalOptions } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 import {
   APPEARANCE_EVENT,
@@ -33,6 +34,12 @@ interface CachedTerm {
   ctx: TermCtx;
   /** Set while mounted: fit + tell the PTY the new size. */
   refit?: () => void;
+  /** GPU renderer, loaded only while mounted (browsers cap live WebGL contexts). */
+  gl?: WebglAddon;
+  /** Set while mounted: called after each write lands. */
+  onWritten?: () => void;
+  /** Output subscription, kept for the terminal's lifetime so hidden tabs stay current. */
+  unsubscribe?: () => void;
 }
 
 // Terminals live outside React so scrollback and the running program survive
@@ -99,6 +106,32 @@ function applyLigatures(el: HTMLElement) {
   el.style.fontFeatureSettings = on ? '"liga" 1, "calt" 1' : "";
 }
 
+// The GPU renderer draws each glyph from a texture, so CSS ligatures can't
+// apply: ligatures on (or GPU off in settings) keeps the DOM renderer.
+const wantGl = () => appearance.font.gpu !== false && !appearance.font.ligatures;
+
+/** Load or drop the GPU renderer to match settings. Only for mounted terminals. */
+function syncRenderer(c: CachedTerm) {
+  if (wantGl() && c.el.isConnected) {
+    if (c.gl) return;
+    try {
+      const gl = new WebglAddon();
+      // GPU reset or too many contexts: fall back to the DOM renderer.
+      gl.onContextLoss(() => {
+        if (c.gl === gl) c.gl = undefined;
+        gl.dispose();
+      });
+      c.term.loadAddon(gl);
+      c.gl = gl;
+    } catch {
+      /* no WebGL2 in this webview: the DOM renderer stays */
+    }
+  } else if (c.gl) {
+    c.gl.dispose();
+    c.gl = undefined;
+  }
+}
+
 /** Wait for a (possibly new) font so cells are measured with real glyphs. */
 async function loadFont(family: string, size: number) {
   try {
@@ -120,6 +153,7 @@ async function restyle(id: string, c: CachedTerm) {
   o.cursorStyle = next.cursorStyle ?? "block";
   o.allowTransparency = next.allowTransparency ?? false;
   applyLigatures(c.el);
+  syncRenderer(c);
   if (!metrics) return;
   o.fontSize = next.fontSize;
   o.lineHeight = next.lineHeight ?? 1;
@@ -158,6 +192,7 @@ export function focusTerm(id: string): void {
 export function disposeTerm(id: string): void {
   const cached = cache.get(id);
   if (cached) {
+    cached.unsubscribe?.();
     cached.term.dispose();
     cached.el.remove();
     cache.delete(id);
@@ -230,19 +265,23 @@ export default function Term({
         if (e.type === "keydown") send({ type: "term:input", id, data: "\n" });
         return false;
       });
-      cached = { term, fit, el, ctx };
+      const created: CachedTerm = { term, fit, el, ctx };
+      // Subscribed once, not per mount: output that arrives while the tab is
+      // hidden still reaches the terminal (the server only replays on a fresh open).
+      created.unsubscribe = subscribe(id, (data) => term.write(data, () => created.onWritten?.()));
+      cached = created;
       cache.set(id, cached);
     }
     const entry = cached;
     const { term, fit, el } = entry;
     container.appendChild(el);
+    syncRenderer(entry);
 
     let disposed = false;
     // Report focus (keyboard or click) so actions can target this terminal.
     const reportFocus = () => onFocusRef.current?.(id);
     term.textarea?.addEventListener("focus", reportFocus);
     container.addEventListener("pointerdown", reportFocus, true);
-    let unsubscribe: (() => void) | null = null;
     let lastCols = 0;
     let lastRows = 0;
 
@@ -262,7 +301,8 @@ export default function Term({
     // fast (Claude Code's spinner and prompt box): the buffer is right, the
     // drawn rows are not, and a selection or resize "fixes" it. Repaint every
     // row once output settles (150 ms quiet), and at least every 600 ms while
-    // it keeps streaming.
+    // it keeps streaming. Only the DOM renderer has this problem; the GPU
+    // renderer redraws dirty rows itself.
     let repaintTimer: ReturnType<typeof setTimeout> | undefined;
     let firstPending = 0;
     const repaint = () => {
@@ -271,7 +311,7 @@ export default function Term({
       if (!disposed) term.refresh(0, term.rows - 1);
     };
     const scheduleRepaint = () => {
-      if (disposed) return;
+      if (disposed || entry.gl) return;
       const now = performance.now();
       if (!firstPending) firstPending = now;
       clearTimeout(repaintTimer);
@@ -308,7 +348,7 @@ export default function Term({
       // fresh-gated bootCmd disappear: the second effect run sees the cached
       // terminal, reports fresh=false, and the server may not have spawned yet.)
       send({ type: "term:open", id, repo, cols: term.cols, rows: term.rows, fresh, bootCmd });
-      unsubscribe = subscribe(id, (data) => term.write(data, scheduleRepaint));
+      entry.onWritten = scheduleRepaint;
       // Live appearance changes may refit from now on (the PTY exists).
       entry.refit = doFit;
       // One more pass shortly after, in case a scrollbar or font swap shifted
@@ -333,16 +373,18 @@ export default function Term({
     return () => {
       disposed = true;
       if (entry.refit === doFit) entry.refit = undefined;
+      if (entry.onWritten === scheduleRepaint) entry.onWritten = undefined;
       term.textarea?.removeEventListener("focus", reportFocus);
       container.removeEventListener("pointerdown", reportFocus, true);
       clearTimeout(debounce);
       clearTimeout(repaintTimer);
       window.removeEventListener("focus", onShown);
       document.removeEventListener("visibilitychange", onShown);
-      unsubscribe?.();
       observer.disconnect();
       window.removeEventListener("resize", onResize);
       if (el.parentElement === container) container.removeChild(el);
+      syncRenderer(entry); // detached: frees its WebGL context
+
     };
   }, [id, repo, bootCmd, connected, send, subscribe]);
 

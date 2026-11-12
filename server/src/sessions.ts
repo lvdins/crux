@@ -102,6 +102,14 @@ function codexRollouts(days = 45): Rollout[] {
   return out.sort((a, b) => b.mtime - a.mtime);
 }
 
+/** The 45-day rollout list, shared for 15 s: history asks for it once per
+ *  workspace, and search once per keystroke. */
+let rolloutCache: { at: number; list: Rollout[] } | null = null;
+function recentRollouts(): Rollout[] {
+  if (!rolloutCache || Date.now() - rolloutCache.at > 15_000) rolloutCache = { at: Date.now(), list: codexRollouts() };
+  return rolloutCache.list;
+}
+
 function firstLine(file: string): any {
   try {
     const fd = fs.openSync(file, "r");
@@ -136,15 +144,32 @@ export interface PastChat {
   branch?: string;
 }
 
-/** Unsearched reads, by file and its modification time: listing every
- *  workspace's history (the Sessions view) re-reads only what changed. */
-const listCache = new Map<string, { mtime: number; chat: PastChat | null }>();
-function cached(file: string, mtime: number, read: () => PastChat | null): PastChat | null {
-  const hit = listCache.get(file);
-  if (hit && hit.mtime === mtime) return hit.chat;
-  const chat = read();
-  listCache.set(file, { mtime, chat });
-  return chat;
+/** A transcript reduced to what listing and search need. */
+interface Parsed {
+  chat: PastChat | null;
+  /** Message texts in order (searched with `around`). */
+  texts: string[];
+}
+
+/** Parsed transcripts by file and modification time: listing and searching
+ *  re-read only files that changed (search used to re-read every transcript
+ *  on each keystroke). */
+const parseCache = new Map<string, { mtime: number; parsed: Parsed }>();
+function parsedOf(file: string, mtime: number, parse: () => Parsed): Parsed {
+  const hit = parseCache.get(file);
+  if (hit && hit.mtime === mtime) return hit.parsed;
+  const parsed = parse();
+  parseCache.set(file, { mtime, parsed });
+  return parsed;
+}
+
+/** The chat, with `match` set to the first hit of `q` (lowercased), or null when nothing matches. */
+function search(p: Parsed, q: string): PastChat | null {
+  if (!p.chat || !q) return p.chat;
+  let match: string | undefined;
+  for (const text of p.texts) if ((match = around(text, q))) break;
+  if (!match && p.chat.kind === "claude") match = around(p.chat.title, q);
+  return match ? { ...p.chat, match } : null;
 }
 
 const claudeDir = (cwd: string) => path.join(os.homedir(), ".claude", "projects", cwd.replace(/[^a-zA-Z0-9]/g, "-"));
@@ -163,17 +188,17 @@ const around = (text: string, q: string) => {
   return (s ? "…" : "") + text.slice(s, i + q.length + 80).replace(/\s+/g, " ").trim();
 };
 
-function readClaude(file: string, q: string): PastChat | null {
+function parseClaude(file: string): Parsed {
   let raw: string;
   try {
     raw = fs.readFileSync(file, "utf8");
   } catch {
-    return null;
+    return { chat: null, texts: [] };
   }
   let title = "";
   let prompt = "";
   let branch = "";
-  let match: string | undefined;
+  const texts: string[] = [];
   for (const line of raw.split("\n")) {
     if (!line) continue;
     let j: any;
@@ -188,32 +213,32 @@ function readClaude(file: string, q: string): PastChat | null {
     else if ((j.type === "user" || j.type === "assistant") && !j.isSidechain && !j.isMeta) {
       const text = textOf(j.message?.content);
       if (j.type === "user" && !prompt && text && !text.startsWith("<")) prompt = text.slice(0, 200);
-      if (q && !match && text) match = around(text, q);
+      if (text) texts.push(text);
     }
   }
-  if (!prompt && !title) return null;
-  if (q && !match) match = around(title, q);
-  if (q && !match) return null;
+  if (!prompt && !title) return { chat: null, texts: [] };
   return {
-    kind: "claude",
-    id: path.basename(file, ".jsonl"),
-    title: title || prompt.slice(0, 60),
-    prompt,
-    at: new Date(fs.statSync(file).mtimeMs).toISOString(),
-    match,
-    branch: branch || undefined,
+    chat: {
+      kind: "claude",
+      id: path.basename(file, ".jsonl"),
+      title: title || prompt.slice(0, 60),
+      prompt,
+      at: new Date(fs.statSync(file).mtimeMs).toISOString(),
+      branch: branch || undefined,
+    },
+    texts,
   };
 }
 
-function readCodex(r: Rollout, q: string): PastChat | null {
+function parseCodex(r: Rollout): Parsed {
   let raw: string;
   try {
     raw = fs.readFileSync(r.file, "utf8");
   } catch {
-    return null;
+    return { chat: null, texts: [] };
   }
   let prompt = "";
-  let match: string | undefined;
+  const texts: string[] = [];
   for (const line of raw.split("\n")) {
     if (!line.includes('"message"')) continue;
     let j: any;
@@ -226,11 +251,10 @@ function readCodex(r: Rollout, q: string): PastChat | null {
     if (p?.type !== "message" || (p.role !== "user" && p.role !== "assistant")) continue;
     const text = Array.isArray(p.content) ? p.content.map((c: any) => c?.text ?? "").join(" ") : "";
     if (p.role === "user" && !prompt && text && !text.startsWith("<")) prompt = text.slice(0, 200);
-    if (q && !match && text) match = around(text, q);
+    if (text) texts.push(text);
   }
-  if (!prompt) return null;
-  if (q && !match) return null;
-  return { kind: "codex", id: r.id, title: prompt.slice(0, 60), prompt, at: new Date(r.mtime).toISOString(), match };
+  if (!prompt) return { chat: null, texts: [] };
+  return { chat: { kind: "codex", id: r.id, title: prompt.slice(0, 60), prompt, at: new Date(r.mtime).toISOString() }, texts };
 }
 
 /** Past conversations started in a folder, newest first; `q` searches their text. */
@@ -250,12 +274,12 @@ export function pastChats(cwd: string, q = "", limit = 40): PastChat[] {
     /* never used Claude here */
   }
   for (const f of files) {
-    const c = query ? readClaude(f.file, query) : cached(f.file, f.mtime, () => readClaude(f.file, ""));
+    const c = search(parsedOf(f.file, f.mtime, () => parseClaude(f.file)), query);
     if (c) out.push(c);
     if (out.length >= limit) break;
   }
-  for (const r of codexRollouts().filter((r) => r.cwd === cwd).slice(0, 80)) {
-    const c = query ? readCodex(r, query) : cached(r.file, r.mtime, () => readCodex(r, ""));
+  for (const r of recentRollouts().filter((r) => r.cwd === cwd).slice(0, 80)) {
+    const c = search(parsedOf(r.file, r.mtime, () => parseCodex(r)), query);
     if (c) out.push(c);
   }
   return out.sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit);

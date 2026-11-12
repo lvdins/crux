@@ -643,6 +643,13 @@ export default function AppearanceSettings({ settings, onChange }: { settings: S
           </span>
           <input type="checkbox" className="settings-switch" checked={!!font.ligatures} onChange={(e) => patch({ font: { ...font, ligatures: e.target.checked } })} />
         </label>
+        <label className="settings-row">
+          <span className="settings-text">
+            <b>GPU rendering</b>
+            <span>{font.ligatures ? "Off while ligatures are on (the GPU renderer can't join glyphs)." : "Draws terminals on the GPU: smoother with fast output. Turn off if text looks wrong."}</span>
+          </span>
+          <input type="checkbox" className="settings-switch" checked={font.gpu !== false} disabled={!!font.ligatures} onChange={(e) => patch({ font: { ...font, gpu: e.target.checked } })} />
+        </label>
         <Row label="Cursor">
           <span className="appearance-inline">
             <select
